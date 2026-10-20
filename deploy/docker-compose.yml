@@ -1,0 +1,154 @@
+# ============================================================
+# 售后自助故障诊断系统 - 一键部署编排
+# 启动: docker compose up -d
+# 初始化管理员: docker compose run --rm init
+# 停止: docker compose down
+# 日志: docker compose logs -f backend
+#
+# 注意：backend/ 与 frontend/ 目录由 WBS B-01、C-01 产出，
+#       在此之前 compose up 会因构建上下文缺失而失败。
+# ============================================================
+
+services:
+  # -------------------- 数据库 --------------------
+  db:
+    image: postgres:15-alpine
+    container_name: fault-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-fault}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD 未设置，请先 cp .env.example .env}
+      POSTGRES_DB: ${DB_NAME:-fault_db}
+      TZ: ${TZ:-Asia/Shanghai}
+      PGTZ: ${TZ:-Asia/Shanghai}
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "pg_stat_statements.track=all"
+    volumes:
+      - ./data/pg:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-fault} -d ${DB_NAME:-fault_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks:
+      - fault-net
+
+  # -------------------- 后端 API --------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fault-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${DB_USER:-fault}:${DB_PASSWORD}@db:5432/${DB_NAME:-fault_db}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 未设置，请用 openssl rand -hex 32 生成}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
+      UPLOAD_DIR: /data/uploads
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-20}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data/uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # 后端需提供 /api/health（只查 DB 连通性，不查业务）
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks:
+      - fault-net
+
+  # -------------------- 前端静态站 --------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: /api
+    container_name: fault-frontend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - fault-net
+
+  # -------------------- Nginx 统一入口 --------------------
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: fault-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      # 配好证书后再开放 443（见 deploy/nginx-https.conf.example）
+      # - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./data/uploads:/data/uploads:ro
+      # 启用 HTTPS 时取消下一行注释，并把证书放到 ./certs/
+      # - ./certs:/etc/nginx/certs:ro
+      # - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks:
+      - fault-net
+
+  # -------------------- 一次性任务：初始化管理员 --------------------
+  # 用法: docker compose run --rm init
+  # 重置密码: docker compose run --rm init --reset-password
+  #
+  # 脚本通过卷挂载注入，无需打进镜像（build context 是 ./backend）。
+  # 若后续把脚本 COPY 进镜像，可删除 volumes 行。
+  init:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    profiles: ["init"]
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${DB_USER:-fault}:${DB_PASSWORD}@db:5432/${DB_NAME:-fault_db}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_INIT_PASSWORD: ${ADMIN_INIT_PASSWORD:-}
+      ADMIN_REAL_NAME: ${ADMIN_REAL_NAME:-系统管理员}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./scripts:/app/scripts:ro
+    entrypoint: ["python", "/app/scripts/init_admin.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - fault-net
+
+networks:
+  fault-net:
+    driver: bridge

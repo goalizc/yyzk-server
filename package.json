@@ -1,0 +1,13 @@
+{
+  "name": "fault-diagnosis-devkit",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "开发期工具链：schema 校验、契约校验等。与 frontend/package.json 相互独立。",
+  "scripts": {
+    "verify:schema": "node scripts/dev/verify_schema.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10"
+  }
+}

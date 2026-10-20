@@ -1,0 +1,133 @@
+# ============================================================
+# HTTPS 完整配置（可直接替换 deploy/nginx.conf 使用）
+#
+# 启用步骤：
+#   1. 证书放到 deploy/certs/（fullchain.pem、privkey.pem）
+#   2. docker-compose.yml 的 nginx 服务：
+#        ports: 追加   - "443:443"
+#        volumes: 取消注释  - ./certs:/etc/nginx/certs:ro
+#   3. cp deploy/nginx-https.conf.example deploy/nginx.conf
+#   4. docker compose up -d --force-recreate nginx
+#
+# 免费证书（Let's Encrypt）：
+#   certbot certonly --webroot -w /var/www/certbot -d your.domain.com
+#   续期后需 docker compose restart nginx
+# ============================================================
+
+limit_req_zone $binary_remote_addr zone=querylog:10m rate=30r/m;
+limit_req_status 429;
+
+# ---------- HTTP：只做跳转与证书校验 ----------
+server {
+    listen 80;
+    server_name your.domain.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ---------- HTTPS：正式入口（location 与 nginx.conf 保持一致） ----------
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name your.domain.com;
+
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    client_max_body_size 21M;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_min_length 1024;
+    gzip_comp_level 5;
+    gzip_types text/plain text/css text/javascript application/javascript
+               application/json application/xml text/xml image/svg+xml;
+
+    # 前端静态资源（SPA 回退在 frontend 容器的 nginx 内）
+    location / {
+        proxy_pass http://frontend:80;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 未命中日志上报（限流）
+    location = /api/query-logs {
+        limit_req zone=querylog burst=5 nodelay;
+        proxy_pass http://backend:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 后端 API
+    location /api/ {
+        proxy_pass http://backend:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # 上传附件
+    location ~* ^/uploads/.*\.(php|py|sh|jsp|asp|cgi)$ {
+        return 403;
+    }
+
+    location /uploads/ {
+        alias /data/uploads/;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    }
+
+    # 健康检查
+    location /health {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    error_page 413 = @too_large;
+    location @too_large {
+        default_type application/json;
+        return 413 '{"detail":"文件超过 20MB 限制","code":"UPLOAD_TOO_LARGE"}';
+    }
+
+    error_page 429 = @rate_limited;
+    location @rate_limited {
+        default_type application/json;
+        return 429 '{"detail":"操作过于频繁，请稍后再试","code":"RATE_LIMITED"}';
+    }
+
+    error_page 502 503 504 = @upstream_down;
+    location @upstream_down {
+        default_type application/json;
+        return 503 '{"detail":"服务暂时不可用，请稍后重试","code":"SERVICE_UNAVAILABLE"}';
+    }
+}

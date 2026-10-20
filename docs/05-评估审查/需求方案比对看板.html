@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>需求—方案比对看板 · 售后故障诊断系统</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#16181d; --ink2:#4b5563; --muted:#8a919e;
+    --line:#e3e6ea; --accent:#2563eb; --accent-soft:#eff4ff;
+    --ok:#0f9d58; --ok-soft:#e9f7ef; --part:#d97706; --part-soft:#fef6e7; --miss:#dc2626; --miss-soft:#fdecec;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 16px rgba(16,24,40,.05);
+  }
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--ink); font-size:14px; line-height:1.6;
+    -webkit-font-smoothing:antialiased; padding:32px 28px 64px;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+  header{margin-bottom:26px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;font-weight:600}
+  h1{font-size:26px;font-weight:700;letter-spacing:-.01em;margin:8px 0 6px}
+  .sub{color:var(--ink2);font-size:13.5px}
+  .sub code{background:#eceff3;padding:1px 6px;border-radius:4px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:22px 0 8px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;box-shadow:var(--shadow)}
+  .kpi .lab{font-size:12px;color:var(--muted);margin-bottom:4px}
+  .kpi .val{font-size:24px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .kpi .val small{font-size:13px;font-weight:500;color:var(--muted);margin-left:2px}
+  .kpi.ok .val{color:var(--ok)} .kpi.part .val{color:var(--part)} .kpi.miss .val{color:var(--miss)}
+
+  .bar{display:flex;height:10px;border-radius:6px;overflow:hidden;margin:16px 0 6px;background:#eceff3}
+  .bar i{display:block;height:100%}
+  .legend{display:flex;gap:18px;font-size:12px;color:var(--ink2);flex-wrap:wrap}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+
+  .tools{display:flex;gap:10px;align-items:center;margin:26px 0 14px;flex-wrap:wrap}
+  .tools input[type=text]{
+    flex:1;min-width:220px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;
+    font-size:13.5px;background:var(--card);outline:none;color:var(--ink)
+  }
+  .tools input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .chips{display:flex;gap:7px}
+  .chip{
+    padding:7px 13px;border:1px solid var(--line);background:var(--card);border-radius:20px;
+    font-size:12.5px;cursor:pointer;color:var(--ink2);transition:.15s;user-select:none
+  }
+  .chip:hover{border-color:#c8ced8}
+  .chip[data-on="1"]{background:var(--ink);border-color:var(--ink);color:#fff}
+
+  .tbl-wrap{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{
+    text-align:left;padding:11px 12px;font-size:11.5px;letter-spacing:.05em;color:var(--muted);
+    font-weight:600;border-bottom:1px solid var(--line);background:#fafbfc;position:sticky;top:0;z-index:2;white-space:nowrap
+  }
+  tbody tr.row{cursor:pointer;border-bottom:1px solid #f0f2f5;transition:background .12s}
+  tbody tr.row:hover{background:#fafbfd}
+  tbody tr.row td{padding:10px 12px;vertical-align:top}
+  td.id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--ink2);white-space:nowrap}
+  td.req{max-width:300px}
+  .p{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:4px;letter-spacing:.03em}
+  .p0{background:#fdecec;color:#b91c1c} .p1{background:#eef2ff;color:#3949ab}
+  .cell{font-size:12px;color:var(--muted);text-align:center;white-space:nowrap}
+  .cell[data-v="1"]{color:var(--ok);font-weight:600}
+  .cell[data-v="0"]{color:var(--miss);font-weight:700}
+  .v{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap}
+  .v.ok{background:var(--ok-soft);color:var(--ok)}
+  .v.part{background:var(--part-soft);color:var(--part)}
+  .v.miss{background:var(--miss-soft);color:var(--miss)}
+  tr.detail{display:none;background:#fbfcfd}
+  tr.detail.open{display:table-row}
+  tr.detail td{padding:0 12px 12px 40px;color:var(--ink2);font-size:12.5px;border-bottom:1px solid #f0f2f5}
+  tr.detail .note{border-left:2px solid var(--line);padding-left:11px}
+
+  h2{font-size:16px;font-weight:700;margin:34px 0 12px;letter-spacing:-.01em}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;box-shadow:var(--shadow)}
+  .card h3{font-size:13.5px;font-weight:700;margin-bottom:6px;display:flex;gap:8px;align-items:baseline}
+  .card h3 .tag{font-size:10.5px;font-weight:700;color:#b91c1c;background:#fdecec;padding:1px 6px;border-radius:4px}
+  .card p{font-size:12.5px;color:var(--ink2)}
+  .card .fix{margin-top:8px;font-size:12px;color:var(--muted)}
+  .card .fix b{color:var(--ink2);font-weight:600}
+
+  .conf{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+  .conf table{font-size:12.5px}
+  .conf thead th{background:#fafbfc}
+  .conf td{padding:10px 12px;border-bottom:1px solid #f0f2f5;vertical-align:top;color:var(--ink2)}
+  .conf td:first-child{font-family:ui-monospace,monospace;color:var(--ink);white-space:nowrap;font-weight:600}
+  .conf .rec{color:var(--ink);font-weight:600}
+
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .empty{padding:40px;text-align:center;color:var(--muted);font-size:13px}
+  @media (max-width:900px){
+    .kpis{grid-template-columns:repeat(2,1fr)} .grid2{grid-template-columns:1fr}
+    body{padding:20px 14px 48px} td.req{max-width:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Traceability Review · v1.0 快照 · 2026-10-20</div>
+    <h1>需求—方案比对看板</h1>
+    <div class="sub">售后自助故障诊断系统 · 一期 MVP ｜ 48 条基线需求逐条追溯至 <code>schema.sql</code> → <code>API 契约</code> → <code>页面清单</code> → <code>测试用例</code> 四层</div>
+    <div style="margin-top:14px;padding:11px 14px;background:#eef7f0;border:1px solid #cfe8d8;border-radius:8px;font-size:12.5px;color:#22694a">
+      <b>本看板记录 v1.0 审查状态。</b>其中 22 项问题已在 v1.1 全部修复：4 个 P0 落在数据模型与接口层，6 项需求冲突已裁决。
+      逐条修复位置与理由见 <code style="background:#dcefe3">docs/05-评估审查/04-修复记录.md</code>。
+    </div>
+  </header>
+
+  <div class="kpis">
+    <div class="kpi"><div class="lab">基线需求</div><div class="val">48<small>条</small></div></div>
+    <div class="kpi ok"><div class="lab">完整覆盖</div><div class="val" id="kOk">22<small>条</small></div></div>
+    <div class="kpi part"><div class="lab">部分覆盖</div><div class="val" id="kPart">19<small>条</small></div></div>
+    <div class="kpi miss"><div class="lab">完全缺失</div><div class="val" id="kMiss">7<small>条</small></div></div>
+    <div class="kpi"><div class="lab">缺陷总数</div><div class="val">22<small>项 · P0×4</small></div></div>
+  </div>
+
+  <div class="bar" id="bar"></div>
+  <div class="legend">
+    <span><i class="dot" style="background:var(--ok)"></i>完整：四层齐备，可直接开工</span>
+    <span><i class="dot" style="background:var(--part)"></i>部分：有承载但缺字段/接口/验证</span>
+    <span><i class="dot" style="background:var(--miss)"></i>缺失：链路断裂，按现方案做不出来</span>
+  </div>
+
+  <div class="tools">
+    <input type="text" id="q" placeholder="搜索需求编号、内容或缺口关键词…">
+    <div class="chips" id="chips">
+      <div class="chip" data-f="all" data-on="1">全部</div>
+      <div class="chip" data-f="ok">完整</div>
+      <div class="chip" data-f="part">部分</div>
+      <div class="chip" data-f="miss">缺失</div>
+      <div class="chip" data-f="p0">仅 P0</div>
+    </div>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:82px">编号</th>
+          <th>需求</th>
+          <th style="width:38px">优先</th>
+          <th style="width:52px;text-align:center">数据</th>
+          <th style="width:52px;text-align:center">接口</th>
+          <th style="width:52px;text-align:center">页面</th>
+          <th style="width:52px;text-align:center">用例</th>
+          <th style="width:74px">判定</th>
+        </tr>
+      </thead>
+      <tbody id="tb"></tbody>
+    </table>
+    <div class="empty" id="empty" style="display:none">没有匹配的需求</div>
+  </div>
+
+  <h2>P0 阻塞项（开工前必修）</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3><span class="tag">P0-1</span>管理员密码是编造的假哈希</h3>
+      <p><code>schema.sql:147</code> 写入的 bcrypt 串为手工占位值，长度与字符分布均不符合算法输出。容器初始化后 <code>admin/admin123</code> 登录必然 401，TC-50 干净环境启动测试必失败。</p>
+      <div class="fix"><b>修复：</b>新增 <code>init_admin.py</code> 启动时生成真实哈希 upsert，删除 SQL 内 INSERT ／ 0.2 人天</div>
+    </div>
+    <div class="card">
+      <h3><span class="tag">P0-2</span>工单「是否上门」无处落库</h3>
+      <p>接口收 <code>need_on_site</code>（API:247），表里没有这一列（schema:106-121）。ORM 严格映射会直接报错，宽松处理则静默丢数据 —— 后台永远看不到用户的上门意愿。</p>
+      <div class="fix"><b>修复：</b>加列 <code>need_on_site BOOLEAN DEFAULT FALSE</code>，补契约与用例断言 ／ 0.1 人天</div>
+    </div>
+    <div class="card">
+      <h3><span class="tag">P0-3</span>「未命中词」没有数据来源</h3>
+      <p>一期客户侧只有三级下拉，没有输入框；<code>GET /api/faults</code> 强制双必填；唯一的写日志点在详情页（此时必有 fault_id，hit 恒为 true）。<code>hit=false</code> 的记录永远不会产生，看板表格恒空。</p>
+      <div class="fix"><b>修复：</b>三选一 —— A 空结果时补写日志／B 加选填关键词框／<b>推荐 C 一期砍掉</b> ／ 需产品裁决</div>
+    </div>
+    <div class="card">
+      <h3><span class="tag">P0-4</span>工单详情缺接口</h3>
+      <p>页面 P-12 要求「详情抽屉：完整上下文 + 处理备注」，但契约只有列表接口，返回体不含 <code>description</code>／<code>remark</code>。抽屉打不开。</p>
+      <div class="fix"><b>修复：</b>新增 <code>GET /api/admin/tickets/{id}</code>，返回工单全字段 + 关联产品/零件/故障名 ／ 0.3 人天</div>
+    </div>
+  </div>
+
+  <h2>需求冲突待裁决（6 项）</h2>
+  <div class="conf">
+    <table>
+      <thead><tr><th style="width:64px">编号</th><th style="width:190px">冲突点</th><th>甲方说法 ↔ 乙方说法</th><th style="width:270px">建议裁决</th></tr></thead>
+      <tbody>
+        <tr><td>C-01</td><td>未命中词数据来源</td><td>PRD F-11 与验收标准要求可见 ↔ 一期无任何自由文本入口，raw_query 无来源</td><td class="rec">一期砍掉，二期随模糊搜索一起做</td></tr>
+        <tr><td>C-02</td><td>自助解决率口径</td><td>章程 30% ↔ 路线图 20%；且 resolved_count/view_count 与 query_logs 是两套算法</td><td class="rec">按时间窗内 query_logs 计；目标统一 30%</td></tr>
+        <tr><td>C-03</td><td>反馈如何定位日志</td><td>US-05 要求写 query_logs.resolved ↔ 接口只收 {resolved}，无 log_id</td><td class="rec">详情返回 query_log_id，反馈回传</td></tr>
+        <tr><td>C-04</td><td>流转记录操作人</td><td>PRD F-10 明确要求 ↔ 只有 assignee_id，无 operator、无历史表</td><td class="rec">新建 ticket_status_logs 表</td></tr>
+        <tr><td>C-05</td><td>产品删除策略</td><td>PRD F-7 有关联禁止删除 ↔ parts 是 ON DELETE CASCADE，会静默级联删</td><td class="rec">改 RESTRICT，删除前显式检查返回 409</td></tr>
+        <tr><td>C-06</td><td>一期含不含用户管理</td><td>PRD 角色表列了系统管理员 ↔ 无故事/页面/接口，路线图放三期</td><td class="rec">不做管理，但必须补改密功能</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    <span>数据来源：05-评估审查 / 01-需求基线清单、02-需求方案对照矩阵、03-评估审查报告</span>
+    <span>点击任意行展开缺口证据</span>
+  </footer>
+</div>
+
+<script>
+const D = [
+ ["R-C-01","产品下拉（仅上架产品）","P0",1,1,1,1,"ok","数据 products.is_active ✓ ／ 接口 GET /api/products ✓ ／ 页面 P-01 ✓ ／ 用例 TC-01 ✓，四层齐备。"],
+ ["R-C-02","零件级联下拉 + group_name 分组","P0",1,1,1,1,"ok","parts.group_name 与接口返回字段一致，前端分组逻辑清晰，TC-02 覆盖。"],
+ ["R-C-03","故障卡片列表（按查看次数降序）","P0",1,0,1,1,"part","契约未声明「仅返回 is_published=true」，响应体也不含该字段 → 未发布故障可能被前台看到；排序字段未写入契约。"],
+ ["R-C-04","故障详情六段内容（现象/根因/步骤/工具/附件）","P0",1,1,1,1,"ok","schema、接口、页面、用例字段名完全对齐，可直接实现。"],
+ ["R-C-05","需专业维修时的红色警示条","P0",1,1,1,1,"ok","needs_professional 在 schema:67 / API:164 / P-02 布局 / TC-06、07 均覆盖，含反向用例。"],
+ ["R-C-06","点击「已解决」反馈（双写）","P0",1,0,1,1,"part","接口只收 {resolved}，无 log_id 或会话标识，后端无法确定该更新哪条 query_logs，只能盲写最近一条，并发下串号。"],
+ ["R-C-07","未解决带上下文转工单","P0",1,1,1,1,"ok","三个外键齐备，URL query 传参方式在 P-02 规则 4 写清。"],
+ ["R-C-08","工单表单含「是否需要上门」","P0",0,1,1,0,"miss","tickets 表无 need_on_site 列（schema:106-121），接口却接收该字段（API:247）。提交即丢数据，且无用例验证。"],
+ ["R-C-09","成功页显示工单号","P0",1,1,1,1,"ok","ticket_no UNIQUE，201 返回该字段，P-04 有页面。"],
+ ["R-A-01","登录 / 未登录拦截 / token 过期","P0",1,1,1,1,"ok","四层齐全，TC-20~23 与 TC-40 覆盖。文案有微小差异：账号 vs 用户名，建议统一。"],
+ ["R-A-02","产品 CRUD + 有关联时禁止删除","P0",0,1,1,0,"part","parts.product_id 是 ON DELETE CASCADE（schema:44），删产品会静默级联删全部零件、故障 part_id 被置 NULL，与「禁止删除」直接冲突；且无删除拦截用例。"],
+ ["R-A-03","型号唯一，重复时报错","P0",1,0,1,1,"part","model UNIQUE 已在库里，但契约未给重复时的状态码与错误文案，前端只能猜；建议固定 409 + 「型号已存在」。"],
+ ["R-A-04","零件 CRUD（按产品 tab）","P0",1,1,1,1,"ok","接口 4 个端点 + P-14 页面 + TC-27，闭环。"],
+ ["R-A-05","故障列表按产品/零件筛选","P0",1,0,1,0,"part","契约只有一行表格，未定义响应结构、分页、是否含 solution_steps；前后端极易对不上。"],
+ ["R-A-06","故障编辑器全字段（含动态步骤与图片）","P0",1,1,1,1,"ok","JSONB 存步骤是合理选择，P-16 交互说明细到默认 3 行、校验项，可直接实现。"],
+ ["R-A-07","保存后前台立即可见","P0",1,1,1,1,"ok","is_published 链路通；建议接口加 Cache-Control: no-store 防缓存。"],
+ ["R-A-08","工单列表 + 状态与时间范围筛选","P0",1,0,1,0,"part","PRD 明确要求时间范围筛选，契约只有 status/page/page_size，参数消失。"],
+ ["R-A-09","工单详情（完整上下文 + 备注）","P0",1,0,1,0,"miss","无 GET /api/admin/tickets/{id}；列表返回体不含 description/remark，P-12 抽屉无数据可显示。"],
+ ["R-A-10","状态流转 + 记录操作人","P0",0,0,1,1,"part","只有 assignee_id（处理人），无 operator、无状态变更历史表；接口只收 status/remark。谁在何时改的状态永久丢失。"],
+ ["R-A-11","看板总览四张卡","P0",1,0,1,1,"part","返回 resolve_rate 但口径未定义：用 resolved_count/view_count 还是 query_logs 占比？两种算法会差出很多。"],
+ ["R-A-12","TOP 10 故障柱状图","P0",1,1,1,0,"part","接口与页面齐，缺验证用例。"],
+ ["R-A-13","未命中词表格","P1",0,1,1,0,"miss","字段存在但全链路无写入方：一期无自由文本入口，raw_query 恒 NULL；hit=false 记录也不会产生 → 恒空表，验收标准不可达。"],
+ ["R-A-14","看板时间筛选全板块生效","P0",1,0,1,0,"part","仅 overview 有 days 参数，top-faults / missed 无参数，切换时间后图表不跟着变。"],
+ ["R-A-15","系统管理员可管理用户与权限","P1",0,0,0,0,"miss","只存在于 PRD 角色表；无故事、无页面、无接口。但验收表要求改默认密码，只能靠手工 SQL。"],
+ ["R-N-01","查询 P95 < 500ms","P0",1,0,0,0,"part","索引基本齐备，但无性能用例、无压测方案，无法证明达标；GIN(solution_steps) 对当前查询无用反而拖慢写入。"],
+ ["R-N-02","支持 100 并发查询","P1",0,0,0,0,"miss","未定义 uvicorn worker 数与连接池大小，无压测。"],
+ ["R-N-03","Chrome/Edge/Safari 近两版","P0",1,0,1,0,"part","仅 TC-60 覆盖 Chrome、TC-61 覆盖移动端，缺 Edge 与 Safari，验收表却要求三项全过。"],
+ ["R-N-04","移动端响应式","P0",1,0,1,1,"ok","P-01 规则 6 明确单列堆叠，TC-61 覆盖。"],
+ ["R-N-05","密码 bcrypt 哈希存储","P0",0,0,0,0,"part","机制齐备（passlib），但种子哈希是假值，见 P0-1，导致整条链路无法验证。"],
+ ["R-N-06","JWT 24h + 全后台接口鉴权","P0",1,1,1,1,"ok","接口契约逐段标注「需鉴权」，TC-22/23/40 覆盖，设计成立。"],
+ ["R-N-07","SQL 注入 / XSS 防护","P0",1,0,0,0,"ok","ORM 参数化 + 前端默认转义，设计层面成立；建议明确禁用 v-html。"],
+ ["R-N-08","系统可用性 99.5%","P1",0,0,0,0,"miss","无监控、无告警、无外部拨测（架构明确推二期）；单机无高可用，目标与架构冲突。"],
+ ["R-D-01","数据模型 7 张表","P0",1,0,0,0,"ok","7 表 + 1 视图齐备；但 attachments 表全链路无人写入，与 faults.attachment_urls 重复，二选一。"],
+ ["R-D-02","solution_steps JSON 结构","P0",1,1,0,0,"ok","schema:64 与 API:158 结构完全一致。"],
+ ["R-D-03","附件 {name,url} 数组","P0",1,1,0,0,"ok","schema:68 与 API:165 一致。"],
+ ["R-D-04","工单号 TK+日期+序号","P0",1,0,0,0,"part","格式只在代码规范里；序号是全局自增还是当日重置、并发冲突如何重试均未定义，唯一索引会抛错。"],
+ ["R-D-05","20+ 接口","P0",0,1,0,0,"part","实际 25 个端点，达标；但缺工单详情与用户管理类接口。"],
+ ["R-D-06","统一错误体与状态码表","P0",0,1,0,0,"ok","定义完整；但业务级错误（型号重复、删除被拒）未映射到具体码。"],
+ ["R-D-07","上传白名单 + 重命名存储","P0",0,1,0,0,"ok","架构、契约、代码规范三处口径一致，做法正确。"],
+ ["R-D-08","上传体积上限 20MB","P0",0,1,0,0,"ok","nginx client_max_body_size 已配；但后端未声明对应限制，绕过 Nginx 直连可突破。"],
+ ["R-D-09","时间统一 ISO 8601 带时区","P0",0,0,0,0,"part","契约要求 +08:00，但库表全用无时区 TIMESTAMP → 存储丢时区，容器时区变更即错乱，影响时间筛选与备份窗口。"],
+ ["R-O-01","5 分钟一键起服","P0",0,0,0,0,"miss","compose 的构建上下文 ./backend 与 ./frontend 目录不存在，up 直接失败；TC-50 必挂。"],
+ ["R-O-02","4 核 8G 可跑","P0",1,0,0,0,"ok","四服务资源估算合理，无 GPU 依赖。"],
+ ["R-O-03","全私有化部署","P0",1,0,0,0,"ok","无外部 SaaS 依赖；需注意前端不要引 CDN 资源。"],
+ ["R-O-04","每日备份 + 30 天保留","P0",0,0,0,0,"ok","脚本含 pg_dump、附件打包、过期清理与 cron，质量高于同类项目。"],
+ ["R-O-05","RTO < 4h / RPO < 24h","P1",0,0,0,0,"part","目标已定，但无恢复演练记录；备份失败无告警，脚本 set -e 失败即静默中断。"],
+ ["R-O-06","日志输出 stdout 可 docker logs","P0",0,0,0,0,"part","架构有声明，但无 logging 配置与请求 ID，线上排障困难。"],
+ ["R-O-07","售后可自主录入 50 条故障","P0",0,0,0,0,"part","流程齐备，但数据未产出；编辑器无批量导入，50 条只能界面手录。"]
+];
+
+const tb = document.getElementById('tb');
+const empty = document.getElementById('empty');
+let filter = 'all', kw = '';
+const vLabel = {ok:'完整', part:'部分', miss:'缺失'};
+
+function render(){
+  const rows = D.filter(d=>{
+    const [id,req,p,,,,,v,note] = d;
+    if(filter==='p0' && p!=='P0') return false;
+    if(['ok','part','miss'].includes(filter) && v!==filter) return false;
+    if(kw){
+      const hay = (id+req+note+p).toLowerCase();
+      if(!hay.includes(kw)) return false;
+    }
+    return true;
+  });
+  tb.innerHTML = rows.map((d,i)=>{
+    const [id,req,p,ds,api,ui,tc,v,note] = d;
+    const cls = {ok:'ok',part:'part',miss:'miss'}[v];
+    const mark = x => `<td class="cell" data-v="${x}">${x?'✓':'✗'}</td>`;
+    return `<tr class="row" data-i="${i}">
+      <td class="id">${id}</td>
+      <td class="req">${req}</td>
+      <td><span class="p ${p.toLowerCase()}">${p}</span></td>
+      ${mark(ds)}${mark(api)}${mark(ui)}${mark(tc)}
+      <td><span class="v ${cls}">${vLabel[v]}</span></td>
+    </tr>
+    <tr class="detail" data-d="${i}"><td colspan="8"><div class="note">${note}</div></td></tr>`;
+  }).join('');
+  empty.style.display = rows.length? 'none':'block';
+
+  tb.querySelectorAll('tr.row').forEach(tr=>{
+    tr.addEventListener('click',()=>{
+      const d = tb.querySelector(`tr.detail[data-d="${tr.dataset.i}"]`);
+      if(d) d.classList.toggle('open');
+    });
+  });
+}
+
+const counts = {ok:0,part:0,miss:0};
+D.forEach(d=>counts[d[7]]++);
+document.getElementById('kOk').innerHTML = counts.ok+'<small>条</small>';
+document.getElementById('kPart').innerHTML = counts.part+'<small>条</small>';
+document.getElementById('kMiss').innerHTML = counts.miss+'<small>条</small>';
+const total = D.length;
+document.getElementById('bar').innerHTML =
+  `<i style="width:${counts.ok/total*100}%;background:var(--ok)"></i>`+
+  `<i style="width:${counts.part/total*100}%;background:var(--part)"></i>`+
+  `<i style="width:${counts.miss/total*100}%;background:var(--miss)"></i>`;
+
+document.getElementById('q').addEventListener('input',e=>{
+  kw = e.target.value.trim().toLowerCase();
+  render();
+});
+document.getElementById('chips').addEventListener('click',e=>{
+  const c = e.target.closest('.chip');
+  if(!c) return;
+  document.querySelectorAll('.chip').forEach(x=>x.dataset.on='0');
+  c.dataset.on='1';
+  filter = c.dataset.f;
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
