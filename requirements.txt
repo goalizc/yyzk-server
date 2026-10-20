@@ -8,3 +8,5 @@ bcrypt>=4.0,<4.1
 python-jose[cryptography]>=3.3,<4.0
 python-multipart>=0.0.9
 psycopg2-binary>=2.9,<3.0
+# python:3.12-slim 不带系统时区库，缺它 ZoneInfo("Asia/Shanghai") 会抛 ZoneInfoNotFoundError
+tzdata>=2024.1
