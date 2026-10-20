@@ -1,10 +1,17 @@
 # API 接口契约
 
-> **版本**：v1.2 ｜ 修订日期：2026-10-20
+> **版本**：v1.3 ｜ 修订日期：2026-10-20
 > **Base URL**：`/api`
 > 数据格式：JSON，UTF-8
 > 时间格式：ISO 8601 带时区（如 `2026-10-19T10:00:00+08:00`），服务端统一 `TZ=Asia/Shanghai`
 > 鉴权：后台接口需 Header `Authorization: Bearer <token>`
+
+## v1.3 修订说明（开发中产品确认）
+
+| # | 变更 | 原因 |
+|---|---|---|
+| 1 | 工单处理人归属改为「首次处理认领 / 显式转派」，不再"谁改谁拥有" | 原规则下一个客服只改备注就会把工单抢过去，团队协作下归属混乱 |
+| 2 | `POST /api/tickets` 增加限流：单 IP 10 次/分钟（burst 3） | 公开写接口可被脚本刷单，污染工单量与积压指标 |
 
 ## v1.2 修订说明（第二轮复审后）
 
@@ -692,7 +699,10 @@ Request（字段均可选，至少传一项）：
 
 服务端行为：
 1. `status` 变化时**必须**带非空 `remark`（否则 400 `VALIDATION_ERROR`），并写入 `ticket_status_logs`，`operator_id` 从 token 取（前端不可指定操作人）
-2. `assignee_id` 不传时默认设为当前登录用户
+2. 处理人归属（v1.3 修订，替代原"不传即设为当前用户"）：
+   - 显式传 `assignee_id` → **转派**给该人（转派即确认认领）
+   - 未传且工单**当前无处理人** → 由操作人认领（首次处理即归属）
+   - 未传但已有人处理 → **保持原处理人**，不静默抢占；要接手必须显式转派
 3. `remark` 同时更新 `tickets.remark`（只保留最新一条，历史在 logs 里）
 4. `need_on_site` 允许更正（客服电话确认后修改）
 5. 仅改 `remark` / `need_on_site` 不写流转日志，只更新 `tickets.updated_at`
@@ -814,6 +824,7 @@ Response 200:
 | 401 | `AUTH_TOKEN_EXPIRED` | 未登录 / token 过期 | 清 token 跳登录页 |
 | 403 | `AUTH_USER_DISABLED` | 账号已停用 | 提示联系管理员 |
 | 404 | `NOT_FOUND` | 资源不存在 | 空态页 |
+| 405 | `METHOD_NOT_ALLOWED` | 接口不支持该请求方法（客户端调用错误） | 开发期问题，提示刷新并检查调用方法 |
 | 409 | `MODEL_DUPLICATED` | 产品型号重复（POST 与 PUT 均可能） | 表单内联报错 |
 | 409 | `DELETE_BLOCKED` | 存在关联数据，禁止删除 | 展示 `detail` 中的引用统计 |
 | 413 | `UPLOAD_TOO_LARGE` | 文件超过 20MB | 提示压缩后重试 |
