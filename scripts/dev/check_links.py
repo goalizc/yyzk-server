@@ -21,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-SKIP_DIRS = {".git", "node_modules", ".venv", ".tmp", ".pipcache", ".npmcache", "data", "__pycache__"}
+SKIP_DIRS = {".git", ".workbuddy", "node_modules", ".venv", ".tmp", ".pipcache", ".npmcache", "data", "__pycache__"}
 FILE_EXT = r"(?:md|sql|ya?ml|py|sh|mjs|conf|json|html|txt)"
 
 ALLOWLIST_FILE = ROOT / "scripts" / "dev" / "link_allowlist.txt"
