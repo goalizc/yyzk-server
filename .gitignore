@@ -28,6 +28,9 @@ deploy/certs/
 .env
 deploy/.env
 
+# 工具与本地配置
+.workbuddy/
+
 # 编辑器与系统
 .DS_Store
 .idea/
