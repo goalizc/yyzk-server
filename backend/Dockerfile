@@ -55,10 +55,22 @@ EXPOSE 8000
 # 访问日志由应用中间件输出（含 request_id 与耗时），关掉 uvicorn 自带的那条；
 # 容器 healthcheck 由 compose 定义（python urllib 探 /api/health，无需 curl）。
 # --forwarded-allow-ips 只信任 Docker 私有网段（172.16/12），不信任任意 X-Forwarded-For
-CMD ["uvicorn", "app.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "2", \
-     "--no-access-log", \
-     "--proxy-headers", \
-     "--forwarded-allow-ips", "172.16.0.0/12"]
+#
+# ---- workers 数量（压测结论，见 docs/05-评估审查/12-性能压测报告.md）----
+# 本项目路由全是同步 def，FastAPI 会把它们丢进 anyio 线程池（默认 40 线程），
+# 所以单个 worker 就能吃满 100 并发，多进程并不会带来线性收益。
+# 实测（100 并发、混合读写、db 固定 2 核）：
+#   CPU=1 核 workers=2 → 264 req/s  P95 486ms（两进程抢一核，上下文切换抵消收益）
+#   CPU=1 核 workers=1 → 316 req/s  P95 365ms
+#   CPU=2 核 workers=2 → 379 req/s  P95 506ms（吞吐更高但尾部抖动变大）
+# 默认 1，需要更多算力时把 compose 的 cpus 和 UVICORN_WORKERS 一起调，别只调一个。
+ARG UVICORN_WORKERS=1
+ENV UVICORN_WORKERS=${UVICORN_WORKERS}
+
+CMD ["sh", "-c", "exec uvicorn app.main:app \
+     --host 0.0.0.0 \
+     --port 8000 \
+     --workers ${UVICORN_WORKERS} \
+     --no-access-log \
+     --proxy-headers \
+     --forwarded-allow-ips 172.16.0.0/12"]

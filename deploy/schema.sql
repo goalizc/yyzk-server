@@ -107,6 +107,12 @@ CREATE INDEX idx_faults_part ON faults(part_id);
 CREATE INDEX idx_faults_published ON faults(is_published);
 -- 前台列表：按 product+part 过滤、按 view_count 降序
 CREATE INDEX idx_faults_list ON faults(product_id, part_id, view_count DESC);
+-- 上面 (product_id)、(part_id) 两个单列索引看着像被 idx_faults_list 覆盖，
+-- 但**不能删**。实测（5 万行）：后台"按零件统计故障数"只按 part_id 过滤时，
+-- idx_faults_list 的首列是 product_id 用不上，只能做 skip scan，
+-- 扫 15154 个 buffer 耗时 88ms；有 idx_faults_part 走 Bitmap Index Scan 只要 9 个 buffer / 0.1ms。
+-- 写放大确实会被这两个索引放大（每次 UPDATE view_count 多改两页），
+-- 但读路径的 800 倍差距更不可接受，所以保留。
 
 -- ------------------------------------------------------------
 -- 5. 查询日志表
