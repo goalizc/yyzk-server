@@ -164,10 +164,20 @@ function addStep() {
 }
 
 function removeStep(index) {
+  // 这里**故意不删除**对应的 image_url 文件。
+  //
+  // 与 ImageUpload 的"移除"不同：那里是刚上传就反悔，文件必然没被引用；
+  // 而这里删的是**已经保存过**的步骤。用户点完删除后可能不保存就离开
+  // （或点取消），此时图还在别的版本里用着，删了就再也找不回来。
+  // 无法区分"手滑删了又取消"和"真的要删"，所以不做即时删除。
+  //
+  // 这些文件由 backend/app/services/upload_cleanup.py 的孤儿清理任务回收：
+  // 保存后 JSONB 里不再引用它们，下次扫描时自然成为孤儿被删掉。
   form.solution_steps.splice(index, 1)
 }
 
 function removeAttachment(index) {
+  // 同上：附件也可能是库里已有的，删除后不保存就撤销不回来了
   form.attachment_urls.splice(index, 1)
 }
 

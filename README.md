@@ -29,6 +29,8 @@
 │   ├── frontend-nginx.conf    # SPA 路由回退
 │   ├── nginx-https.conf.example
 │   ├── .env.example
+│   ├── data/pg              # 数据库数据（挂载）
+│   ├── data/uploads         # 上传文件（挂载，注意属主须为 10001）
 │   └── scripts/init_admin.py  # 管理员初始化（幂等）
 ├── docs/                     # 全部项目文档（索引见 docs/README.md）
 ├── scripts/dev/              # 开发期工具
@@ -84,6 +86,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 | 检查测试重名 | `python scripts/dev/check_duplicate_tests.py` |
 | 后端测试 | `.venv/bin/pytest -q` |
 | 前端构建 | `cd frontend && npm run build` |
+| 清理上传残留 | `cd deploy && ./scripts/cleanup-uploads.sh`（预演） |
 
 ## 文档入口
 

@@ -4,9 +4,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import ImageUpload from './ImageUpload.vue'
 
-vi.mock('../api/admin', () => ({ adminUpload: vi.fn() }))
+vi.mock('../api/admin', () => ({
+  adminUpload: vi.fn(),
+  adminDeleteUpload: vi.fn()
+}))
 
-import { adminUpload } from '../api/admin'
+import { adminDeleteUpload, adminUpload } from '../api/admin'
 
 function makeFile(name, size = 1024) {
   const file = new File(['x'], name, { type: 'image/jpeg' })
@@ -117,10 +120,44 @@ describe('ImageUpload', () => {
     expect(text).not.toContain('服务器内部错误')
   })
 
-  it('移除按钮清空 url', async () => {
-    const wrapper = mountUpload('/uploads/old.png')
+  it('移除时通知后端删除文件，否则文件会永久残留在服务器上', async () => {
+    // 真实故障：改造前这里只 emit('update:modelValue', null)，
+    // 完全不通知后端，用户测试上传后点"移除"，文件仍留在 /data/uploads。
+    adminDeleteUpload.mockResolvedValue({})
+    const wrapper = mountUpload('/uploads/20261021-0b3f9a7c.png')
+
     const removeBtn = wrapper.findAll('button').find((b) => b.text().includes('移除'))
     await removeBtn.trigger('click')
+    await flushPromises()
+
+    expect(adminDeleteUpload).toHaveBeenCalledWith('/uploads/20261021-0b3f9a7c.png')
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([null])
+  })
+
+  it('删除接口失败时不打断用户，界面照常清空', async () => {
+    // 409（图还被别的方案引用）是正常情况，不该弹错；
+    // 其它失败由后端的孤儿清理任务兜底，用户没必要为此负责。
+    adminDeleteUpload.mockRejectedValue({
+      response: { status: 409, data: { code: 'UPLOAD_IN_USE' } }
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const wrapper = mountUpload('/uploads/20261021-0b3f9a7c.png')
+
+    const removeBtn = wrapper.findAll('button').find((b) => b.text().includes('移除'))
+    await removeBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([null])
+    expect(document.body.textContent).not.toContain('失败')
+    // 但要留痕，方便排查"为什么这个文件一直没被回收"
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('已是空值时点移除不发请求', async () => {
+    const wrapper = mountUpload(null)
+    // 没有图时不渲染移除按钮，这里直接调方法验证防御分支
+    await wrapper.vm.$.setupState.onRemove()
+    expect(adminDeleteUpload).not.toHaveBeenCalled()
   })
 })

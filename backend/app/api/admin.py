@@ -6,13 +6,17 @@
 
 from __future__ import annotations
 
+import logging
+import re
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.deps import get_current_user
 from app.core.exceptions import BusinessError
 from app.database import get_db
@@ -21,10 +25,21 @@ from app.schemas.common import ErrorBody, SuccessResponse, UploadResult
 from app.schemas.part import PartAdmin, PartCreate, PartPage, PartUpdate
 from app.schemas.product import ProductAdmin, ProductCreate, ProductPage, ProductUpdate
 from app.services.pagination import paginate
+from app.services.upload_cleanup import referenced_by_fault
 from app.utils.search import LIKE_ESCAPE, like_pattern
-from app.utils.upload import save_upload
+from app.utils.upload import ALLOWED_EXTENSIONS, save_upload
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# 与 save_upload 生成的存储名严格对应：{yyyyMMdd}-{8位小写hex}.{ext}
+# 扩展名部分由 ALLOWED_EXTENSIONS 动态拼出，避免两处白名单不同步
+_UPLOAD_NAME_RE = re.compile(
+    r"^\d{8}-[0-9a-f]{8}\.(?:"
+    + "|".join(sorted(ext.lstrip(".") for ext in ALLOWED_EXTENSIONS))
+    + r")$"
+)
 
 # 这些字段在库中 NOT NULL，前端传 null 时直接忽略
 _PRODUCT_NOT_NULL = ("name", "model", "is_active", "sort_order")
@@ -40,6 +55,27 @@ def _product_fault_count(db: Session, product_id: int) -> int:
 
 def _part_fault_count(db: Session, part_id: int) -> int:
     return db.scalar(select(func.count(Fault.id)).where(Fault.part_id == part_id)) or 0
+
+
+def _upload_name_from_url(url: str) -> str:
+    """从上传返回的 url 中取出安全的文件名，非法输入直接 400。
+
+    不能只用 `Path(url).name`：它能挡住 `../x`（结果是 `x`），但挡不住
+    `....//` 这类畸形输入在某些平台的解析差异。这里改成**格式白名单**——
+    文件名必须严格匹配 `save_upload` 生成的形态：
+
+        {yyyyMMdd}-{8位小写16进制}.{ext}
+
+    白名单的好处是：任何"看起来不像我们生成的"字符串一律拒绝，
+    不需要考虑各种穿越变体。ext 也限定在白名单内，防止借删除接口
+    去操作同目录下的其他文件（比如误留的 .part 或运维放进来的 pdf）。
+    """
+    name = url.rsplit("/", 1)[-1] if url else ""
+
+    if not _UPLOAD_NAME_RE.fullmatch(name):
+        raise BusinessError("VALIDATION_ERROR", "文件名不合法", 400)
+
+    return name
 
 
 def _to_product_admin(product: Product, fault_count: int) -> ProductAdmin:
@@ -351,3 +387,66 @@ async def upload_file(
 ) -> UploadResult:
     saved = await save_upload(file)
     return UploadResult(**saved)
+
+
+@router.delete(
+    "/upload",
+    response_model=SuccessResponse,
+    summary="删除未被引用的上传文件",
+    responses={
+        400: {"model": ErrorBody, "description": "文件名非法或路径穿越"},
+        404: {"model": ErrorBody, "description": "文件不存在"},
+        409: {"model": ErrorBody, "description": "文件仍被故障引用，拒绝删除"},
+    },
+)
+def delete_upload(
+    url: str = Query(..., description="上传时返回的 url，如 /uploads/20261019-a1b2c3d4.jpg"),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> SuccessResponse:
+    """前端点"移除"时收拾掉刚上传的文件。
+
+    修复的真实问题：改造前前端"移除"只把表单值置空，**从不通知后端**，
+    文件永久留在磁盘。运营久了会把磁盘塞满（用户报障时已发现残留）。
+
+    三条安全约束：
+
+    1. **只接受本系统生成的文件名**。客户端传进来的字符串不能直接拼路径——
+       `../../app/main.py` 这类输入必须挡在门外。用正则白名单限定格式，
+       不依赖 `os.path.basename` 的"截断"行为（截断后仍可能指向目录内任意文件）。
+    2. **不允许删仍被引用的文件**。同一张图可能被复制到多条方案里（用户复用），
+       删了另一条方案就破图且无任何提示。这种情况返回 409，由前端静默忽略——
+       文件继续留着，等孤儿清理任务在引用消失后回收。
+    3. **文件不存在视为成功**。删除是幂等操作：两个标签页同时点移除，
+       或清理任务刚跑过，都会出现"文件已不在"。报 404 会让用户看到无意义的错误。
+    """
+    name = _upload_name_from_url(url)
+
+    db_path = Path(get_settings().upload_dir) / name
+    if not db_path.is_file():
+        # 幂等：已经不存在就是目标状态
+        return SuccessResponse()
+
+    if referenced_by_fault(db, {name}):
+        raise BusinessError(
+            "UPLOAD_IN_USE",
+            "该文件仍在故障方案中使用，无法删除",
+            409,
+        )
+
+    try:
+        db_path.unlink()
+    except PermissionError as exc:
+        # 与上传同一个根因：目录属主不对。报 503 让运维按错误码查权限，
+        # 不要报 500——那会让人以为是代码 bug。
+        logger.error("删除上传文件失败（权限）：%s（%s）", db_path, exc)
+        raise BusinessError(
+            "SERVICE_UNAVAILABLE",
+            "服务器暂时无法删除文件，请联系管理员",
+            503,
+        ) from exc
+    except OSError as exc:
+        logger.warning("删除上传文件失败：%s（%s）", db_path, exc)
+        raise BusinessError("INTERNAL_ERROR", "删除文件失败", 500) from exc
+
+    return SuccessResponse()

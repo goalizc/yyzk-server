@@ -64,3 +64,12 @@ def get_db() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+def new_session() -> Session:
+    """新建一个独立会话，供脚本 / CLI 使用（不走 FastAPI 依赖注入）。
+
+    出现的原因：上传文件清理需要能在 `docker compose exec` 里手动跑，
+    那里没有请求上下文，拿不到 get_db()。调用方负责 close()。
+    """
+    return _session_factory(bind=get_engine())

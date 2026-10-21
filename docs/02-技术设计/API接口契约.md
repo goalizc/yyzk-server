@@ -544,6 +544,36 @@ Error 400：`{"detail": "不支持的文件类型", "code": "UPLOAD_TYPE_NOT_ALL
 Error 413：`{"detail": "文件超过 20MB 限制", "code": "UPLOAD_TOO_LARGE"}`
 
 > 附件元数据（name/url/size）由前端随故障保存进 `faults.attachment_urls`，服务端不单独建表记录。
+>
+> **为什么这条要补充说明**：正因服务端不建表，就无法在保存时得知"哪个文件被弃用了"，
+> 因此上传文件需要配套的删除与回收机制，见下面 `DELETE /api/admin/upload`
+> 与 `deploy/scripts/cleanup-uploads.sh`。
+
+### DELETE /api/admin/upload
+
+**需鉴权**。删除一个未被任何故障引用的上传文件。
+
+前端"移除"图片时调用；不调用则文件永久残留在磁盘。
+
+Query 参数：`url`（上传接口返回的 `url`，如 `/uploads/20261019-a1b2c3d4.jpg`）
+
+校验：
+- 文件名必须严格匹配 `save_upload` 生成格式 `{yyyyMMdd}-{8位小写hex}.{ext}`，
+  不合格式一律 400（防止删除接口被用作任意文件删除器）
+- 文件仍被任一 `faults` 引用时返回 409，**不删除**
+
+Response 200：
+```json
+{ "success": true }
+```
+
+行为约定：
+- **幂等**：文件已不存在时同样返回 200，不报 404（多标签页并发移除、清理任务刚跑过都会命中）
+- 文件被引用时返回 409，前端应静默忽略——文件留给孤儿清理任务在引用消失后回收
+
+Error 400：`{"detail": "文件名不合法", "code": "VALIDATION_ERROR"}`
+Error 409：`{"detail": "该文件仍在故障方案中使用，无法删除", "code": "UPLOAD_IN_USE"}`
+Error 503：`{"detail": "服务器暂时无法删除文件，请联系管理员", "code": "SERVICE_UNAVAILABLE"}`
 
 ---
 
@@ -827,6 +857,7 @@ Response 200:
 | 405 | `METHOD_NOT_ALLOWED` | 接口不支持该请求方法（客户端调用错误） | 开发期问题，提示刷新并检查调用方法 |
 | 409 | `MODEL_DUPLICATED` | 产品型号重复（POST 与 PUT 均可能） | 表单内联报错 |
 | 409 | `DELETE_BLOCKED` | 存在关联数据，禁止删除 | 展示 `detail` 中的引用统计 |
+| 409 | `UPLOAD_IN_USE` | 上传文件仍被故障方案引用，不可删除 | **静默忽略**（文件留给孤儿清理回收） |
 | 413 | `UPLOAD_TOO_LARGE` | 文件超过 20MB | 提示压缩后重试 |
 | 422 | `VALIDATION_ERROR` | 字段级校验失败（Pydantic，类型/长度/必填） | 取首条 message 展示 |
 | 429 | `RATE_LIMITED` | 触发限流 | 提示稍后再试 |

@@ -104,3 +104,14 @@ export function adminUpload(file, onProgress) {
     onUploadProgress: onProgress
   })
 }
+
+/**
+ * 删除一个未被引用的上传文件。
+ *
+ * 用于"上传后又点了移除"的场景——不调用它，文件会永久留在服务器上。
+ * 后端对两种情况都按成功处理：文件已不存在（幂等）、文件仍在被引用（409）。
+ * 后者说明这张图被别的方案用着，删不得，前端也不该报错打扰用户。
+ */
+export function adminDeleteUpload(url) {
+  return request.delete('/admin/upload', { params: { url } })
+}

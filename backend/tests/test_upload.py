@@ -214,3 +214,259 @@ def test_upload_returns_503_when_dir_unrecoverable(client: TestClient, db, monke
     assert body["code"] != "INTERNAL_ERROR"
     # 不泄漏服务器路径
     assert str(target) not in body["detail"]
+
+
+# ---------------------------------------------------------------- 删除与回收
+
+
+def _upload(client: TestClient, headers: dict) -> str:
+    """上传一张图，返回 url。"""
+    response = client.post(
+        "/api/admin/upload", files={"file": ("a.png", PNG, "image/png")}, headers=headers
+    )
+    assert response.status_code == 200
+    return response.json()["url"]
+
+
+def test_delete_upload_removes_file(client: TestClient, db, tmp_path, monkeypatch) -> None:
+    """正常的"上传后移除"：文件必须从磁盘消失。
+
+    这是本次修复的核心回归用例。改造前前端只清空表单值、不通知后端，
+    文件永久残留——用户报障时磁盘上就躺着一张测试图。
+    """
+    target = tmp_path / "uploads"
+    target.mkdir()
+    monkeypatch.setattr(get_settings(), "upload_dir", target)
+
+    headers = admin_headers(client, db)
+    url = _upload(client, headers)
+    stored = target / url.rsplit("/", 1)[-1]
+    assert stored.is_file()
+
+    response = client.delete(f"/api/admin/upload?url={url}", headers=headers)
+
+    assert response.status_code == 200
+    assert not stored.exists(), "点移除后文件应被删除"
+
+
+def test_delete_upload_is_idempotent(client: TestClient, db, tmp_path, monkeypatch) -> None:
+    """文件已不存在时返回 200，不报 404。
+
+    两个标签页同时点移除、或清理任务刚跑过，都会命中这个场景。
+    报 404 会让用户看到一个毫无意义的错误提示。
+    """
+    target = tmp_path / "uploads"
+    target.mkdir()
+    monkeypatch.setattr(get_settings(), "upload_dir", target)
+
+    headers = admin_headers(client, db)
+    missing = "/uploads/20260101-deadbeef.png"
+
+    response = client.delete(f"/api/admin/upload?url={missing}", headers=headers)
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "/uploads/../../app/main.py",
+        "/uploads/../../deploy/.env",
+        "/uploads/20261021-0b3f9a7c.exe",
+        "/uploads/etc/passwd",
+        "/uploads/20261021-0b3f9a7c.png/../../x.png",
+    ],
+)
+def test_delete_upload_rejects_path_traversal(
+    client: TestClient, db, bad_url: str
+) -> None:
+    """不能让删除接口变成"任意文件删除器"。
+
+    文件名必须严格匹配 save_upload 的生成格式，任何不合格式的输入直接 400。
+    """
+    headers = admin_headers(client, db)
+
+    response = client.delete(f"/api/admin/upload?url={bad_url}", headers=headers)
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "VALIDATION_ERROR"
+
+
+def test_delete_upload_refuses_referenced_file(
+    client: TestClient, db, tmp_path, monkeypatch
+) -> None:
+    """仍被故障方案引用的文件不能删。
+
+    同一张图可能被复用到多条方案里。删了之后另一条方案显示破图，
+    而且没有任何提示——这种静默损坏比多占几 MB 磁盘严重得多。
+    """
+    from app.models import Fault, Part, Product
+
+    target = tmp_path / "uploads"
+    target.mkdir()
+    monkeypatch.setattr(get_settings(), "upload_dir", target)
+
+    headers = admin_headers(client, db)
+    url = _upload(client, headers)
+    stored = target / url.rsplit("/", 1)[-1]
+
+    # 造一条引用该图的故障
+    product = Product(name="扫地机", model="X1", is_active=True, sort_order=0)
+    db.add(product)
+    db.flush()
+    part = Part(name="电池", product_id=product.id, sort_order=0)
+    db.add(part)
+    db.flush()
+    db.add(
+        Fault(
+            product_id=product.id,
+            part_id=part.id,
+            title="电池不充电",
+            symptom="不充电",
+            root_cause="电池老化",
+            solution_steps=[{"step": 1, "text": "更换电池", "image_url": url}],
+            attachment_urls=[],
+            is_published=True,
+        )
+    )
+    db.commit()
+
+    response = client.delete(f"/api/admin/upload?url={url}", headers=headers)
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "UPLOAD_IN_USE"
+    assert stored.exists(), "被引用的文件必须留着"
+
+
+def test_sweep_dry_run_does_not_delete(client: TestClient, db, tmp_path, monkeypatch) -> None:
+    """dry-run 只报告，不动文件。默认值必须是 dry-run。"""
+    from app.services.upload_cleanup import sweep
+
+    target = tmp_path / "uploads"
+    target.mkdir()
+    monkeypatch.setattr(get_settings(), "upload_dir", target)
+
+    orphan = target / "20250101-aaaaaaaa.png"
+    orphan.write_bytes(b"x" * 10)
+    old = 1700000000  # 远早于 min_age
+    os.utime(orphan, (old, old))
+
+    result = sweep(db, apply=False, min_age_minutes=60)
+
+    assert result.candidates == [orphan.name]
+    assert result.deleted == []
+    assert result.dry_run is True
+    assert orphan.exists(), "dry-run 不允许删任何文件"
+
+
+def test_sweep_skips_recent_files(db, tmp_path, monkeypatch) -> None:
+    """刚上传的文件不能被动——用户可能正在填表还没保存。
+
+    这是最危险的误删场景：清理任务恰好在"上传完成、保存之前"运行，
+    用户点保存时图片 404。
+    """
+    from app.services.upload_cleanup import sweep
+
+    target = tmp_path / "uploads"
+    target.mkdir()
+    monkeypatch.setattr(get_settings(), "upload_dir", target)
+
+    fresh = target / "20250101-bbbbbbbb.png"
+    fresh.write_bytes(b"x" * 10)  # mtime = 现在
+
+    result = sweep(db, apply=True, min_age_minutes=60)
+
+    assert result.deleted == []
+    assert result.skipped_too_new == 1
+    assert fresh.exists()
+
+
+def test_sweep_reclaims_orphan(db, tmp_path, monkeypatch) -> None:
+    """够老且无人引用的文件应被回收，并统计释放空间。"""
+    from app.services.upload_cleanup import sweep
+
+    target = tmp_path / "uploads"
+    target.mkdir()
+    monkeypatch.setattr(get_settings(), "upload_dir", target)
+
+    orphan = target / "20250101-cccccccc.png"
+    orphan.write_bytes(b"x" * 100)
+    old = 1700000000
+    os.utime(orphan, (old, old))
+
+    result = sweep(db, apply=True, min_age_minutes=60)
+
+    assert result.deleted == [orphan.name]
+    assert result.freed_bytes == 100
+    assert not orphan.exists()
+
+
+def test_sweep_refuses_when_ratio_too_high(db, tmp_path, monkeypatch) -> None:
+    """待删比例过高说明引用扫描可能失效，必须拒绝执行而不是照删。
+
+    宁可漏删，也不能因为一次 bug 把库里的图删掉一半。
+    注意闸门只在目录达到 RATIO_GATE_MIN_FILES（10）时生效，
+    所以这里要造够 10 个文件才能测到闸门本身。
+    """
+    from app.services.upload_cleanup import RATIO_GATE_MIN_FILES, sweep
+
+    target = tmp_path / "uploads"
+    target.mkdir()
+    monkeypatch.setattr(get_settings(), "upload_dir", target)
+
+    for i in range(RATIO_GATE_MIN_FILES):
+        f = target / f"20250101-{i:08x}.png"
+        f.write_bytes(b"x" * 10)
+        os.utime(f, (1700000000, 1700000000))
+
+    result = sweep(db, apply=True, min_age_minutes=60, max_ratio=0.5)
+
+    assert result.refused is True
+    assert result.deleted == []
+    assert "超过比例上限" in result.reason
+    assert len(list(target.iterdir())) == RATIO_GATE_MIN_FILES, "拒绝执行时一个文件都不能删"
+
+
+def test_sweep_small_dir_not_blocked_by_ratio(db, tmp_path, monkeypatch) -> None:
+    """小目录不触发比例闸门，否则运维最需要的场景永远清不了。
+
+    真实故障：第一次实现时无条件按比例判定，目录里只有 1 个孤儿文件时
+    比例是 100%，直接被拒绝执行——单文件残留恰恰是最常见的清理场景。
+    """
+    from app.services.upload_cleanup import sweep
+
+    target = tmp_path / "uploads"
+    target.mkdir()
+    monkeypatch.setattr(get_settings(), "upload_dir", target)
+
+    orphan = target / "20250101-cccccccc.png"
+    orphan.write_bytes(b"x" * 10)
+    os.utime(orphan, (1700000000, 1700000000))
+
+    result = sweep(db, apply=True, min_age_minutes=60, max_ratio=0.5)
+
+    assert result.refused is False
+    assert result.deleted == [orphan.name]
+
+
+def test_sweep_ignores_dot_files_and_parts(db, tmp_path, monkeypatch) -> None:
+    """.gitkeep 与写了一半的 .part 不能被当垃圾回收。
+
+    .part 可能正被另一个上传请求写入，删掉会让那个请求失败。
+    """
+    from app.services.upload_cleanup import sweep
+
+    target = tmp_path / "uploads"
+    target.mkdir()
+    monkeypatch.setattr(get_settings(), "upload_dir", target)
+
+    keep = target / ".gitkeep"
+    keep.write_text("")
+    part = target / ".20250101-dddddddd.png.part"
+    part.write_bytes(b"x")
+
+    result = sweep(db, apply=True, min_age_minutes=0)
+
+    assert result.total_files == 0
+    assert keep.exists()
+    assert part.exists()

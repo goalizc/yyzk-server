@@ -29,7 +29,7 @@
         size="small"
         link
         type="danger"
-        @click="$emit('update:modelValue', null)"
+        @click="onRemove"
       >
         移除
       </el-button>
@@ -40,11 +40,11 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { adminUpload } from '../api/admin'
+import { adminDeleteUpload, adminUpload } from '../api/admin'
 import { errorCode, errorText } from '../utils/admin'
 import { extHint, IMAGE_EXTS, isAllowedExt, UPLOAD_MAX_SIZE } from '../utils/upload'
 
-defineProps({
+const props = defineProps({
   modelValue: { type: String, default: null }
 })
 const emit = defineEmits(['update:modelValue'])
@@ -86,6 +86,27 @@ async function doUpload({ file }) {
     ElMessage.error(uploadErrorText(e))
   } finally {
     uploading.value = false
+  }
+}
+
+/**
+ * 移除图片：先清界面，再尽力删服务器文件。
+ *
+ * 两点判断：
+ * 1. **界面先响应**。删除请求可能因为权限、网络慢掉，让用户盯着"图还在"等几百毫秒
+ *    是不可接受的；文件删不掉也不影响这条方案本身——它只是浪费磁盘。
+ * 2. **删除失败不报错**。409（图还被别的方案用着）是正常情况，提示用户反而困惑；
+ *    其它失败交给后端的孤儿清理任务兜底，用户没必要为此负责。
+ *    这里只记日志，方便排查"为什么文件一直没被回收"。
+ */
+async function onRemove() {
+  const oldUrl = props.modelValue
+  emit('update:modelValue', null)
+  if (!oldUrl) return
+  try {
+    await adminDeleteUpload(oldUrl)
+  } catch (e) {
+    console.warn('[ImageUpload] 删除上传文件失败，留给孤儿清理任务回收：', oldUrl, e)
   }
 }
 </script>
