@@ -10,7 +10,8 @@
     "test": "vitest run",
     "lint": "eslint .",
     "e2e": "playwright test",
-    "e2e:walk": "E2E_MODE=walkthrough playwright test"
+    "e2e:walk": "E2E_MODE=walkthrough playwright test",
+    "e2e:mobile": "E2E_MODE=mobile playwright test"
   },
   "dependencies": {
     "axios": "^1.7.7",

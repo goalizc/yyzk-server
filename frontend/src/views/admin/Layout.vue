@@ -1,6 +1,6 @@
 <template>
   <el-container class="layout">
-    <el-aside width="200px" class="aside">
+    <el-aside v-if="!isNarrow" width="200px" class="aside">
       <div class="brand">售后故障诊断</div>
       <el-menu :default-active="activeMenu" router class="menu">
         <el-menu-item index="/admin/tickets">工单管理</el-menu-item>
@@ -11,12 +11,33 @@
       </el-menu>
     </el-aside>
 
-    <el-container>
+    <el-container class="body">
       <el-header class="header">
         <span class="title">{{ pageTitle }}</span>
+
+        <!-- 手机上侧栏收起（固定 200px 会把表格挤成一列并撑出横向滚动），
+             导航改放顶栏下拉，路由变化后自动收起 -->
+        <el-dropdown v-if="isNarrow" trigger="click" class="nav-dropdown" @command="onNav">
+          <el-button text>
+            {{ pageTitle }}<span class="caret">▾</span>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="item in NAV_ITEMS"
+                :key="item.path"
+                :command="item.path"
+                :disabled="activeMenu === item.path"
+              >
+                {{ item.label }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+
         <div class="actions">
-          <span class="user">{{ displayName }}</span>
-          <el-tag v-if="roleLabel" size="small" type="info">{{ roleLabel }}</el-tag>
+          <span v-if="!isNarrow" class="user">{{ displayName }}</span>
+          <el-tag v-if="!isNarrow && roleLabel" size="small" type="info">{{ roleLabel }}</el-tag>
           <el-button link type="primary" @click="passwordVisible = true">修改密码</el-button>
           <el-button link type="danger" @click="onLogout">退出登录</el-button>
         </div>
@@ -27,8 +48,8 @@
       </el-main>
     </el-container>
 
-    <el-dialog v-model="passwordVisible" title="修改密码" width="420px" @closed="resetForm">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="96px">
+    <el-dialog v-model="passwordVisible" title="修改密码" :width="dialogWidth" @closed="resetForm">
+      <el-form ref="formRef" :model="form" :rules="rules" :label-width="isNarrow ? 'auto' : '96px'" :label-position="isNarrow ? 'top' : 'right'">
         <el-form-item label="原密码" prop="oldPassword" :error="oldPasswordError">
           <el-input v-model="form.oldPassword" type="password" show-password />
         </el-form-item>
@@ -48,7 +69,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { changePassword } from '../../api/auth'
@@ -87,6 +108,39 @@ const activeMenu = computed(() => {
   if (path.startsWith('/admin/faults')) return '/admin/faults'
   return path
 })
+
+// ---------- 窄屏（手机）布局 ----------
+// 侧栏固定 200px，在 390px 屏上会占掉一半宽度，剩下的表格被挤成一列并撑出
+// 横向滚动（实测 scrollWidth 473 > clientWidth 390）。窄屏改为顶栏下拉导航。
+const NARROW_QUERY = '(max-width: 768px)'
+const isNarrow = ref(false)
+const dialogWidth = computed(() => (isNarrow.value ? '92%' : '420px'))
+
+const NAV_ITEMS = [
+  { path: '/admin/tickets', label: '工单管理' },
+  { path: '/admin/products', label: '产品管理' },
+  { path: '/admin/parts', label: '零件管理' },
+  { path: '/admin/faults', label: '故障知识库' },
+  { path: '/admin/stats', label: '数据看板' }
+]
+
+function onNav(path) {
+  router.push(path)
+}
+
+let narrowMql = null
+const syncNarrow = (event) => {
+  isNarrow.value = event.matches
+}
+
+onMounted(() => {
+  narrowMql = window.matchMedia?.(NARROW_QUERY)
+  if (!narrowMql) return
+  isNarrow.value = narrowMql.matches
+  narrowMql.addEventListener?.('change', syncNarrow)
+})
+
+onBeforeUnmount(() => narrowMql?.removeEventListener?.('change', syncNarrow))
 
 const rules = {
   oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
@@ -219,5 +273,77 @@ function onLogout() {
 .main {
   background: #f5f7fa;
   padding: 16px;
+}
+
+.nav-dropdown {
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+.caret {
+  margin-left: 4px;
+  font-size: 11px;
+  color: #909399;
+}
+
+/* ---------- 窄屏 ---------- */
+@media (max-width: 768px) {
+  /* 顶栏 60px 高（默认）+ 安全区，按钮的 44px 命中区才放得下 */
+  .header {
+    height: auto;
+    min-height: 56px;
+    padding: 6px 12px;
+    padding-top: calc(6px + var(--safe-top));
+    gap: 8px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  /* 标题与下拉里的文字重复，窄屏只留下拉（它本身就是当前页名 + 导航入口） */
+  .title {
+    display: none;
+  }
+
+  .nav-dropdown {
+    margin-left: 0;
+    margin-right: auto;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .nav-dropdown :deep(.el-button) {
+    min-height: var(--tap-min);
+    padding: 0 8px;
+    font-size: 15px;
+    font-weight: 600;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 两个文字按钮横排在 390px 屏上会和标题抢空间，
+     去掉间距并收到右侧，各自仍有 44px 命中高度 */
+  .actions {
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  /* 顶栏三个元素（下拉 / 修改密码 / 退出登录）加起来约 300px，
+     390px 屏上贴着排会显得拥挤。缩小字号与内边距，保证不相互挤压换行。 */
+  .actions :deep(.el-button) {
+    font-size: 13px;
+    min-height: var(--tap-min);
+    padding: 0 6px;
+  }
+
+  /* 表格页的内边距在窄屏上是纯浪费，全部让给内容宽度 */
+  .main {
+    padding: 10px;
+  }
+
+  .brand {
+    padding: 0 12px;
+  }
 }
 </style>

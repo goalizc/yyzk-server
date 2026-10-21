@@ -69,4 +69,39 @@ async function copy() {
 .actions {
   margin-top: 8px;
 }
+
+/* ---------- 手机 ---------- */
+@media (max-width: 640px) {
+  /* el-result 默认左右各 40px 内边距，375px 屏上只剩 295px，工单号会被折成两行 */
+  :deep(.el-result) {
+    padding: 24px 4px;
+  }
+
+  .ticket-no {
+    /* 工单号 + "复制"横排放不下时整体换行，而不是把号码截断 */
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+
+  .value {
+    font-size: 17px;
+    /* 超长工单号（如时间戳式 TK2026102100041234）允许从任意处断开 */
+    word-break: break-all;
+  }
+
+  /* "复制"是 link 型按钮，视觉只有 20px 高，但点击区必须够 */
+  .ticket-no :deep(.el-button) {
+    min-height: var(--tap-min);
+    padding: 0 10px;
+  }
+
+  .time {
+    line-height: 1.6;
+  }
+
+  /* 结果动作在手机上撑满整行 */
+  .actions :deep(.el-button) {
+    width: 100%;
+  }
+}
 </style>

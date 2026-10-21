@@ -256,4 +256,99 @@ onMounted(load)
   gap: 4px;
   flex-wrap: wrap;
 }
+
+/* ---------- 手机 ---------- */
+@media (max-width: 640px) {
+  .page-header {
+    margin-bottom: 12px;
+  }
+
+  .block {
+    margin-bottom: 12px;
+  }
+
+  .block :deep(.el-card__body) {
+    padding: 14px;
+  }
+
+  .block :deep(.el-card__header) {
+    padding: 12px 14px;
+    line-height: 1.4;
+  }
+
+  .title {
+    font-size: 18px;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .meta {
+    line-height: 1.6;
+    margin-bottom: 14px;
+  }
+
+  /* el-descriptions 的 label 默认宽度由内容撑开，窄屏上"现象描述"会被挤成
+     一字一行（实测 label 列只有 40px 左右）。这里固定 label 列宽并让值列换行。 */
+  .desc :deep(.el-descriptions__label) {
+    width: 84px;
+    min-width: 84px;
+    white-space: nowrap;
+  }
+
+  .desc :deep(.el-descriptions__content) {
+    word-break: break-word;
+    line-height: 1.6;
+  }
+
+  /* 步骤缩进在窄屏上白占 20px，改成与正文对齐 */
+  .steps {
+    padding-left: 18px;
+  }
+
+  .steps li {
+    margin-bottom: 14px;
+    padding-left: 2px;
+  }
+
+  .step-text {
+    line-height: 1.65;
+  }
+
+  .step-image {
+    max-width: 100%;
+  }
+
+  /* 附件链接是手指点击目标，给足纵向高度；文件名过长要能换行 */
+  .attachment {
+    padding: 0;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: baseline;
+  }
+
+  .attachment a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap-min);
+    word-break: break-all;
+  }
+
+  /* 反馈区三个按钮在 375px 上会折成两行且右侧留白不均，
+     改成竖排整行——拇指从上往下依次可达，也不容易点错 */
+  .actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  /* 竖排后分隔线没有意义，直接隐藏 */
+  .actions :deep(.el-divider) {
+    display: none;
+  }
+}
 </style>

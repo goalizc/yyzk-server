@@ -15,7 +15,8 @@
         ref="formRef"
         :model="form"
         :rules="rules"
-        label-width="96px"
+        :label-width="labelWidth"
+        :label-position="labelPosition"
         @submit.prevent="onSubmit"
       >
         <el-form-item label="联系方式" prop="contact">
@@ -30,7 +31,7 @@
           <el-input
             v-model="form.description"
             type="textarea"
-            :rows="5"
+            :rows="descriptionRows"
             maxlength="2000"
             show-word-limit
             placeholder="请描述故障现象、已尝试的步骤、机器型号等信息（至少 5 个字）"
@@ -51,7 +52,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { submitTicket } from '../../api/ticket'
 
@@ -60,6 +61,30 @@ const router = useRouter()
 
 const formRef = ref()
 const submitting = ref(false)
+
+// 96px 的左侧标签在 375px 屏上要占掉四分之一宽度，输入框只剩 180px 左右，
+// 联系方式这种长占位符直接被截断。手机上改为标签在上、输入框在下，撑满整行。
+const NARROW_QUERY = '(max-width: 640px)'
+const isNarrow = ref(false)
+const labelWidth = computed(() => (isNarrow.value ? 'auto' : '96px'))
+const labelPosition = computed(() => (isNarrow.value ? 'top' : 'right'))
+// 手机屏幕矮，5 行文本框会把"提交工单"按钮顶到首屏之外，先给 4 行
+const descriptionRows = computed(() => (isNarrow.value ? 4 : 5))
+
+let mql = null
+const syncNarrow = (event) => {
+  isNarrow.value = event.matches
+}
+
+onMounted(() => {
+  mql = window.matchMedia?.(NARROW_QUERY)
+  if (!mql) return
+  isNarrow.value = mql.matches
+  // 窗口旋转/跨断点拖动时同步，避免停在"标签在左"的压缩布局
+  mql.addEventListener?.('change', syncNarrow)
+})
+
+onBeforeUnmount(() => mql?.removeEventListener?.('change', syncNarrow))
 
 const form = reactive({
   contact: '',
@@ -142,5 +167,60 @@ async function onSubmit() {
   margin: 4px 0 0;
   color: #909399;
   font-size: 13px;
+}
+
+/* ---------- 手机 ---------- */
+@media (max-width: 640px) {
+  .page-header {
+    margin-bottom: 12px;
+  }
+
+  .block {
+    margin-bottom: 12px;
+  }
+
+  .block :deep(.el-card__body) {
+    padding: 14px;
+  }
+
+  .block :deep(.el-card__header) {
+    padding: 12px 14px;
+    line-height: 1.4;
+  }
+
+  .context {
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
+  /* 标签在上时 el-form-item 自带 22px 的下边距，配合标签间距会更透气 */
+  .block :deep(.el-form-item) {
+    margin-bottom: 18px;
+  }
+
+  /* 窄屏由 JS 切换了 label-position="top"，此时纵向空间充裕，
+     label-width:auto 会退化成"标签按内容宽度"并对不齐，这里统一顶满 */
+  .block :deep(.el-form-item__label) {
+    width: 100% !important;
+    padding-bottom: 6px;
+    line-height: 1.4;
+  }
+
+  /* 提交与返回竖排整行：拇指区在屏幕下半部，横排两个按钮右侧那个更难点到 */
+  .block :deep(.el-form-item:last-child .el-form-item__content) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .block :deep(.el-form-item:last-child .el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .muted {
+    line-height: 1.5;
+  }
 }
 </style>

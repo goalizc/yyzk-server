@@ -373,4 +373,100 @@ onBeforeUnmount(() => clearTimeout(missTimer))
   color: #909399;
   font-size: 13px;
 }
+
+/* ---------- 手机 ----------
+ *
+ * 三级级联在窄屏本来是 el-col :xs="24" 自动换行，但每列之间只有 16px gutter
+ * 的横向间距、没有纵向间距，三个 select 会挤成一片看不出步骤先后。
+ * 这里补成单列堆叠 + 纵向间距，并让控件撑满宽度。
+ */
+@media (max-width: 640px) {
+  .hero {
+    margin: 0 0 14px;
+    text-align: left;
+  }
+
+  /* 标题已在顶栏出现过一次，手机上重复大标题只是浪费首屏高度 */
+  .hero h1 {
+    font-size: 18px;
+    margin-bottom: 6px;
+  }
+
+  .hero p {
+    line-height: 1.5;
+  }
+
+  .panel {
+    margin-bottom: 12px;
+  }
+
+  /* el-card 默认 20px 内边距，375px 屏上左右各占 20px 太窄 */
+  .panel :deep(.el-card__body) {
+    padding: 14px;
+  }
+
+  .panel :deep(.el-card__header) {
+    padding: 12px 14px;
+    line-height: 1.4;
+  }
+
+  .field {
+    margin-bottom: 14px;
+  }
+
+  .field:last-of-type {
+    margin-bottom: 10px;
+  }
+
+  .field label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #303133;
+    margin-bottom: 8px;
+  }
+
+  .search {
+    margin-top: 0;
+  }
+
+  .fault-head {
+    gap: 8px;
+  }
+
+  .fault-head h2 {
+    font-size: 17px;
+    line-height: 1.4;
+    /* 长标题允许换行，不要挤成一条把"人看过"推出去 */
+    word-break: break-word;
+  }
+
+  .symptom {
+    line-height: 1.6;
+    margin-bottom: 14px;
+  }
+
+  /* 按钮在窄屏上撑满整行，拇指更容易点到 */
+  .symptom + .el-button,
+  .panel :deep(.el-empty) .el-button {
+    width: 100%;
+  }
+
+  /* 列表项整块可点，内边距也要够大。
+     单条至少 44px 高（三行文字约 87px，本来就超），这里主要给足左右与纵向留白 */
+  .fault-item {
+    padding: 14px 4px;
+    min-height: var(--tap-min);
+  }
+
+  .fault-title {
+    font-size: 15px;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+
+  .fault-symptom {
+    line-height: 1.55;
+    margin-top: 2px;
+  }
+}
 </style>

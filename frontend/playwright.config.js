@@ -5,15 +5,25 @@
 //   2. 跑的就是用户真实使用的浏览器，能验出 Chromium 独有的行为差异。
 //
 // 前置：需要先起 docker 全栈（cd deploy && docker compose up -d && docker compose run --rm init）
-// 运行：npm run e2e
+// 运行：
+//   npm run e2e        桌面主链路冒烟
+//   npm run e2e:walk   逐屏人工走查
+//   npm run e2e:mobile 移动端适配验收（TC-61）
 import { defineConfig, devices } from '@playwright/test'
+
+// 三套用例的标签互斥，靠 E2E_MODE 切换要跑哪一套：
+//   walkthrough → 只跑 @walkthrough
+//   mobile      → 只跑 @mobile
+//   其它/空      → 只跑主链路冒烟（排除上面两类）
+const MODE = process.env.E2E_MODE || ''
+const TAG_BY_MODE = { walkthrough: /@walkthrough/, mobile: /@mobile/ }
+const grep = TAG_BY_MODE[MODE] || /@smoke/
+const grepInvert = MODE ? undefined : /@walkthrough|@mobile/
 
 export default defineConfig({
   testDir: './e2e',
-  // 默认跳过 @walkthrough 标签的逐屏走查脚本：
-  // `npm run e2e` 只跑主链路冒烟；要看每一屏时用 `npm run e2e:walk`
-  grep: process.env.E2E_MODE === 'walkthrough' ? /@walkthrough/ : undefined,
-  grepInvert: process.env.E2E_MODE === 'walkthrough' ? undefined : /@walkthrough/,
+  grep,
+  grepInvert,
   // 输出目录放仓库内（已 gitignore）：
   // /tmp 是 10MB 的 tmpfs，截图一多就写不进；
   // preserveOutput 关掉"每轮清空"，因为沙箱对单次批量删除有阈值拦截（>50 文件）

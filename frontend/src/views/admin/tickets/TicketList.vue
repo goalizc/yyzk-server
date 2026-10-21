@@ -243,4 +243,65 @@ onBeforeUnmount(() => clearTimeout(keywordTimer))
 :deep(.el-table__row) {
   cursor: pointer;
 }
+
+/* ---------- 窄屏（手机） ----------
+ *
+ * 后台是给运维在电脑上用的，手机上只保证"能看懂、能操作"：
+ *   1. 筛选行固定宽度（120/200/260px）会撑破卡片，改成整行堆叠；
+ *   2. 表格列宽总和远超屏幕，交给 el-table 自己横向滚动——
+ *      这是表格在窄屏唯一合理的处理方式，硬压列宽会把内容截成碎片。
+ */
+@media (max-width: 768px) {
+  .filters :deep(.el-form-item) {
+    display: block;
+    margin-right: 0;
+    margin-bottom: 12px;
+  }
+
+  /* label 要从"右侧内联"改成"独占一行"。
+     el-form--inline 的 form-item 是 inline-flex，label 只是其中一项，
+     单纯 display:block 加不上去；必须把 form-item 本身变成 block，
+     再让 label 与 content 各自占满整行。 */
+  :deep(.filters .el-form-item) {
+    display: block;
+  }
+
+  :deep(.filters .el-form-item__label) {
+    display: block;
+    float: none;
+    width: 100% !important;
+    height: auto;
+    /* inline 表单的 label 默认右对齐，窄屏改左对齐更符合阅读顺序 */
+    text-align: left;
+    justify-content: flex-start;
+    padding: 0 0 6px;
+    line-height: 1.4;
+  }
+
+  :deep(.filters .el-form-item__content) {
+    display: block;
+    margin-left: 0 !important;
+  }
+
+  .wd,
+  .sm,
+  .range {
+    width: 100%;
+  }
+
+  /* 日期区间选择器在 390px 上放不下两个面板并排，交给它自己弹出即可 */
+  .filters :deep(.el-date-editor) {
+    width: 100%;
+  }
+
+  /* 表格横向滚动容器：不让它把父级撑宽，否则整页出现横向滚动条 */
+  :deep(.el-table) {
+    width: 100%;
+  }
+
+  .pager {
+    justify-content: center;
+    margin-top: 12px;
+  }
+}
 </style>

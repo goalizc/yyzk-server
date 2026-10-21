@@ -27,7 +27,7 @@ async function pickSelect(page, fieldLabel, optionText) {
     .click()
 }
 
-test('客户排查到后台处理的主链路', async ({ page }) => {
+test('@smoke 客户排查到后台处理的主链路', async ({ page }) => {
   // ---------- 1. 客户侧：三级级联 ----------
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '售后自助故障诊断' })).toBeVisible()
