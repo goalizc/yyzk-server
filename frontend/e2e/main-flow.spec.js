@@ -92,7 +92,10 @@ test('客户排查到后台处理的主链路', async ({ page }) => {
   await expect(options).toHaveCount(2)
   await options.filter({ hasText: '处理中' }).click()
 
-  const remark = drawer.getByPlaceholder(/变更状态必须填写备注/)
+  // 备注框按 role 定位，不绑 placeholder 文案——placeholder 随状态变化（选定状态后
+  // 换成"如：已电话指导……"），而报错文案只在校验失败时出现。两者刻意不同：
+  // placeholder 说"该写什么"，报错说"为什么不行"，用文案互相定位是脆的。
+  const remark = drawer.getByRole('textbox', { name: '备注' })
   const saveBtn = drawer.getByRole('button', { name: '保存' })
 
   // 备注为空时点保存：必须被拦下，不能发请求

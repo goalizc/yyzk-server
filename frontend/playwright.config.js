@@ -10,10 +10,15 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
-  // 输出目录不放在仓库内：Playwright 每轮会清空它，
-  // 沙箱对单次批量删除有阈值拦截（>50 个文件直接拒绝），
-  // 放到系统临时目录可避开，也不污染仓库
-  outputDir: process.env.E2E_OUTPUT_DIR || '/tmp/e2e-results',
+  // 默认跳过 @walkthrough 标签的逐屏走查脚本：
+  // `npm run e2e` 只跑主链路冒烟；要看每一屏时用 `npm run e2e:walk`
+  grep: process.env.E2E_MODE === 'walkthrough' ? /@walkthrough/ : undefined,
+  grepInvert: process.env.E2E_MODE === 'walkthrough' ? undefined : /@walkthrough/,
+  // 输出目录放仓库内（已 gitignore）：
+  // /tmp 是 10MB 的 tmpfs，截图一多就写不进；
+  // preserveOutput 关掉"每轮清空"，因为沙箱对单次批量删除有阈值拦截（>50 文件）
+  outputDir: process.env.E2E_OUTPUT_DIR || './.e2e-output',
+  preserveOutput: 'always',
   // 主链路冒烟是串行的：3 条用例改动同一份数据，并行会互相干扰
   workers: 1,
   fullyParallel: false,

@@ -23,9 +23,10 @@ PRODUCTS = [
         "description": "家用激光导航扫拖一体机",
         "sort_order": 1,
         "parts": [
-            {"name": "主刷模组", "part_no": "P-X1-001", "group_name": "动力系统"},
-            {"name": "水箱模组", "part_no": "P-X1-002", "group_name": "清洁系统"},
-            {"name": "电源模组", "part_no": "P-X1-003", "group_name": "动力系统"},
+            # sort_order 决定客户侧下拉里的展示顺序：动力 → 清洁 的排查习惯
+            {"name": "主刷模组", "part_no": "P-X1-001", "group_name": "动力系统", "sort_order": 1},
+            {"name": "电源模组", "part_no": "P-X1-003", "group_name": "动力系统", "sort_order": 2},
+            {"name": "水箱模组", "part_no": "P-X1-002", "group_name": "清洁系统", "sort_order": 3},
         ],
         "faults": [
             {
@@ -36,7 +37,7 @@ PRODUCTS = [
                 "steps": [
                     "翻转机器，取下主刷盖，检查主刷两端是否有毛发缠绕",
                     "清理缠绕物后重新装回，确认两端卡扣卡紧并听到“咔哒”声",
-                    "开机观察 10 秒，若仍不转，请联系售后更换主刷电机",
+                    "开机观察 10 秒，若仍不转，提交工单由工程师跟进更换主刷电机",
                 ],
                 "tools": "十字螺丝刀、剪刀",
                 "needs_professional": False,
@@ -62,7 +63,7 @@ PRODUCTS = [
                 "steps": [
                     "检查适配器指示灯是否亮起，不亮则更换同规格适配器测试",
                     "用干布擦拭机器与充电座的充电电极",
-                    "仍无法充电时请勿自行拆机，建议返厂检测电池",
+                    "仍无法充电时请勿自行拆机，提交工单由工程师安排电池检测",
                 ],
                 "tools": "干布",
                 "needs_professional": True,
@@ -89,8 +90,8 @@ PRODUCTS = [
         "description": "卧室用除甲醛空气净化器",
         "sort_order": 2,
         "parts": [
-            {"name": "滤芯", "part_no": "P-A2-001", "group_name": "过滤系统"},
-            {"name": "风机", "part_no": "P-A2-002", "group_name": "动力系统"},
+            {"name": "滤芯", "part_no": "P-A2-001", "group_name": "过滤系统", "sort_order": 1},
+            {"name": "风机", "part_no": "P-A2-002", "group_name": "动力系统", "sort_order": 2},
         ],
         "faults": [
             {
@@ -114,7 +115,7 @@ PRODUCTS = [
                 "steps": [
                     "检查进风口是否有异物遮挡，清理周围 30cm 空间",
                     "取下滤芯，用吸尘器清理风机叶片积尘",
-                    "异响持续时建议返厂检修风机",
+                    "异响持续时提交工单，由工程师判断是否需更换风机",
                 ],
                 "tools": "吸尘器",
                 "needs_professional": False,

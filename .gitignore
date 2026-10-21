@@ -26,6 +26,7 @@ frontend/vite.config.js.timestamp-*.mjs
 frontend/test-results/
 frontend/playwright-report/
 frontend/.playwright/
+frontend/.e2e-output/
 # 注：auto-imports.d.ts 不忽略——eslint.config.js 读它来识别自动注入的全局符号，
 #     入库后新 clone 不必先跑一次 dev/build 才能 lint
 

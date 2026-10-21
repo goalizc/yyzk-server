@@ -80,7 +80,7 @@
               :rows="3"
               maxlength="2000"
               show-word-limit
-              :placeholder="form.status ? '变更状态必须填写备注' : '仅更新备注可留空'"
+              :placeholder="remarkPlaceholder"
             />
           </el-form-item>
           <el-form-item>
@@ -154,6 +154,12 @@ const assigneeHint = computed(() => {
     : '本单暂无处理人，保存后由你认领'
 })
 
+// placeholder 说明"该写什么"，报错说明"为什么不行"。
+// 两者若是同一句话，报错时同一句文案会灰红并排出现两遍，读起来像重复渲染。
+const remarkPlaceholder = computed(() =>
+  form.status ? '如：已电话指导客户更换主刷电机，客户确认解决' : '仅更新备注可留空'
+)
+
 function resetForm(data) {
   form.status = null
   form.remark = ''
@@ -164,7 +170,10 @@ function resetForm(data) {
 async function load() {
   if (!props.ticketId) return
   loading.value = true
-  detail.value = null
+  // 不把 detail 置 null：置 null 会让 <template v-if="detail"> 整块销毁再重建，
+  // 用户看到抽屉内容闪一下、滚动位置也跳回顶部（刷新场景尤其明显）。
+  // 保留旧内容 + loading 遮罩，数据回来直接覆盖，视觉上更稳。
+  // 首次打开时 detail 本就是 null，此时走下面的空态，行为不变。
   try {
     const data = await adminGetTicket(props.ticketId)
     detail.value = data

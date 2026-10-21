@@ -96,5 +96,13 @@ export default [
     // 配置文件在 node 环境跑
     files: ['*.config.js', '**/playwright.config.js', 'scripts/**/*.js'],
     languageOptions: { globals: { ...globals.node } }
+  },
+
+  {
+    // 逐屏走查脚本的产物就是控制台读数（分辨率、行数、错误字段数……），
+    // console.log 是它的输出通道，不是遗留调试代码，此处豁免。
+    // 其余测试文件仍受 no-console 约束。
+    files: ['e2e/screen-walkthrough.spec.js'],
+    rules: { 'no-console': 'off' }
   }
 ]
