@@ -25,12 +25,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 非 root 运行。uid/gid 固定 10001，宿主机挂载的 uploads 目录需 chown 成同一 uid，
-# 否则上传会因权限不足失败（S0 尚无上传接口，部署时记得执行）。
+# 非 root 运行，uid/gid 固定 10001。
+#
+# 上传目录 /data/uploads 在 compose 里由宿主机目录挂载覆盖，镜像里给的属主
+# 会被挂载点取代——目录归属于谁完全取决于宿主机（新建目录是 root、
+# 手工 chown 过的是别的 uid），所以**不能只靠镜像里的 chown**。
+# 这里对 /data 根目录加 g+w：容器内的第 2 个用户（uid 10001）作为目录属主
+# 的组员，就能在挂载点属主不对时把自己的目录项删掉重建（见 ensure_upload_dir）。
+# 生产环境优先用下面的 chown，把它当成兜底而不是唯一保障。
 RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app \
     && mkdir -p /data/uploads /app/scripts \
-    && chown -R app:app /data /app
+    && chown -R app:app /data /app \
+    && chmod 775 /data
 
 # 依赖单独一层，代码改动不会触发重新安装。
 # --timeout/--retries 让网络不通时几分钟内报错，而不是一直挂着。

@@ -89,8 +89,11 @@ services:
       DEBUG: ${DEBUG:-false}
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      # 容器以 uid 10001 运行，首次部署前执行：
-      #   sudo chown -R 10001:10001 data/uploads
+      # 容器以 uid 10001 运行，而这个目录是**宿主机挂载**——镜像里的 chown
+      # 会被挂载点覆盖，最终属主取决于宿主机上那个目录是谁建的。
+      # 属主不对时上传会失败（真机出过一次：PermissionError Errno 13，报 500）。
+      # 起服前务必执行一次（幂等，可重复跑）：
+      #   sudo ./scripts/prepare-storage.sh
       - ./data/uploads:/data/uploads
     # 资源上限：4 核机器上 backend 1 核（db 2.5 / nginx 0.5 / frontend 0.5）。
     # 压测实测（100 并发、10 分钟，见 05-评估审查/12-性能压测报告.md）：

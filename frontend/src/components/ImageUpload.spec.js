@@ -96,6 +96,27 @@ describe('ImageUpload', () => {
     expect(document.body.textContent).toContain('20MB')
   })
 
+  it('存储不可写（503）时给出可行动文案，而不是笼统的"上传失败"', async () => {
+    // 真实故障：上传目录属主不对，后端返回 503 SERVICE_UNAVAILABLE。
+    // 改造前报 500，前端只显示"服务器内部错误"，用户和运维都不知道该做什么。
+    adminUpload.mockRejectedValue({
+      response: {
+        status: 503,
+        data: { detail: '服务器暂时无法保存文件，请联系管理员', code: 'SERVICE_UNAVAILABLE' }
+      }
+    })
+    const wrapper = mountUpload()
+
+    await wrapper.vm.$.setupState.doUpload({ file: makeFile('a.png') })
+    await flushPromises()
+
+    const text = document.body.textContent
+    expect(text).toContain('无法保存文件')
+    expect(text).toContain('联系管理员')
+    // 不能退化成没有信息量的通用文案
+    expect(text).not.toContain('服务器内部错误')
+  })
+
   it('移除按钮清空 url', async () => {
     const wrapper = mountUpload('/uploads/old.png')
     const removeBtn = wrapper.findAll('button').find((b) => b.text().includes('移除'))

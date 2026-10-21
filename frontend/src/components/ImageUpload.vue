@@ -66,8 +66,14 @@ function beforeUpload(file) {
 
 /** 上传失败的统一文案：区分"超时"与"服务端拒绝"，否则弱网下会误导成文件问题 */
 function uploadErrorText(e) {
-  if (errorCode(e) === 'UPLOAD_TOO_LARGE') return '文件超过 20MB 限制'
+  const code = errorCode(e)
+  if (code === 'UPLOAD_TOO_LARGE') return '文件超过 20MB 限制'
   if (e?.code === 'ECONNABORTED') return '上传超时，请检查网络后重试'
+  // 503 是服务端存储不可写（多为上传目录权限问题），重试没用，得找运维。
+  // 后端已给中文 detail，但用户不知道"下一步做什么"，这里补一句动作指引。
+  if (code === 'SERVICE_UNAVAILABLE' || e?.response?.status === 503) {
+    return '服务器暂时无法保存文件，请稍后重试；持续失败请联系管理员'
+  }
   return errorText(e, '上传失败')
 }
 

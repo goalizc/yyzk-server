@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -120,3 +121,122 @@ def test_oversize_rejection_leaves_no_temp_file(client: TestClient, db, monkeypa
 
     leftovers = [p for p in Path(get_settings().upload_dir).glob("*.part")]
     assert leftovers == []
+
+
+# ------------------------------------------------ 上传目录不可写（真实线上故障）
+#
+# 故障现场：POST /api/admin/upload 返回 500，堆栈末尾是
+#   PermissionError: [Errno 13] Permission denied: '/data/uploads/.xxx.png.part'
+# 原因：upload_dir 是宿主机目录挂载，镜像里构建的属主被挂载点覆盖，
+# 运维漏 chown 时目录属主是 root，容器以 uid 10001 运行就写不进去。
+#
+# 这些用例锁住两条行为：
+#   1. 目录不可写但父目录可写时，自愈（删掉重建）后上传照常成功；
+#   2. 彻底不可写时返回 503 + SERVICE_UNAVAILABLE，而不是 500 + INTERNAL_ERROR。
+
+
+def test_ensure_upload_dir_leaves_unwritable_dir_untouched(monkeypatch, tmp_path) -> None:
+    """目录不可写时**不动目录内容**，留给运维处理。
+
+    这条用例锁住一个设计取舍：早期版本尝试 rename/rmdir 自愈，
+    结果在挂载点上全部 `Device or resource busy`，且异常被吞掉表现为静默失败。
+    更关键的是——目录里可能挂着 20 个正常附件，删内容是不可接受的。
+    """
+    from app.utils import upload as upload_mod
+
+    target = tmp_path / "uploads"
+    target.mkdir()
+    keep = target / "important.pdf"
+    keep.write_bytes(b"%PDF-1.4 keep me")
+
+    real_access = os.access
+
+    def fake_access(path, mode, **kwargs):
+        if str(path) == str(target) and mode == os.W_OK:
+            return False
+        return real_access(path, mode, **kwargs)
+
+    monkeypatch.setattr(upload_mod.os, "access", fake_access)
+
+    result = upload_mod.ensure_upload_dir(target)
+
+    # 返回原目录，不抛异常（由调用方决定报什么错）
+    assert result == target
+    # 关键：原有文件一个都没动
+    assert keep.exists()
+    assert keep.read_bytes() == b"%PDF-1.4 keep me"
+
+
+def test_ensure_upload_dir_creates_missing(tmp_path) -> None:
+    """目录不存在时自动创建（首次部署的常见状态）。"""
+    from app.utils.upload import ensure_upload_dir
+
+    target = tmp_path / "a" / "b" / "uploads"
+    assert not target.exists()
+
+    result = ensure_upload_dir(target)
+
+    assert result.is_dir()
+    assert os.access(result, os.W_OK)
+
+
+def test_ensure_upload_dir_creates_missing(tmp_path) -> None:
+    """目录不存在时自动创建（首次部署的常见状态）。"""
+    from app.utils.upload import ensure_upload_dir
+
+    target = tmp_path / "a" / "b" / "uploads"
+    assert not target.exists()
+
+    result = ensure_upload_dir(target)
+
+    assert result.is_dir()
+    assert os.access(result, os.W_OK)
+
+
+def test_upload_returns_503_when_dir_unrecoverable(client: TestClient, db, monkeypatch, tmp_path) -> None:
+    """目录不可写 → 503 + SERVICE_UNAVAILABLE，而不是 500 + INTERNAL_ERROR。
+
+    这是本次线上故障的直接回归用例：改造前这里返回 500 + INTERNAL_ERROR，
+    用户只看到"服务器内部错误"，运维无法从错误码判断是权限问题。
+
+    不用 chmod 来构造场景：测试在 CI/容器里常以 root 运行，root 无视权限位，
+    用例会退化成"永远通过"。改为直接让 open() 抛 PermissionError，
+    精确复现故障那一行（`with temp.open("wb")`）。
+    """
+    target = tmp_path / "uploads"
+    target.mkdir()
+    monkeypatch.setattr(get_settings(), "upload_dir", target)
+
+    real_open = Path.open
+
+    def fake_open(self, *args, **kwargs):
+        if self.suffix == ".part":
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fake_open)
+
+    headers = admin_headers(client, db)
+    response = client.post(
+        "/api/admin/upload", files={"file": ("a.jpg", JPEG, "image/jpeg")}, headers=headers
+    )
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["code"] == "SERVICE_UNAVAILABLE"
+    assert body["code"] != "INTERNAL_ERROR"
+    # 不泄漏服务器路径
+    assert str(target) not in body["detail"]
+
+
+def test_ensure_upload_dir_creates_missing(client: TestClient, monkeypatch, tmp_path) -> None:
+    """目录不存在时自动创建（首次部署的常见状态）。"""
+    from app.utils.upload import ensure_upload_dir
+
+    target = tmp_path / "a" / "b" / "uploads"
+    assert not target.exists()
+
+    result = ensure_upload_dir(target)
+
+    assert result.is_dir()
+    assert os.access(result, os.W_OK)
