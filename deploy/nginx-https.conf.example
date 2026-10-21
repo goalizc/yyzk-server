@@ -26,6 +26,15 @@ server {
         root /var/www/certbot;
     }
 
+    # 容器健康检查走 HTTP：若这里 301 跳到 https，compose 的 healthcheck
+    # （wget http://127.0.0.1/health）会拿到 301 而判定 unhealthy，
+    # 整个栈卡在启动阶段。所以 /health 必须在 80 端口直接返回 200。
+    location = /health {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
     location / {
         return 301 https://$host$request_uri;
     }
@@ -46,6 +55,12 @@ server {
 
     client_max_body_size 21M;
 
+    # ---------- 上游动态解析（与 nginx.conf 同理，必须保留） ----------
+    # 容器重建后 IP 会变。若 proxy_pass 写死主机名，nginx 只在启动时解析一次，
+    # 重建后就会一直 502，直到手动重启 nginx。用变量写法 + resolver 才能自愈。
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    resolver_timeout 3s;
+
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
@@ -61,7 +76,8 @@ server {
 
     # 前端静态资源（SPA 回退在 frontend 容器的 nginx 内）
     location / {
-        proxy_pass http://frontend:80;
+        set $frontend_upstream frontend:80;
+        proxy_pass http://$frontend_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -72,7 +88,8 @@ server {
     # 未命中日志上报（限流）
     location = /api/query-logs {
         limit_req zone=querylog burst=5 nodelay;
-        proxy_pass http://backend:8000;
+        set $backend_upstream_qlog backend:8000;
+        proxy_pass http://$backend_upstream_qlog;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -82,7 +99,8 @@ server {
 
     # 后端 API
     location /api/ {
-        proxy_pass http://backend:8000;
+        set $backend_upstream backend:8000;
+        proxy_pass http://$backend_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
