@@ -180,19 +180,6 @@ def test_ensure_upload_dir_creates_missing(tmp_path) -> None:
     assert os.access(result, os.W_OK)
 
 
-def test_ensure_upload_dir_creates_missing(tmp_path) -> None:
-    """目录不存在时自动创建（首次部署的常见状态）。"""
-    from app.utils.upload import ensure_upload_dir
-
-    target = tmp_path / "a" / "b" / "uploads"
-    assert not target.exists()
-
-    result = ensure_upload_dir(target)
-
-    assert result.is_dir()
-    assert os.access(result, os.W_OK)
-
-
 def test_upload_returns_503_when_dir_unrecoverable(client: TestClient, db, monkeypatch, tmp_path) -> None:
     """目录不可写 → 503 + SERVICE_UNAVAILABLE，而不是 500 + INTERNAL_ERROR。
 
@@ -227,16 +214,3 @@ def test_upload_returns_503_when_dir_unrecoverable(client: TestClient, db, monke
     assert body["code"] != "INTERNAL_ERROR"
     # 不泄漏服务器路径
     assert str(target) not in body["detail"]
-
-
-def test_ensure_upload_dir_creates_missing(client: TestClient, monkeypatch, tmp_path) -> None:
-    """目录不存在时自动创建（首次部署的常见状态）。"""
-    from app.utils.upload import ensure_upload_dir
-
-    target = tmp_path / "a" / "b" / "uploads"
-    assert not target.exists()
-
-    result = ensure_upload_dir(target)
-
-    assert result.is_dir()
-    assert os.access(result, os.W_OK)

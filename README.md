@@ -35,7 +35,11 @@
 │   ├── check_env.sh           # 环境自检
 │   ├── pull_images.sh         # 镜像拉取（含镜像站回退）
 │   ├── verify_schema.mjs      # 无 PG 环境下校验 schema
-│   └── check_links.py         # 文档内路径引用检查
+│   ├── check_links.py         # 文档内路径引用检查
+│   ├── check_duplicate_tests.py  # 测试函数重名检查
+│   ├── load_test.py           # 性能压测（TC-70/71）
+│   ├── seed_pressure.py       # 压测数据准备
+│   └── pg_server.mjs          # 无原生 PG 时的 WASM 替代
 ├── requirements.txt
 ├── requirements-dev.txt
 └── package.json              # 仅供开发工具链使用（非前端工程）
@@ -77,6 +81,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 | 拉基础镜像 | `bash scripts/dev/pull_images.sh` |
 | 校验建表脚本 | `node scripts/dev/verify_schema.mjs` |
 | 校验文档链接 | `python scripts/dev/check_links.py` |
+| 检查测试重名 | `python scripts/dev/check_duplicate_tests.py` |
 | 后端测试 | `.venv/bin/pytest -q` |
 | 前端构建 | `cd frontend && npm run build` |
 
