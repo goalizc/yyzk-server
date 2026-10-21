@@ -49,24 +49,39 @@
 
 ## 快速开始
 
+### 生产部署：一条命令
+
 ```bash
-# 1. 环境自检（docker / compose / 端口 / .env）
-bash scripts/dev/check_env.sh --pull
-
-# 2. 起数据库（首次会自动执行 schema.sql）
-cd deploy && cp -n .env.example .env   # 已有 .env 则跳过
-mkdir -p data/pg data/uploads
-docker compose up -d db
-
-# 3. 初始化管理员（首次部署必做，幂等）
-docker compose run --rm init
-
-# 4. 起全栈（需先有 backend/ 与 frontend/）
-docker compose up -d
-curl -s http://localhost/health
+cd deploy && ./deploy.sh
 ```
 
-本地开发后端（不打包容器）：
+脚本幂等，重复执行安全。它会依次完成：环境检查 → 生成 `.env` 并随机化密钥 →
+建数据目录 → 构建镜像 → 修正上传目录属主 → 起服务等 healthy → 初始化管理员 →
+健康验证 → 注册每日清理 → 打印访问地址。
+
+**不要用 `sudo`**——需要 root 的唯一动作已在容器内完成。
+
+```bash
+./deploy.sh --check      # 体检：只查不改
+./deploy.sh --rebuild    # 改了代码后强制重建
+./deploy.sh --skip-cron  # 不注册定时清理
+```
+
+详细说明与手动部署兜底流程见 `docs/04-运维与运营/运维手册.md`。
+
+### 本地开发
+
+```bash
+# 环境自检（docker / compose / 端口）
+bash scripts/dev/check_env.sh --pull
+
+# 起数据库（首次自动执行 schema.sql）
+cd deploy && cp -n .env.example .env
+mkdir -p data/pg data/uploads
+docker compose up -d db
+```
+
+后端热重载（不打包容器）：
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
@@ -79,6 +94,8 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 | 目的 | 命令 |
 |---|---|
+| 一键部署 | `cd deploy && ./deploy.sh` |
+| 部署体检 | `cd deploy && ./deploy.sh --check` |
 | 环境自检 | `bash scripts/dev/check_env.sh --pull` |
 | 拉基础镜像 | `bash scripts/dev/pull_images.sh` |
 | 校验建表脚本 | `node scripts/dev/verify_schema.mjs` |
@@ -86,7 +103,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 | 检查测试重名 | `python scripts/dev/check_duplicate_tests.py` |
 | 后端测试 | `.venv/bin/pytest -q` |
 | 前端构建 | `cd frontend && npm run build` |
-| 清理上传残留 | `cd deploy && ./scripts/cleanup-uploads.sh`（预演） |
+| 清理上传残留 | `cd deploy && ./scripts/cleanup-uploads.sh`（预演，加 `--apply` 执行） |
 
 ## 文档入口
 
