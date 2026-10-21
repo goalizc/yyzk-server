@@ -113,7 +113,6 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import TicketDrawer from './TicketDrawer.vue'
 import { adminListTickets } from '../../../api/admin'
 import ErrorState from '../../../components/ErrorState.vue'

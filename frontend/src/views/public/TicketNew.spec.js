@@ -11,7 +11,8 @@ vi.mock('../../api/ticket', () => ({
 
 import { submitTicket } from '../../api/ticket'
 
-function makeRouter(query = {}) {
+// query 不在这里拼：调用方用 router.push 带上，避免两处各算一次
+function makeRouter() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [

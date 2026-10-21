@@ -94,7 +94,9 @@
               size="small"
               type="warning"
               class="tag-gap"
-            >需专业</el-tag>
+            >
+              需专业
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="更新时间" width="120">

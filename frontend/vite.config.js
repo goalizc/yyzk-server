@@ -9,7 +9,12 @@ export default defineConfig({
     vue(),
     // 按需引入：模板里的 el-* 组件与 JS 里的 ElMessage 等只打进用到的部分。
     // 全量 CSS 仍在 main.js 引入（gzip 后很小），样式不必逐个注入。
-    AutoImport({ resolvers: [ElementPlusResolver({ importStyle: false })] }),
+    // dts 让 AutoImport 把注入的全局符号写进 auto-imports.d.ts：
+    // ESLint 的 globals 读这份文件，避免 lint 靠手写白名单猜"哪些是自动注入的"
+    AutoImport({
+      resolvers: [ElementPlusResolver({ importStyle: false })],
+      dts: 'auto-imports.d.ts'
+    }),
     Components({ resolvers: [ElementPlusResolver({ importStyle: false })] })
   ],
   server: {

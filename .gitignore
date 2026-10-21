@@ -17,9 +17,17 @@ htmlcov/
 
 # 构建产物
 frontend/dist/
+frontend/dist-verify/
 dist/
 # vite 加载 .js 配置时落盘的临时文件（异常退出会残留）
 frontend/vite.config.js.timestamp-*.mjs
+
+# 测试产物
+frontend/test-results/
+frontend/playwright-report/
+frontend/.playwright/
+# 注：auto-imports.d.ts 不忽略——eslint.config.js 读它来识别自动注入的全局符号，
+#     入库后新 clone 不必先跑一次 dev/build 才能 lint
 
 # 运行期数据（部署目录内生成）
 deploy/data/
