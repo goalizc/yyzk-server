@@ -16,13 +16,17 @@ export default defineConfig({
     port: 5173,
     // 本地开发直连后端，生产由 Nginx 同源反代（不需要 CORS）
     proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true }
+      '/api': { target: 'http://localhost:8000', changeOrigin: true },
+      // 上传返回的是站内路径 /uploads/xxx，生产由 Nginx alias 直出；
+      // 开发环境不代理的话会落到 SPA 回退返回 index.html，图片和附件全部裂开
+      '/uploads': { target: 'http://localhost:8000', changeOrigin: true }
     }
   },
   preview: {
     port: 4173,
     proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true }
+      '/api': { target: 'http://localhost:8000', changeOrigin: true },
+      '/uploads': { target: 'http://localhost:8000', changeOrigin: true }
     }
   },
   build: {
