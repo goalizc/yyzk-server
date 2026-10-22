@@ -47,49 +47,63 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <h4 class="block-title">处理</h4>
-        <el-form label-width="72px" class="edit-form">
-          <el-form-item label="状态">
-            <!-- 只列出合法流转目标（契约 §5）；closed 为终态，没有可选值 -->
-            <el-select
-              v-model="form.status"
-              placeholder="不修改"
-              clearable
-              :disabled="!nextStatuses.length"
-              class="wd"
-            >
-              <el-option
-                v-for="value in nextStatuses"
-                :key="value"
-                :label="ticketStatusLabel(value)"
-                :value="value"
+        <!-- 只有可写角色才渲染处理表单；只读审计仍能看到上面的详情和下面的流转历史 -->
+        <template v-if="canWrite">
+          <h4 class="block-title">处理</h4>
+          <el-form label-width="72px" class="edit-form">
+            <el-form-item label="状态">
+              <!-- 只列出合法流转目标（契约 §5）；closed 为终态，没有可选值 -->
+              <el-select
+                v-model="form.status"
+                placeholder="不修改"
+                clearable
+                :disabled="!nextStatuses.length"
+                class="wd"
+              >
+                <el-option
+                  v-for="value in nextStatuses"
+                  :key="value"
+                  :label="ticketStatusLabel(value)"
+                  :value="value"
+                />
+              </el-select>
+              <span v-if="!nextStatuses.length" class="hint">已关闭，不可再流转</span>
+            </el-form-item>
+            <!-- 处理人放在"状态"之后：E2E 依赖 .el-select 第一个元素选状态 -->
+            <el-form-item v-if="canAssign" label="处理人">
+              <el-select v-model="form.assignee_id" clearable placeholder="不修改" class="wd">
+                <el-option
+                  v-for="user in assignable"
+                  :key="user.id"
+                  :label="user.real_name"
+                  :value="user.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="上门">
+              <el-radio-group v-model="form.need_on_site">
+                <el-radio :value="true">需要</el-radio>
+                <el-radio :value="false">不需要</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="备注" :error="remarkError">
+              <el-input
+                v-model="form.remark"
+                type="textarea"
+                :rows="3"
+                maxlength="2000"
+                show-word-limit
+                :placeholder="remarkPlaceholder"
               />
-            </el-select>
-            <span v-if="!nextStatuses.length" class="hint">已关闭，不可再流转</span>
-          </el-form-item>
-          <el-form-item label="上门">
-            <el-radio-group v-model="form.need_on_site">
-              <el-radio :value="true">需要</el-radio>
-              <el-radio :value="false">不需要</el-radio>
-            </el-radio-group>
-          </el-form-item>
-          <el-form-item label="备注" :error="remarkError">
-            <el-input
-              v-model="form.remark"
-              type="textarea"
-              :rows="3"
-              maxlength="2000"
-              show-word-limit
-              :placeholder="remarkPlaceholder"
-            />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
-            <!-- 契约 §5 处理人归属：只有"未传并处理人且本单当前无处理人"才认领；
-                 已有人处理时不传则保持原处理人，不能写成"首次处理自动认领" -->
-            <span class="hint">{{ assigneeHint }}</span>
-          </el-form-item>
-        </el-form>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
+              <!-- 契约 §5 处理人归属：只有"未传并处理人且本单当前无处理人"才认领；
+                   已有人处理时不传则保持原处理人，不能写成"首次处理自动认领" -->
+              <span class="hint">{{ assigneeHint }}</span>
+            </el-form-item>
+          </el-form>
+        </template>
 
         <h4 class="block-title">流转历史</h4>
         <el-timeline v-if="detail.history?.length">
@@ -119,7 +133,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { adminGetTicket, adminUpdateTicket } from '../../../api/admin'
+import { adminGetTicket, adminListAssignable, adminUpdateTicket } from '../../../api/admin'
 import {
   errorCode,
   errorText,
@@ -128,6 +142,7 @@ import {
   ticketStatusType
 } from '../../../utils/admin'
 import { formatDateTime } from '../../../utils/format'
+import { hasPermission } from '../../../utils/permissions'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -140,7 +155,24 @@ const loading = ref(false)
 const saving = ref(false)
 const remarkError = ref('')
 
-const form = reactive({ status: null, remark: '', need_on_site: false })
+// 处理表单只对可写角色渲染；改派入口再额外要求 ticket:assign
+const canWrite = hasPermission('ticket:write')
+const canAssign = hasPermission('ticket:assign')
+const assignable = ref([])
+
+const form = reactive({ status: null, remark: '', need_on_site: false, assignee_id: null })
+
+async function loadAssignable(productId) {
+  if (!canAssign || !productId) {
+    assignable.value = []
+    return
+  }
+  try {
+    assignable.value = await adminListAssignable({ product_id: productId })
+  } catch {
+    assignable.value = []
+  }
+}
 
 const nextStatuses = computed(() => {
   if (!detail.value) return []
@@ -164,6 +196,7 @@ function resetForm(data) {
   form.status = null
   form.remark = ''
   form.need_on_site = Boolean(data?.need_on_site)
+  form.assignee_id = null
   remarkError.value = ''
 }
 
@@ -178,6 +211,8 @@ async function load() {
     const data = await adminGetTicket(props.ticketId)
     detail.value = data
     resetForm(data)
+    // 候选人随产品线变化，拿到详情后再请求；无权限或产品缺失时清空
+    await loadAssignable(data.product?.id || null)
   } catch (e) {
     ElMessage.error(errorText(e, '工单详情加载失败'))
   } finally {
@@ -198,6 +233,10 @@ async function onSave() {
   if (statusChanged) payload.status = form.status
   if (form.remark.trim()) payload.remark = form.remark.trim()
   if (form.need_on_site !== detail.value.need_on_site) payload.need_on_site = form.need_on_site
+  // 只有主管（ticket:assign）且确实选了与当前不同的处理人才传，未改则保持后端原归属
+  if (canAssign && form.assignee_id && form.assignee_id !== detail.value.assignee_id) {
+    payload.assignee_id = form.assignee_id
+  }
 
   if (!Object.keys(payload).length) {
     ElMessage.info('没有需要保存的修改')

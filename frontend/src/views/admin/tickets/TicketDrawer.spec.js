@@ -3,13 +3,15 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import TicketDrawer from './TicketDrawer.vue'
+import { setPermissions } from '../../../utils/permissions'
 
 vi.mock('../../../api/admin', () => ({
   adminGetTicket: vi.fn(),
-  adminUpdateTicket: vi.fn()
+  adminUpdateTicket: vi.fn(),
+  adminListAssignable: vi.fn()
 }))
 
-import { adminGetTicket, adminUpdateTicket } from '../../../api/admin'
+import { adminGetTicket, adminUpdateTicket, adminListAssignable } from '../../../api/admin'
 
 function makeDetail(overrides = {}) {
   return {
@@ -56,8 +58,11 @@ const mounted = []
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // 处理表单由 ticket:write 门禁控制，默认给可写权限，只有认领用例会额外加 ticket:assign
+  setPermissions(['ticket:read', 'ticket:write'])
   adminGetTicket.mockResolvedValue(makeDetail())
   adminUpdateTicket.mockResolvedValue(makeDetail())
+  adminListAssignable.mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -237,5 +242,15 @@ describe('TicketDrawer', () => {
     await state.onSave()
     expect(state.remarkError).toBe('变更状态必须填写备注')
     expect(state.remarkPlaceholder).not.toBe(state.remarkError)
+  })
+
+  it('主管可见处理人下拉，并按产品线请求候选人', async () => {
+    setPermissions(['ticket:read', 'ticket:write', 'ticket:assign'])
+    adminListAssignable.mockResolvedValue([{ id: 9, real_name: '王伟' }])
+
+    const wrapper = await mountDrawer(1)
+
+    expect(wrapper.text()).toContain('处理人')
+    expect(adminListAssignable).toHaveBeenCalledWith({ product_id: 1 })
   })
 })
