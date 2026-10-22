@@ -263,7 +263,13 @@ def update_user(
     for field, value in data.items():
         setattr(user, field, value)
     user.updated_at = datetime.now(timezone.utc)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise BusinessError(
+            "USERNAME_DUPLICATED", f"用户名 {data.get('username')} 已存在", 409
+        ) from exc
     db.refresh(user)
     user = db.scalar(
         select(User)

@@ -146,6 +146,24 @@ describe('UserList', () => {
     confirm.mockRestore()
   })
 
+  it('编辑用户时可修改账号并随保存提交', async () => {
+    const wrapper = mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    await flushPromises()
+
+    const state = wrapper.vm.$.setupState
+    state.openEdit(state.rows[0])
+    await flushPromises()
+    state.form.username = '  wangwei2  '
+
+    await state.onSubmit()
+    await flushPromises()
+
+    expect(adminUpdateUser).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ username: 'wangwei2' })
+    )
+  })
+
   it('角色变更保存前二次确认，取消则不提交', async () => {
     const wrapper = mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
     await flushPromises()

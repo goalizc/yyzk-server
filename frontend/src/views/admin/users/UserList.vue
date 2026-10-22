@@ -95,7 +95,8 @@
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
         <el-form-item label="账号" prop="username">
-          <el-input v-model="form.username" maxlength="50" :disabled="Boolean(editingId)" />
+          <el-input v-model="form.username" maxlength="50" />
+          <div v-if="editingId" class="hint">改名后请使用新账号登录</div>
         </el-form-item>
         <el-form-item label="姓名" prop="real_name">
           <el-input v-model="form.real_name" maxlength="50" />
@@ -417,6 +418,7 @@ async function onSubmit() {
   try {
     if (editingId.value) {
       await adminUpdateUser(editingId.value, {
+        username: form.username.trim(),
         real_name: form.real_name.trim(),
         role: form.role
       })
@@ -546,6 +548,7 @@ onBeforeUnmount(() => clearTimeout(keywordTimer))
 .status { width: 120px; }
 .name { font-weight: 600; }
 .sub { color: #909399; font-size: 12px; }
+.hint { color: #909399; font-size: 12px; line-height: 1.6; }
 .tag { margin-right: 4px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .assignments { display: flex; flex-direction: column; gap: 8px; }

@@ -881,11 +881,16 @@ Error 404：`line_id` 不存在
 
 ### PUT /api/admin/users/{id}
 
-**权限 `user:write`**。修改姓名 / 角色 / 启用状态（用户名不可改）。
+**权限 `user:write`**。修改用户名 / 姓名 / 角色 / 启用状态。
 
 ```json
-{ "real_name": "李工", "role": "supervisor", "is_active": true }
+{ "username": "li2", "real_name": "李工", "role": "supervisor", "is_active": true }
 ```
+
+字段规则：
+- `username`：去首尾空格并转小写，长度 ≤50，不能为空；与现有账号**大小写不敏感唯一**（数据库 `LOWER(username)` 唯一索引兜底），冲突返回 409 `USERNAME_DUPLICATED`
+- 改名不需要先停用；工单、知识库等业务表按用户 `id` 引用，历史数据不受影响
+- 允许管理员修改自己的用户名：鉴权按用户 id，token 中的用户名不参与校验，改名后无需重新登录
 
 硬约束：
 - 不能停用自己 → 400 `SELF_DISABLE`
@@ -1133,7 +1138,7 @@ Response 200:
 | 404 | `NOT_FOUND` | 资源不存在 | 空态页 |
 | 405 | `METHOD_NOT_ALLOWED` | 接口不支持该请求方法（客户端调用错误） | 开发期问题，提示刷新并检查调用方法 |
 | 409 | `MODEL_DUPLICATED` | 产品型号重复（POST 与 PUT 均可能） | 表单内联报错 |
-| 409 | `USERNAME_DUPLICATED` | 用户名重复 | 用户名输入框内联报错 |
+| 409 | `USERNAME_DUPLICATED` | 用户名重复（POST 与 PUT 均可能，大小写不敏感） | 用户名输入框内联报错 |
 | 409 | `LINE_NAME_DUPLICATED` | 产品线名称重复 | 名称输入框内联报错 |
 | 409 | `DELETE_BLOCKED` | 存在关联数据，禁止删除 | 展示 `detail` 中的引用统计 |
 | 409 | `UPLOAD_IN_USE` | 上传文件仍被故障方案引用，不可删除 | **静默忽略**（文件留给孤儿清理回收） |

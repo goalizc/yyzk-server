@@ -79,6 +79,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    username: str | None = Field(default=None, max_length=50)
     real_name: str | None = Field(default=None, max_length=50)
     role: str | None = None
     is_active: bool | None = None
@@ -91,6 +92,16 @@ class UserUpdate(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("姓名不能为空")
+        return value
+
+    @field_validator("username")
+    @classmethod
+    def _username_not_blank_lower(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = value.strip().lower()
+        if not value:
+            raise ValueError("不能为空")
         return value
 
     @field_validator("role")

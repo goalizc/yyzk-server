@@ -53,6 +53,92 @@ def test_duplicate_username(client, db):
     assert response.json()["code"] == "USERNAME_DUPLICATED"
 
 
+def test_update_username_normalized_and_usable_for_login(client, db):
+    headers = _headers(client, db)
+    created = client.post(
+        "/api/admin/users",
+        json={"username": "wangwei", "real_name": "王伟", "password": "Init@12345",
+              "role": "agent", "product_lines": []},
+        headers=headers,
+    ).json()
+
+    updated = client.put(
+        f"/api/admin/users/{created['id']}",
+        json={"username": "WangWei2"},
+        headers=headers,
+    )
+
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["username"] == "wangwei2"
+    assert login(client, "wangwei2", "Init@12345")["user"]["username"] == "wangwei2"
+    old = client.post(
+        "/api/auth/login", json={"username": "wangwei", "password": "Init@12345"}
+    )
+    assert old.status_code == 401
+
+
+def test_update_username_conflict_keeps_original(client, db):
+    headers = _headers(client, db)
+    first = client.post(
+        "/api/admin/users",
+        json={"username": "a", "real_name": "甲", "password": "Init@12345",
+              "role": "agent", "product_lines": []},
+        headers=headers,
+    ).json()
+    second = client.post(
+        "/api/admin/users",
+        json={"username": "b", "real_name": "乙", "password": "Init@12345",
+              "role": "agent", "product_lines": []},
+        headers=headers,
+    ).json()
+    assert first["username"] == "a"
+
+    response = client.put(
+        f"/api/admin/users/{second['id']}",
+        json={"username": "A"},
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "USERNAME_DUPLICATED"
+    users = {item["id"]: item for item in client.get("/api/admin/users", headers=headers).json()["items"]}
+    assert users[second["id"]]["username"] == "b"
+
+
+def test_update_username_blank_rejected(client, db):
+    headers = _headers(client, db)
+    created = client.post(
+        "/api/admin/users",
+        json={"username": "wangwei", "real_name": "王伟", "password": "Init@12345",
+              "role": "agent", "product_lines": []},
+        headers=headers,
+    ).json()
+
+    response = client.put(
+        f"/api/admin/users/{created['id']}",
+        json={"username": "   "},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_admin_can_rename_self_and_token_stays_valid(client, db):
+    make_user(db, username="boss")
+    headers = auth_headers(login(client, "boss")["access_token"])
+    me = client.get("/api/auth/me", headers=headers).json()["user"]
+
+    response = client.put(
+        f"/api/admin/users/{me['id']}",
+        json={"username": "boss2"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["username"] == "boss2"
+    assert client.get("/api/auth/me", headers=headers).status_code == 200
+
+
 def test_username_is_case_insensitive(client, db):
     headers = _headers(client, db)
 
