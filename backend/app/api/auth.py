@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
@@ -42,7 +42,9 @@ router = APIRouter()
     },
 )
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
-    user = db.scalar(select(User).where(User.username == payload.username))
+    user = db.scalar(
+        select(User).where(func.lower(User.username) == payload.username.strip().lower())
+    )
 
     if user is None:
         # 用户名不存在也走一次 bcrypt，避免用响应时间探测账号是否存在
@@ -55,7 +57,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
     if not user.is_active:
         raise BusinessError("AUTH_USER_DISABLED", "账号已停用", 403)
 
-    token, expires_at = create_access_token(user.id, user.username)
+    token, expires_at = create_access_token(user.id, user.username, user.token_version)
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
 
@@ -101,8 +103,9 @@ def change_password(
         raise BusinessError("PASSWORD_SAME", "新密码不能与原密码相同", 400)
 
     user.password_hash = hash_password(payload.new_password)
+    user.token_version += 1
     user.updated_at = datetime.now(timezone.utc)
     db.commit()
 
-    # 契约：改密后不强制下线，当前 token 继续有效至过期
+    # 改密即吊销此前签发的所有 token，需要重新登录
     return PasswordChangeResponse()

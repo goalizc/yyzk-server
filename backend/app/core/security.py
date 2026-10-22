@@ -42,7 +42,9 @@ def waste_time_like_verify() -> None:
     verify_password("timing-equalizer", _dummy_hash())
 
 
-def create_access_token(user_id: int, username: str) -> tuple[str, datetime]:
+def create_access_token(
+    user_id: int, username: str, token_version: int
+) -> tuple[str, datetime]:
     """返回 (token, 过期时间)；过期时间按应用时区输出。"""
     settings = get_settings()
     now = datetime.now(timezone.utc)
@@ -50,6 +52,7 @@ def create_access_token(user_id: int, username: str) -> tuple[str, datetime]:
     payload = {
         "sub": str(user_id),
         "username": username,
+        "ver": token_version,
         "iat": int(now.timestamp()),
         "exp": int(expires_at.timestamp()),
     }

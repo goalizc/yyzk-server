@@ -27,7 +27,9 @@ def get_current_user(
     payload = decode_access_token(credentials.credentials)
     try:
         user_id = int(payload.get("sub", ""))
-    except (TypeError, ValueError) as exc:
+        # 旧 token 不带 ver，一律视为过期，部署后需要重新登录
+        token_version = int(payload["ver"])
+    except (KeyError, TypeError, ValueError) as exc:
         raise BusinessError("AUTH_TOKEN_EXPIRED", "登录已过期，请重新登录", 401) from exc
 
     user = db.get(User, user_id)
@@ -35,4 +37,6 @@ def get_current_user(
         raise BusinessError("AUTH_TOKEN_EXPIRED", "登录已过期，请重新登录", 401)
     if not user.is_active:
         raise BusinessError("AUTH_USER_DISABLED", "账号已停用", 403)
+    if token_version != user.token_version:
+        raise BusinessError("AUTH_TOKEN_EXPIRED", "登录已过期，请重新登录", 401)
     return user

@@ -132,7 +132,7 @@ def test_password_change_too_short(client: TestClient, db) -> None:
     assert response.json() == {"detail": "新密码至少 8 位", "code": "VALIDATION_ERROR"}
 
 
-def test_password_change_success_and_token_still_valid(client: TestClient, db) -> None:
+def test_password_change_success_revokes_old_token(client: TestClient, db) -> None:
     make_user(db)
     token = login(client)["access_token"]
 
@@ -145,18 +145,29 @@ def test_password_change_success_and_token_still_valid(client: TestClient, db) -
     assert response.status_code == 200
     assert response.json() == {"success": True, "message": "密码已修改"}
 
+    # 改密后旧 token 立即失效
+    expired = client.get("/api/auth/me", headers=auth_headers(token))
+    assert expired.status_code == 401
+    assert expired.json()["code"] == "AUTH_TOKEN_EXPIRED"
+
     # 新密码可登录，旧密码失效
     assert client.post("/api/auth/login", json={"username": "admin", "password": "NewPwd@2026"}).status_code == 200
     assert client.post("/api/auth/login", json={"username": "admin", "password": DEFAULT_PASSWORD}).status_code == 401
 
-    # 契约：改密后不强制下线，旧 token 继续有效（用错的原密码换取 400 证明鉴权通过）
-    still_valid = client.put(
-        "/api/auth/password",
-        json={"old_password": DEFAULT_PASSWORD, "new_password": "Another@2026"},
-        headers=auth_headers(token),
+    # 重新登录拿到的新 token 正常可用
+    new_token = login(client, password="NewPwd@2026")["access_token"]
+    assert client.get("/api/auth/me", headers=auth_headers(new_token)).status_code == 200
+
+
+def test_login_username_is_case_insensitive(client: TestClient, db) -> None:
+    make_user(db, username="admin")
+
+    response = client.post(
+        "/api/auth/login", json={"username": "ADMIN", "password": DEFAULT_PASSWORD}
     )
-    assert still_valid.status_code == 400
-    assert still_valid.json()["code"] == "PASSWORD_INVALID"
+
+    assert response.status_code == 200
+    assert response.json()["user"]["username"] == "admin"
 
 
 def test_password_stored_as_bcrypt_hash(client: TestClient, db) -> None:

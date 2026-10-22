@@ -16,6 +16,7 @@ from app.core.permissions import (
     TICKET_ASSIGN,
     USER_READ,
     USER_WRITE,
+    _as_utc,
     effective_permissions,
     grantable_permissions,
     require,
@@ -55,13 +56,14 @@ def _gen_password(length: int = 12) -> str:
     return "".join(secrets.choice(_PASSWORD_ALPHABET) for _ in range(length))
 
 
-def _to_item(user: User) -> UserListItem:
+def _to_item(user: User, active_grant_count: int = 0) -> UserListItem:
     return UserListItem(
         id=user.id,
         username=user.username,
         real_name=user.real_name,
         role=user.role,
         is_active=user.is_active,
+        active_grant_count=active_grant_count,
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         product_lines=[
@@ -75,15 +77,36 @@ def _to_item(user: User) -> UserListItem:
     )
 
 
+def _active_grant_counts(db: Session, user_ids: list[int]) -> dict[int, int]:
+    """按 Python 侧判断过期，避免 SQLite 单测的时间比较时区问题。"""
+    if not user_ids:
+        return {}
+    now = datetime.now(timezone.utc)
+    rows = db.execute(
+        select(UserPermissionGrant.user_id, UserPermissionGrant.expires_at).where(
+            UserPermissionGrant.user_id.in_(user_ids),
+            UserPermissionGrant.revoked_at.is_(None),
+        )
+    ).all()
+    counts: dict[int, int] = {}
+    for user_id, expires_at in rows:
+        if _as_utc(expires_at) > now:
+            counts[user_id] = counts.get(user_id, 0) + 1
+    return counts
+
+
 def _ensure_lines_exist(
     db: Session, assignments: list[ProductLineAssignment]
 ) -> dict[int, ProductLine]:
-    ids = {item.line_id for item in assignments}
-    if not ids:
+    ids = [item.line_id for item in assignments]
+    if len(ids) != len(set(ids)):
+        raise BusinessError("LINE_DUPLICATED", "同一产品线不能重复授权", 400)
+    unique_ids = set(ids)
+    if not unique_ids:
         return {}
-    rows = db.scalars(select(ProductLine).where(ProductLine.id.in_(ids))).all()
+    rows = db.scalars(select(ProductLine).where(ProductLine.id.in_(unique_ids))).all()
     found = {line.id: line for line in rows}
-    missing = ids - found.keys()
+    missing = unique_ids - found.keys()
     if missing:
         raise BusinessError("NOT_FOUND", f"产品线不存在：{sorted(missing)}", 404)
     return found
@@ -162,11 +185,13 @@ def list_users(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
+    users = list(db.scalars(stmt))
+    grant_counts = _active_grant_counts(db, [user.id for user in users])
     return UserPage(
         total=total,
         page=page,
         page_size=page_size,
-        items=[_to_item(user) for user in db.scalars(stmt)],
+        items=[_to_item(user, grant_counts.get(user.id, 0)) for user in users],
     )
 
 
@@ -245,7 +270,7 @@ def update_user(
         .options(selectinload(User.product_lines).selectinload(UserProductLine.line))
         .where(User.id == user.id)
     )
-    return _to_item(user)
+    return _to_item(user, _active_grant_counts(db, [user.id]).get(user.id, 0))
 
 
 @router.post(
@@ -264,6 +289,7 @@ def reset_password(
 
     password = _gen_password()
     user.password_hash = hash_password(password)
+    user.token_version += 1
     user.updated_at = datetime.now(timezone.utc)
     db.commit()
     return ResetPasswordResponse(password=password)
@@ -386,7 +412,7 @@ def replace_product_lines(
         .options(selectinload(User.product_lines).selectinload(UserProductLine.line))
         .where(User.id == user_id)
     )
-    return _to_item(user)
+    return _to_item(user, _active_grant_counts(db, [user.id]).get(user.id, 0))
 
 
 @router.get(

@@ -49,9 +49,17 @@ class UserCreate(BaseModel):
     role: str = "agent"
     product_lines: list[ProductLineAssignment] = Field(default_factory=list)
 
-    @field_validator("username", "real_name")
+    @field_validator("username")
     @classmethod
-    def _not_blank(cls, value: str) -> str:
+    def _username_not_blank(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not value:
+            raise ValueError("不能为空")
+        return value
+
+    @field_validator("real_name")
+    @classmethod
+    def _real_name_not_blank(cls, value: str) -> str:
         value = value.strip()
         if not value:
             raise ValueError("不能为空")
@@ -99,6 +107,7 @@ class UserListItem(BaseModel):
     real_name: str
     role: str
     is_active: bool
+    active_grant_count: int = 0
     last_login_at: AppDateTime | None = None
     created_at: AppDateTime
     product_lines: list[ProductLineBrief] = Field(default_factory=list)

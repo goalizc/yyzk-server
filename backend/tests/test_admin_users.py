@@ -1,6 +1,8 @@
 """用户管理：列表、新建、修改与重置密码。"""
 
-from tests.conftest import auth_headers, login, make_user
+from datetime import datetime, timedelta, timezone
+
+from tests.conftest import auth_headers, login, make_line, make_user
 
 
 def _headers(client, db, role="super_admin"):
@@ -51,6 +53,48 @@ def test_duplicate_username(client, db):
     assert response.json()["code"] == "USERNAME_DUPLICATED"
 
 
+def test_username_is_case_insensitive(client, db):
+    headers = _headers(client, db)
+
+    created = client.post(
+        "/api/admin/users",
+        json={"username": "WangWei", "real_name": "王伟", "password": "Init@12345",
+              "role": "agent", "product_lines": []},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["username"] == "wangwei"
+
+    duplicated = client.post(
+        "/api/admin/users",
+        json={"username": "wangwei", "real_name": "王伟", "password": "Init@12345",
+              "role": "agent", "product_lines": []},
+        headers=headers,
+    )
+    assert duplicated.status_code == 409
+    assert duplicated.json()["code"] == "USERNAME_DUPLICATED"
+
+
+def test_duplicate_product_line_rejected(client, db):
+    headers = _headers(client, db)
+    line = make_line(db)
+
+    response = client.post(
+        "/api/admin/users",
+        json={
+            "username": "wangwei",
+            "real_name": "王伟",
+            "password": "Init@12345",
+            "role": "agent",
+            "product_lines": [{"line_id": line.id}, {"line_id": line.id}],
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "LINE_DUPLICATED"
+
+
 def test_cannot_disable_or_demote_self(client, db):
     make_user(db, username="boss")
     headers = auth_headers(login(client, "boss")["access_token"])
@@ -91,6 +135,56 @@ def test_reset_password_returns_once_and_works(client, db):
 
     assert len(body["password"]) == 12
     assert login(client, "wangwei", body["password"])["user"]["username"] == "wangwei"
+
+
+def test_reset_password_revokes_old_token(client, db):
+    headers = _headers(client, db)
+    created = client.post(
+        "/api/admin/users",
+        json={"username": "wangwei", "real_name": "王伟", "password": "Init@12345",
+              "role": "agent", "product_lines": []},
+        headers=headers,
+    ).json()
+    old_token = login(client, "wangwei", "Init@12345")["access_token"]
+
+    body = client.post(
+        f"/api/admin/users/{created['id']}/reset-password", headers=headers
+    ).json()
+
+    expired = client.get("/api/auth/me", headers=auth_headers(old_token))
+    assert expired.status_code == 401
+    assert expired.json()["code"] == "AUTH_TOKEN_EXPIRED"
+
+    new_token = login(client, "wangwei", body["password"])["access_token"]
+    assert client.get("/api/auth/me", headers=auth_headers(new_token)).status_code == 200
+
+
+def test_list_users_includes_active_grant_count(client, db):
+    headers = _headers(client, db)
+    created = client.post(
+        "/api/admin/users",
+        json={"username": "wangwei", "real_name": "王伟", "password": "Init@12345",
+              "role": "agent", "product_lines": []},
+        headers=headers,
+    ).json()
+    assert created["active_grant_count"] == 0
+
+    expires = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    grant = client.post(
+        f"/api/admin/users/{created['id']}/grants",
+        json={"permission": "stats:read", "expires_at": expires, "reason": "临时看板"},
+        headers=headers,
+    ).json()
+
+    listed = client.get("/api/admin/users", headers=headers).json()
+    item = next(row for row in listed["items"] if row["id"] == created["id"])
+    assert item["active_grant_count"] == 1
+
+    client.delete(f"/api/admin/users/{created['id']}/grants/{grant['id']}", headers=headers)
+
+    listed = client.get("/api/admin/users", headers=headers).json()
+    item = next(row for row in listed["items"] if row["id"] == created["id"])
+    assert item["active_grant_count"] == 0
 
 
 def test_auditor_cannot_create_user(client, db):

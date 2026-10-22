@@ -45,10 +45,12 @@ CREATE TABLE users (
     role          VARCHAR(20) NOT NULL DEFAULT 'agent'
                   CHECK (role IN ('super_admin', 'supervisor', 'agent', 'auditor')),
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    token_version INT NOT NULL DEFAULT 0,
     last_login_at TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE UNIQUE INDEX idx_users_username_lower ON users (LOWER(username));
 -- 说明：账号可界面维护，init_admin.py 与运维 SQL 保留为兜底入口；
 --       「修改自己密码」走 API 完成。
 
@@ -262,3 +264,4 @@ LEFT JOIN parts pt ON f.part_id = pt.id
 ORDER BY f.view_count DESC;
 
 INSERT INTO schema_migrations (version) VALUES ('001_user_permissions');
+INSERT INTO schema_migrations (version) VALUES ('002_token_version');

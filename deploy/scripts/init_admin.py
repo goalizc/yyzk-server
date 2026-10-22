@@ -68,7 +68,7 @@ def cmd_init(args) -> int:
     if not database_url:
         return 2
 
-    username = os.getenv("ADMIN_USERNAME", "admin")
+    username = os.getenv("ADMIN_USERNAME", "admin").strip().lower()
     password = os.getenv("ADMIN_INIT_PASSWORD")
     real_name = os.getenv("ADMIN_REAL_NAME", "系统管理员")
 
