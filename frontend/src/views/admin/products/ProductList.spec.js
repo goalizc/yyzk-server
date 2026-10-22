@@ -3,9 +3,11 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import ProductList from './ProductList.vue'
+import { setPermissions } from '../../../utils/permissions'
 
 vi.mock('../../../api/admin', () => ({
   adminListProducts: vi.fn(),
+  adminListProductLines: vi.fn(),
   adminCreateProduct: vi.fn(),
   adminUpdateProduct: vi.fn(),
   adminDeleteProduct: vi.fn()
@@ -14,6 +16,7 @@ vi.mock('../../../api/admin', () => ({
 import {
   adminCreateProduct,
   adminDeleteProduct,
+  adminListProductLines,
   adminListProducts,
   adminUpdateProduct
 } from '../../../api/admin'
@@ -23,7 +26,8 @@ const ROWS = [
     id: 1,
     name: '扫地机器人',
     model: 'X1',
-    category: '扫地机',
+    line_id: 1,
+    line_name: '扫地机',
     description: '',
     is_active: true,
     sort_order: 0,
@@ -35,7 +39,8 @@ const ROWS = [
     id: 2,
     name: '净化器',
     model: 'A2',
-    category: '净化器',
+    line_id: 1,
+    line_name: '扫地机',
     description: '',
     is_active: true,
     sort_order: 1,
@@ -60,7 +65,9 @@ async function mountList() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  setPermissions(['product:read', 'product:write', 'product_line:read'])
   adminListProducts.mockResolvedValue(page())
+  adminListProductLines.mockResolvedValue({ items: [{ id: 1, name: '扫地机' }] })
   adminCreateProduct.mockResolvedValue({})
   adminUpdateProduct.mockResolvedValue({})
   adminDeleteProduct.mockResolvedValue({ success: true })
@@ -115,13 +122,14 @@ describe('ProductList', () => {
     await nameItem.find('input').setValue('新产品')
     const modelItem = items.find((el) => el.text().includes('型号'))
     await modelItem.find('input').setValue('X1')
+    wrapper.vm.$.setupState.form.line_id = 1
 
     const saveBtn = wrapper.findAll('.el-dialog button').find((b) => b.text().includes('保存'))
     await saveBtn.trigger('click')
     await flushPromises()
 
     expect(adminCreateProduct).toHaveBeenCalledWith(
-      expect.objectContaining({ name: '新产品', model: 'X1' })
+      expect.objectContaining({ name: '新产品', model: 'X1', line_id: 1 })
     )
     // happy-dom 下 el-form-item 的报错节点不会渲染（error prop 与 validateMessage 都一样），
     // 所以断言状态：文案落在 modelError、弹窗不关闭
@@ -182,5 +190,20 @@ describe('ProductList', () => {
     expect(adminUpdateProduct).toHaveBeenCalledWith(1, { is_active: false })
     // 失败后重新拉列表（第一次是挂载时）
     expect(adminListProducts).toHaveBeenCalledTimes(2)
+  })
+
+  it('只读角色看不到写入口，状态开关禁用且行点击不打开编辑', async () => {
+    setPermissions(['product:read'])
+    const wrapper = await mountList()
+
+    expect(wrapper.findAll('button').some((b) => b.text().includes('新增产品'))).toBe(false)
+    const firstRow = wrapper.findAll('.el-table__row')[0]
+    expect(firstRow.findAll('button').some((b) => b.text().includes('编辑'))).toBe(false)
+    expect(firstRow.findAll('button').some((b) => b.text().includes('删除'))).toBe(false)
+    expect(firstRow.find('.el-switch').classes()).toContain('is-disabled')
+
+    await firstRow.trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.$.setupState.dialogVisible).toBe(false)
   })
 })

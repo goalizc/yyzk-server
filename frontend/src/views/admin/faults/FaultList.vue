@@ -4,7 +4,7 @@
       <template #header>
         <div class="head">
           <span>故障知识库</span>
-          <el-button type="primary" @click="goCreate">新增故障</el-button>
+          <el-button v-if="canWrite" type="primary" @click="goCreate">新增故障</el-button>
         </div>
       </template>
 
@@ -74,7 +74,7 @@
         :data="rows"
         row-key="id"
         border
-        @row-click="goEdit"
+        @row-click="onRowClick"
       >
         <el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip />
         <el-table-column label="所属产品" width="150" show-overflow-tooltip>
@@ -102,7 +102,7 @@
         <el-table-column label="更新时间" width="120">
           <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="130" align="center">
+        <el-table-column v-if="canWrite" label="操作" width="130" align="center">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="goEdit(row)">编辑</el-button>
             <el-button link type="danger" @click.stop="onDelete(row)">删除</el-button>
@@ -136,6 +136,11 @@ import { adminDeleteFault, adminListFaults, adminListParts, adminListProducts } 
 import ErrorState from '../../../components/ErrorState.vue'
 import { errorText } from '../../../utils/admin'
 import { formatDate } from '../../../utils/format'
+import { hasPermission } from '../../../utils/permissions'
+
+const canWrite = hasPermission('fault:write')
+// 能进详情页的条件：能读故障 + 能读产品/零件（编辑页依赖这两个下拉）
+const canOpen = hasPermission('fault:read') && hasPermission('product:read') && hasPermission('part:read')
 
 const router = useRouter()
 
@@ -262,6 +267,11 @@ function goCreate() {
 
 function goEdit(row) {
   router.push({ name: 'admin-fault-edit', params: { id: row.id } })
+}
+
+function onRowClick(row) {
+  if (!canOpen) return
+  goEdit(row)
 }
 
 async function onDelete(row) {

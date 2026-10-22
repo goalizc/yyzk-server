@@ -55,6 +55,12 @@ const routes = [
         meta: { title: '产品管理', permission: 'product:read' }
       },
       {
+        path: 'product-lines',
+        name: 'admin-product-lines',
+        component: () => import('../views/admin/product-lines/ProductLineList.vue'),
+        meta: { title: '产品线管理', permission: 'product_line:read' }
+      },
+      {
         path: 'parts',
         name: 'admin-parts',
         component: () => import('../views/admin/parts/PartList.vue'),
@@ -71,7 +77,7 @@ const routes = [
         path: 'faults/edit/:id?',
         name: 'admin-fault-edit',
         component: () => import('../views/admin/faults/FaultEdit.vue'),
-        meta: { title: '故障编辑', permission: 'fault:write' }
+        meta: { title: '故障编辑', permission: 'fault:read', requires: ['product:read', 'part:read'] }
       },
       {
         path: 'stats',

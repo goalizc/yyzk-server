@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import PartList from './PartList.vue'
+import { setPermissions } from '../../../utils/permissions'
 
 vi.mock('../../../api/admin', () => ({
   adminListProducts: vi.fn(),
@@ -40,6 +41,7 @@ async function mountList() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  setPermissions(['product:read', 'part:read', 'part:write'])
   adminListProducts.mockResolvedValue({ total: 2, page: 1, page_size: 100, items: PRODUCTS })
   adminListParts.mockResolvedValue({ total: 2, page: 1, page_size: 20, items: PARTS })
   adminCreatePart.mockResolvedValue({})

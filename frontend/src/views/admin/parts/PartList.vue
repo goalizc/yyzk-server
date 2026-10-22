@@ -20,7 +20,7 @@
                 :value="item.id"
               />
             </el-select>
-            <el-button type="primary" :disabled="!productId" @click="openCreate">新增零件</el-button>
+            <el-button v-if="canWrite" type="primary" :disabled="!productId" @click="openCreate">新增零件</el-button>
           </div>
         </div>
       </template>
@@ -40,7 +40,7 @@
         :data="rows"
         row-key="id"
         border
-        @row-click="openEdit"
+        @row-click="onRowClick"
       >
         <el-table-column prop="part_no" label="编号" width="150">
           <template #default="{ row }">
@@ -56,7 +56,7 @@
         </el-table-column>
         <el-table-column prop="sort_order" label="排序" width="80" align="center" />
         <el-table-column prop="fault_count" label="故障数" width="90" align="center" />
-        <el-table-column label="操作" width="130" align="center">
+        <el-table-column v-if="canWrite" label="操作" width="130" align="center">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="openEdit(row)">编辑</el-button>
             <el-button link type="danger" @click.stop="onDelete(row)">删除</el-button>
@@ -125,6 +125,9 @@ import {
 } from '../../../api/admin'
 import ErrorState from '../../../components/ErrorState.vue'
 import { errorText } from '../../../utils/admin'
+import { hasPermission } from '../../../utils/permissions'
+
+const canWrite = hasPermission('part:write')
 
 const products = ref([])
 const loadingProducts = ref(false)
@@ -300,6 +303,11 @@ async function onDelete(row) {
     // DELETE_BLOCKED 的 detail 带故障条数，原文展示
     ElMessage.error(errorText(e, '删除失败'))
   }
+}
+
+function onRowClick(row) {
+  if (!canWrite) return
+  openEdit(row)
 }
 
 onMounted(loadProducts)

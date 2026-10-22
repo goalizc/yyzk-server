@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import FaultEdit from './FaultEdit.vue'
+import { setPermissions } from '../../../utils/permissions'
 
 vi.mock('../../../api/admin', () => ({
   adminListProducts: vi.fn(),
@@ -71,6 +72,7 @@ async function mountEdit(path = '/admin/faults/edit') {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  setPermissions(['fault:read', 'fault:write', 'product:read', 'part:read'])
   adminListProducts.mockResolvedValue({ total: 1, page: 1, page_size: 100, items: PRODUCTS })
   adminListParts.mockResolvedValue({ total: 2, page: 1, page_size: 100, items: PARTS })
   adminGetFault.mockResolvedValue(DETAIL)

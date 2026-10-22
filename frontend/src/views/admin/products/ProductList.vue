@@ -23,7 +23,7 @@
               <el-option label="已上架" :value="true" />
               <el-option label="已下架" :value="false" />
             </el-select>
-            <el-button type="primary" @click="openCreate">新增产品</el-button>
+            <el-button v-if="canWrite" type="primary" @click="openCreate">新增产品</el-button>
           </div>
         </div>
       </template>
@@ -35,7 +35,7 @@
         :data="rows"
         row-key="id"
         border
-        @row-click="openEdit"
+        @row-click="onRowClick"
       >
         <el-table-column label="名称 / 型号" min-width="200">
           <template #default="{ row }">
@@ -43,8 +43,8 @@
             <div class="model">{{ row.model }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="category" label="分类" width="120">
-          <template #default="{ row }">{{ row.category || '-' }}</template>
+        <el-table-column prop="line_name" label="产品线" width="120">
+          <template #default="{ row }">{{ row.line_name || '-' }}</template>
         </el-table-column>
         <el-table-column prop="fault_count" label="故障数" width="90" align="center" />
         <el-table-column label="状态" width="110" align="center">
@@ -52,6 +52,7 @@
             <!-- 切换即保存；接口失败要把开关拨回去，否则页面状态与库不一致 -->
             <el-switch
               :model-value="row.is_active"
+              :disabled="!canWrite"
               :loading="togglingId === row.id"
               inline-prompt
               active-text="上架"
@@ -64,7 +65,7 @@
         <el-table-column label="创建时间" width="120">
           <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="130" align="center">
+        <el-table-column v-if="canWrite" label="操作" width="130" align="center">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="openEdit(row)">编辑</el-button>
             <el-button link type="danger" @click.stop="onDelete(row)">删除</el-button>
@@ -102,8 +103,13 @@
           <!-- 409 MODEL_DUPLICATED 只在这个字段下内联提示，不整页报错 -->
           <el-input v-model="form.model" maxlength="50" placeholder="如：X1" @input="onModelInput" />
         </el-form-item>
-        <el-form-item label="分类" prop="category">
-          <el-input v-model="form.category" maxlength="50" placeholder="如：扫地机" />
+        <el-form-item label="产品线" prop="line_id">
+          <el-select v-model="form.line_id" placeholder="请选择产品线" class="line-select">
+            <el-option v-for="line in lines" :key="line.id" :label="line.name" :value="line.id" />
+          </el-select>
+          <el-button v-if="canManageLines" link type="primary" class="manage" @click="$router.push('/admin/product-lines')">
+            管理产品线
+          </el-button>
         </el-form-item>
         <el-form-item label="描述" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="3" maxlength="500" show-word-limit />
@@ -130,12 +136,18 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   adminCreateProduct,
   adminDeleteProduct,
+  adminListProductLines,
   adminListProducts,
   adminUpdateProduct
 } from '../../../api/admin'
 import ErrorState from '../../../components/ErrorState.vue'
 import { errorCode, errorText } from '../../../utils/admin'
 import { formatDate } from '../../../utils/format'
+import { hasPermission } from '../../../utils/permissions'
+
+const canWrite = hasPermission('product:write')
+const canManageLines = hasPermission('product_line:read')
+const lines = ref([])
 
 const rows = ref([])
 const loading = ref(false)
@@ -154,7 +166,7 @@ const formRef = ref()
 const form = reactive({
   name: '',
   model: '',
-  category: '',
+  line_id: null,
   description: '',
   is_active: true,
   sort_order: 0
@@ -162,10 +174,19 @@ const form = reactive({
 
 const rules = {
   name: [{ required: true, message: '请输入产品名称', trigger: 'blur' }],
-  model: [{ required: true, message: '请输入型号', trigger: 'blur' }]
+  model: [{ required: true, message: '请输入型号', trigger: 'blur' }],
+  line_id: [{ required: true, message: '请选择产品线', trigger: 'change' }]
 }
 
 let keywordTimer = null
+
+async function loadLines() {
+  try {
+    lines.value = (await adminListProductLines({ is_active: true })).items
+  } catch {
+    lines.value = []
+  }
+}
 
 async function load() {
   loading.value = true
@@ -225,7 +246,7 @@ function resetForm() {
   Object.assign(form, {
     name: '',
     model: '',
-    category: '',
+    line_id: null,
     description: '',
     is_active: true,
     sort_order: 0
@@ -244,7 +265,7 @@ function openEdit(row) {
   Object.assign(form, {
     name: row.name,
     model: row.model,
-    category: row.category || '',
+    line_id: row.line_id,
     description: row.description || '',
     is_active: row.is_active,
     sort_order: row.sort_order
@@ -260,7 +281,7 @@ async function onSubmit() {
   const payload = {
     name: form.name.trim(),
     model: form.model.trim(),
-    category: form.category.trim() || null,
+    line_id: form.line_id,
     description: form.description || null,
     is_active: form.is_active,
     sort_order: form.sort_order
@@ -338,7 +359,15 @@ async function onDelete(row) {
   }
 }
 
-onMounted(load)
+function onRowClick(row) {
+  if (!canWrite) return
+  openEdit(row)
+}
+
+onMounted(() => {
+  load()
+  loadLines()
+})
 onBeforeUnmount(() => clearTimeout(keywordTimer))
 </script>
 
@@ -389,6 +418,14 @@ onBeforeUnmount(() => clearTimeout(keywordTimer))
   margin-left: 8px;
   color: #a8abb2;
   font-size: 12px;
+}
+
+.line-select {
+  width: 240px;
+}
+
+.manage {
+  margin-left: 8px;
 }
 
 /* 整行可点进编辑，但操作列按钮不触发 */

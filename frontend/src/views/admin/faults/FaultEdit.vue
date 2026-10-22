@@ -6,12 +6,12 @@
           <span>{{ isEdit ? '编辑故障' : '新增故障' }}</span>
           <div class="head-actions">
             <el-button @click="goBack">取消</el-button>
-            <el-button type="primary" :loading="submitting" @click="onSubmit">保存</el-button>
+            <el-button type="primary" v-if="canWrite" :loading="submitting" @click="onSubmit">保存</el-button>
           </div>
         </div>
       </template>
 
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="110px" class="form">
+      <el-form ref="formRef" :model="form" :rules="rules" :disabled="!canWrite" label-width="110px" class="form">
         <h3 class="section">基本信息</h3>
         <el-form-item label="所属产品" prop="product_id">
           <el-select
@@ -64,7 +64,7 @@
         <div v-for="(item, index) in form.solution_steps" :key="item.uid" class="step">
           <span class="step-no">{{ index + 1 }}</span>
           <el-input v-model="item.text" type="textarea" :rows="2" placeholder="这一步要做什么" />
-          <ImageUpload v-model="item.image_url" />
+          <ImageUpload v-model="item.image_url" :readonly="!canWrite" />
           <el-button link type="danger" @click="removeStep(index)">删除</el-button>
         </div>
         <el-button class="add-step" @click="addStep">+ 添加步骤</el-button>
@@ -118,7 +118,10 @@ import {
   adminUpload
 } from '../../../api/admin'
 import { errorCode, errorText } from '../../../utils/admin'
+import { hasPermission } from '../../../utils/permissions'
 import { ATTACHMENT_EXTS, extHint, isAllowedExt, UPLOAD_MAX_SIZE } from '../../../utils/upload'
+
+const canWrite = hasPermission('fault:write')
 
 const route = useRoute()
 const router = useRouter()

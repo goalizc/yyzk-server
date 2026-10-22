@@ -11,7 +11,7 @@
       />
       <div v-else class="placeholder">无图</div>
     </div>
-    <div class="ops">
+    <div v-if="!readonly" class="ops">
       <!-- http-request 里上传成功才写回 url，失败可直接提示，
            不像 el-upload 默认行为那样只留一条红字文件行 -->
       <el-upload
@@ -45,7 +45,8 @@ import { errorCode, errorText } from '../utils/admin'
 import { extHint, IMAGE_EXTS, isAllowedExt, UPLOAD_MAX_SIZE } from '../utils/upload'
 
 const props = defineProps({
-  modelValue: { type: String, default: null }
+  modelValue: { type: String, default: null },
+  readonly: { type: Boolean, default: false }
 })
 const emit = defineEmits(['update:modelValue'])
 

@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import FaultList from './FaultList.vue'
+import { setPermissions } from '../../../utils/permissions'
 
 vi.mock('../../../api/admin', () => ({
   adminListFaults: vi.fn(),
@@ -63,6 +64,7 @@ async function mountList() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  setPermissions(['fault:read', 'fault:write', 'product:read', 'part:read'])
   adminListProducts.mockResolvedValue({ total: 1, page: 1, page_size: 100, items: PRODUCTS })
   adminListParts.mockResolvedValue({ total: 1, page: 1, page_size: 100, items: PARTS })
   adminListFaults.mockResolvedValue({ total: 1, page: 1, page_size: 20, items: FAULTS })
