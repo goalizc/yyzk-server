@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import BusinessError
 from app.core.permissions import (
+    TICKET_ASSIGN,
     USER_READ,
     USER_WRITE,
     effective_permissions,
@@ -29,6 +30,7 @@ from app.models import (
 )
 from app.schemas.common import ErrorBody, SuccessResponse
 from app.schemas.user import (
+    AssignableUser,
     GrantCreate,
     GrantOut,
     ProductLineAssignment,
@@ -39,6 +41,7 @@ from app.schemas.user import (
     UserPage,
     UserUpdate,
 )
+from app.services.ticket_scope import assignable_users
 from app.utils.search import LIKE_ESCAPE, like_pattern
 
 router = APIRouter()
@@ -370,3 +373,19 @@ def replace_product_lines(
         .where(User.id == user_id)
     )
     return _to_item(user)
+
+
+@router.get(
+    "/users/assignable",
+    response_model=list[AssignableUser],
+    summary="可改派的处理人",
+)
+def list_assignable(
+    product_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(require(TICKET_ASSIGN)),
+) -> list[AssignableUser]:
+    return [
+        AssignableUser(id=user.id, real_name=user.real_name)
+        for user in assignable_users(db, product_id)
+    ]

@@ -10,7 +10,13 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.exceptions import BusinessError
-from app.core.permissions import TICKET_READ, TICKET_WRITE, require
+from app.core.permissions import (
+    TICKET_ASSIGN,
+    TICKET_READ,
+    TICKET_WRITE,
+    effective_permissions,
+    require,
+)
 from app.core.time import to_db_datetime
 from app.database import get_db
 from app.models import Fault, Part, Product, Ticket, TicketStatusLog, User
@@ -27,7 +33,11 @@ from app.schemas.ticket import (
 )
 from app.services.pagination import paginate
 from app.services.ticket import apply_update
-from app.services.ticket_scope import apply_ticket_scope, ensure_ticket_visible
+from app.services.ticket_scope import (
+    apply_ticket_scope,
+    ensure_assignable,
+    ensure_ticket_visible,
+)
 from app.utils.search import LIKE_ESCAPE, like_pattern
 
 router = APIRouter()
@@ -197,8 +207,13 @@ def update_ticket(
     if ticket is None:
         raise BusinessError("NOT_FOUND", "工单不存在", 404)
     ensure_ticket_visible(db, user, ticket)
-    if payload.assignee_id is not None and db.get(User, payload.assignee_id) is None:
-        raise BusinessError("NOT_FOUND", "处理人不存在", 404)
+
+    data = payload.model_dump(exclude_unset=True)
+    if "assignee_id" in data:
+        if TICKET_ASSIGN not in effective_permissions(db, user):
+            raise BusinessError("PERMISSION_DENIED", "无权限改派工单", 403)
+        if data["assignee_id"] is not None:
+            ensure_assignable(db, ticket, data["assignee_id"])
 
     apply_update(db, ticket, payload, user)
     return _detail(db, ticket)

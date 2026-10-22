@@ -115,6 +115,11 @@ class ResetPasswordResponse(BaseModel):
     password: str
 
 
+class AssignableUser(BaseModel):
+    id: int
+    real_name: str
+
+
 class GrantCreate(BaseModel):
     permission: str
     expires_at: datetime

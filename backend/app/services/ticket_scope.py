@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessError
-from app.core.permissions import ALL, data_scope
+from app.core.permissions import ALL, TICKET_WRITE, data_scope, effective_permissions
 from app.models import Product, Ticket, User, UserProductLine
 
 
@@ -53,3 +53,37 @@ def ensure_ticket_visible(db: Session, user: User, ticket: Ticket) -> None:
         return
     if ticket.product_id is None or ticket.product_id not in product_ids:
         raise BusinessError("PERMISSION_DENIED", "无权查看该工单", 403)
+
+
+def assignable_users(db: Session, product_id: int | None) -> list[User]:
+    """可改派的处理人：启用、有 ticket:write，且能看到指定产品。"""
+    candidates = db.scalars(
+        select(User).where(User.is_active.is_(True)).order_by(User.real_name, User.id)
+    ).all()
+    result: list[User] = []
+    for user in candidates:
+        if TICKET_WRITE not in effective_permissions(db, user):
+            continue
+        product_ids = visible_product_ids(db, user)
+        if product_ids is None:
+            result.append(user)
+        elif product_id is not None and product_id in product_ids:
+            result.append(user)
+    return result
+
+
+def ensure_assignable(db: Session, ticket: Ticket, assignee_id: int) -> User:
+    """校验目标处理人：存在、启用、有 ticket:write、且可见工单所属产品。"""
+    assignee = db.get(User, assignee_id)
+    if assignee is None:
+        raise BusinessError("NOT_FOUND", "处理人不存在", 404)
+    if not assignee.is_active:
+        raise BusinessError("ASSIGNEE_DISABLED", "该账号已停用，不能作为处理人", 400)
+    if TICKET_WRITE not in effective_permissions(db, assignee):
+        raise BusinessError("ASSIGNEE_NO_PERMISSION", "该账号没有处理工单的权限", 400)
+
+    product_ids = visible_product_ids(db, assignee)
+    if product_ids is not None:
+        if ticket.product_id is None or ticket.product_id not in product_ids:
+            raise BusinessError("ASSIGNEE_OUT_OF_SCOPE", "该账号看不到此工单所属产品线", 400)
+    return assignee
