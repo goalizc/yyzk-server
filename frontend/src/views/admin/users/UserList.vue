@@ -205,6 +205,7 @@ import {
 } from '../../../api/admin'
 import ErrorState from '../../../components/ErrorState.vue'
 import { errorCode, errorText } from '../../../utils/admin'
+import { copyText } from '../../../utils/clipboard'
 import { formatDateTime } from '../../../utils/format'
 import { permissionLabel } from '../../../utils/permissionLabels'
 import { hasPermission } from '../../../utils/permissions'
@@ -485,12 +486,9 @@ async function onResetPassword(row) {
 }
 
 async function copyPassword() {
-  try {
-    await navigator.clipboard.writeText(resetPassword.value)
-    ElMessage.success('已复制')
-  } catch {
-    ElMessage.warning('复制失败，请手动选中密码复制')
-  }
+  const ok = await copyText(resetPassword.value)
+  if (ok) ElMessage.success('已复制')
+  else ElMessage.warning('复制失败，请手动选中密码复制')
 }
 
 function openGrants(row) {

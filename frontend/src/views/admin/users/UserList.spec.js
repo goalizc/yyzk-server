@@ -16,7 +16,14 @@ vi.mock('../../../api/admin', () => ({
   adminReplaceUserLines: vi.fn()
 }))
 
-import { adminListGrants, adminListProductLines, adminListUsers, adminUpdateUser } from '../../../api/admin'
+vi.mock('../../../utils/clipboard', () => ({
+  copyText: vi.fn().mockResolvedValue(true)
+}))
+
+import {
+  adminListGrants, adminListProductLines, adminListUsers, adminResetPassword, adminUpdateUser
+} from '../../../api/admin'
+import { copyText } from '../../../utils/clipboard'
 
 function makeUser(overrides = {}) {
   return {
@@ -35,6 +42,7 @@ beforeEach(() => {
   adminListProductLines.mockResolvedValue({ items: [] })
   adminListGrants.mockResolvedValue([])
   adminUpdateUser.mockResolvedValue({})
+  copyText.mockResolvedValue(true)
 })
 
 describe('UserList', () => {
@@ -112,6 +120,29 @@ describe('UserList', () => {
     )
     expect(adminUpdateUser).not.toHaveBeenCalled()
     expect(state.rows[0].is_active).toBe(true)
+    confirm.mockRestore()
+  })
+
+  it('重置密码后点击复制调用 copyText 并传入新密码', async () => {
+    const password = 'Xy9#password'
+    adminResetPassword.mockResolvedValue({ password })
+    const confirm = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm')
+    const wrapper = mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    await flushPromises()
+
+    const state = wrapper.vm.$.setupState
+    await state.onResetPassword(state.rows[0])
+    await flushPromises()
+
+    expect(state.passwordVisible).toBe(true)
+    const copyBtn = [...document.querySelectorAll('.password-row button')]
+      .find((node) => node.textContent.includes('复制'))
+    expect(copyBtn).toBeTruthy()
+    copyBtn.click()
+    await flushPromises()
+
+    expect(copyText).toHaveBeenCalledTimes(1)
+    expect(copyText).toHaveBeenCalledWith(password)
     confirm.mockRestore()
   })
 
