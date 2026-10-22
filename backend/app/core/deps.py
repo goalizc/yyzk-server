@@ -1,7 +1,6 @@
 """依赖注入：数据库会话与当前登录用户。
 
-注意：一期 users.role 有 admin/agent 两个值但**不参与鉴权判断**
-（API 契约 §0.3），不要按 role 额外加限制。
+鉴权在 app.core.permissions 中完成，本模块只负责识别用户与停用校验。
 """
 
 from __future__ import annotations

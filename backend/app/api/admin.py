@@ -17,8 +17,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.core.deps import get_current_user
 from app.core.exceptions import BusinessError
+from app.core.permissions import (
+    PART_READ,
+    PART_WRITE,
+    PRODUCT_READ,
+    PRODUCT_WRITE,
+    UPLOAD_WRITE,
+    require,
+)
 from app.database import get_db
 from app.models import Fault, Part, Product, User
 from app.schemas.common import ErrorBody, SuccessResponse, UploadResult
@@ -130,7 +137,7 @@ def list_products(
     keyword: str | None = Query(None, max_length=100, description="匹配名称或型号"),
     is_active: bool | None = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(PRODUCT_READ)),
 ) -> ProductPage:
     fault_count = (
         select(func.count(Fault.id))
@@ -172,7 +179,7 @@ def list_products(
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(PRODUCT_WRITE)),
 ) -> ProductAdmin:
     _ensure_model_available(db, payload.model)
 
@@ -200,7 +207,7 @@ def update_product(
     product_id: int,
     payload: ProductUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(PRODUCT_WRITE)),
 ) -> ProductAdmin:
     product = db.get(Product, product_id)
     if product is None:
@@ -234,7 +241,7 @@ def update_product(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(PRODUCT_WRITE)),
 ) -> SuccessResponse:
     product = db.get(Product, product_id)
     if product is None:
@@ -263,7 +270,7 @@ def list_parts(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(PART_READ)),
 ) -> PartPage:
     if db.get(Product, product_id) is None:
         raise BusinessError("NOT_FOUND", "产品不存在", 404)
@@ -299,7 +306,7 @@ def list_parts(
 def create_part(
     payload: PartCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(PART_WRITE)),
 ) -> PartAdmin:
     if db.get(Product, payload.product_id) is None:
         raise BusinessError("NOT_FOUND", "产品不存在", 404)
@@ -323,7 +330,7 @@ def update_part(
     part_id: int,
     payload: PartUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(PART_WRITE)),
 ) -> PartAdmin:
     part = db.get(Part, part_id)
     if part is None:
@@ -352,7 +359,7 @@ def update_part(
 def delete_part(
     part_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(PART_WRITE)),
 ) -> SuccessResponse:
     part = db.get(Part, part_id)
     if part is None:
@@ -383,7 +390,7 @@ def delete_part(
 )
 async def upload_file(
     file: UploadFile = File(..., description="表单字段名 file"),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(UPLOAD_WRITE)),
 ) -> UploadResult:
     saved = await save_upload(file)
     return UploadResult(**saved)
@@ -402,7 +409,7 @@ async def upload_file(
 def delete_upload(
     url: str = Query(..., description="上传时返回的 url，如 /uploads/20261019-a1b2c3d4.jpg"),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(UPLOAD_WRITE)),
 ) -> SuccessResponse:
     """前端点"移除"时收拾掉刚上传的文件。
 

@@ -9,9 +9,9 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.core.time import to_db_datetime
-from app.core.deps import get_current_user
 from app.core.exceptions import BusinessError
+from app.core.permissions import TICKET_READ, TICKET_WRITE, require
+from app.core.time import to_db_datetime
 from app.database import get_db
 from app.models import Fault, Part, Product, Ticket, TicketStatusLog, User
 from app.schemas.common import ErrorBody
@@ -94,7 +94,7 @@ def list_tickets(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(TICKET_READ)),
 ) -> TicketPage:
     stmt = (
         select(Ticket, Product.name, Product.model, Part.name, Fault.title, User.real_name)
@@ -167,7 +167,7 @@ def list_tickets(
 def get_ticket(
     ticket_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require(TICKET_READ)),
 ) -> TicketDetail:
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
@@ -188,7 +188,7 @@ def update_ticket(
     ticket_id: int,
     payload: TicketUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require(TICKET_WRITE)),
 ) -> TicketDetail:
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:

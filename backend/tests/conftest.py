@@ -91,7 +91,7 @@ def make_user(
     password: str = DEFAULT_PASSWORD,
     *,
     real_name: str = "系统管理员",
-    role: str = "admin",
+    role: str = "super_admin",
     is_active: bool = True,
 ) -> User:
     user = User(
