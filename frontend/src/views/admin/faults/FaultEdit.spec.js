@@ -103,6 +103,24 @@ describe('FaultEdit', () => {
     expect(state.form.attachment_urls).toHaveLength(1)
   })
 
+  it('只读用户（仅 fault:read）不请求产品/零件接口，并用可读摘要展示归属', async () => {
+    setPermissions(['fault:read'])
+    const { wrapper } = await mountEdit('/admin/faults/edit/21')
+
+    expect(adminGetFault).toHaveBeenCalledWith('21')
+    expect(adminListProducts).not.toHaveBeenCalled()
+    expect(adminListParts).not.toHaveBeenCalled()
+    // 详情字段仍回显（输入框的值不会出现在 text() 里）
+    expect(wrapper.vm.$.setupState.form.title).toBe('主刷不转')
+    // 详情没有名称字段时退回 id，至少不是空白
+    expect(wrapper.text()).toContain('产品 #1')
+    expect(wrapper.text()).toContain('零件 #12')
+    // 写控件全部隐藏/禁用
+    expect(wrapper.findAll('button').some((b) => b.text().includes('保存'))).toBe(false)
+    expect(wrapper.findAll('button').some((b) => b.text().includes('添加步骤'))).toBe(false)
+    expect(wrapper.find('input[type="file"]').exists()).toBe(false)
+  })
+
   it('保存时剔除空步骤并重新编号（step 从 1 连续递增）', async () => {
     const { wrapper } = await mountEdit()
     const state = wrapper.vm.$.setupState

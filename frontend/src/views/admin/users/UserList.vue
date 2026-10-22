@@ -26,8 +26,19 @@
             <div class="sub">{{ row.real_name }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="角色" width="120">
-          <template #default="{ row }">{{ roleLabel(row.role) }}</template>
+        <el-table-column label="角色" width="140">
+          <template #default="{ row }">
+            <div>{{ roleLabel(row.role) }}</div>
+            <el-tag
+              v-if="row.active_grant_count > 0"
+              type="warning"
+              size="small"
+              class="grant-tag"
+              @click="openGrants(row)"
+            >
+              临时授权 {{ row.active_grant_count }}
+            </el-tag>
+          </template>
         </el-table-column>
         <el-table-column label="产品线" min-width="180">
           <template #default="{ row }">
@@ -76,7 +87,12 @@
       />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑用户' : '新建用户'" width="620px" @closed="resetForm">
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId ? '编辑用户' : '新建用户'"
+      :width="isNarrow ? '92%' : '620px'"
+      @closed="resetForm"
+    >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
         <el-form-item label="账号" prop="username">
           <el-input v-model="form.username" maxlength="50" :disabled="Boolean(editingId)" />
@@ -87,6 +103,9 @@
         <el-form-item v-if="!editingId" label="初始密码" prop="password">
           <el-input v-model="form.password" type="password" show-password />
         </el-form-item>
+        <el-form-item v-if="!editingId" label="确认密码" prop="confirm_password">
+          <el-input v-model="form.confirm_password" type="password" show-password />
+        </el-form-item>
         <el-form-item label="角色" prop="role">
           <el-select v-model="form.role">
             <el-option v-for="item in ROLE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
@@ -96,7 +115,13 @@
           <div class="assignments">
             <div v-for="(item, index) in form.product_lines" :key="index" class="assignment-row">
               <el-select v-model="item.line_id" placeholder="选择产品线" class="line-select">
-                <el-option v-for="line in lines" :key="line.id" :label="line.name" :value="line.id" />
+                <el-option
+                  v-for="line in lines"
+                  :key="line.id"
+                  :label="line.is_active ? line.name : `${line.name}（已停用）`"
+                  :value="line.id"
+                  :disabled="!line.is_active && line.id !== item.line_id"
+                />
               </el-select>
               <el-date-picker v-model="item.expires_at" type="date" placeholder="长期（留空）" class="date" value-format="YYYY-MM-DD" />
               <el-button link type="danger" @click="form.product_lines.splice(index, 1)">删除</el-button>
@@ -111,18 +136,30 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="passwordVisible" title="密码已重置" width="420px">
+    <el-dialog v-model="passwordVisible" title="密码已重置" :width="isNarrow ? '92%' : '420px'">
       <el-alert type="success" :closable="false" title="请立即复制并通过安全渠道交给本人，关闭后无法再次查看" />
-      <div class="password">{{ resetPassword }}</div>
+      <div class="password-row">
+        <span class="password">{{ resetPassword }}</span>
+        <el-button size="small" @click="copyPassword">复制</el-button>
+      </div>
       <template #footer>
         <el-button @click="passwordVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
-    <el-drawer v-model="grantsVisible" :title="`临时授权 — ${grantUser?.real_name || ''}`" size="560px" @open="loadGrants">
+    <el-drawer v-model="grantsVisible" :title="`临时授权 — ${grantUser?.real_name || ''}`" :size="isNarrow ? '100%' : '560px'" @open="loadGrants">
       <el-table :data="grants" size="small" border>
-        <el-table-column prop="permission" label="权限" width="150" />
+        <el-table-column label="权限" width="150">
+          <template #default="{ row }">
+            <el-tooltip :content="row.permission" placement="top">
+              <span>{{ permissionLabel(row.permission) }}</span>
+            </el-tooltip>
+          </template>
+        </el-table-column>
         <el-table-column prop="reason" label="事由" min-width="120" />
+        <el-table-column label="授予人" width="110">
+          <template #default="{ row }">{{ row.granted_by_name || '系统' }}</template>
+        </el-table-column>
         <el-table-column label="到期" width="130">
           <template #default="{ row }">{{ formatDateTime(row.expires_at) }}</template>
         </el-table-column>
@@ -143,7 +180,7 @@
         <el-form ref="grantFormRef" :model="grantForm" :rules="grantRules" label-width="80px">
           <el-form-item label="权限" prop="permission">
             <el-select v-model="grantForm.permission">
-              <el-option v-for="item in grantableOptions" :key="item" :label="item" :value="item" />
+              <el-option v-for="item in grantableOptions" :key="item" :label="permissionLabel(item)" :value="item" />
             </el-select>
           </el-form-item>
           <el-form-item label="到期" prop="expires_at">
@@ -169,7 +206,9 @@ import {
 import ErrorState from '../../../components/ErrorState.vue'
 import { errorCode, errorText } from '../../../utils/admin'
 import { formatDateTime } from '../../../utils/format'
+import { permissionLabel } from '../../../utils/permissionLabels'
 import { hasPermission } from '../../../utils/permissions'
+import { useNarrow } from '../../../utils/viewport'
 
 const ROLE_OPTIONS = [
   { value: 'super_admin', label: '超级管理员' },
@@ -185,7 +224,8 @@ const GRANTABLE = [
   'user:read', 'product_line:read', 'product_line:write'
 ]
 
-const canWrite = hasPermission('user:write')
+const canWrite = computed(() => hasPermission('user:write'))
+const isNarrow = useNarrow()
 const currentUserId = computed(() => {
   try {
     return JSON.parse(localStorage.getItem('user') || '{}').id
@@ -206,7 +246,16 @@ const dialogVisible = ref(false)
 const editingId = ref(null)
 const submitting = ref(false)
 const formRef = ref()
-const form = reactive({ username: '', real_name: '', password: '', role: 'agent', product_lines: [] })
+// 编辑前的角色快照：保存时若发生变化要二次确认（权限立即生效）
+const originalRole = ref('')
+const form = reactive({
+  username: '',
+  real_name: '',
+  password: '',
+  confirm_password: '',
+  role: 'agent',
+  product_lines: []
+})
 
 const passwordVisible = ref(false)
 const resetPassword = ref('')
@@ -224,6 +273,16 @@ const rules = {
   password: [
     { required: true, message: '请输入初始密码', trigger: 'blur' },
     { min: 8, message: '密码至少 8 位', trigger: 'blur' }
+  ],
+  confirm_password: [
+    { required: true, message: '请再次输入初始密码', trigger: 'blur' },
+    {
+      validator: (_rule, value, callback) => {
+        if (value !== form.password) callback(new Error('两次输入的密码不一致'))
+        else callback()
+      },
+      trigger: 'blur'
+    }
   ],
   role: [{ required: true, message: '请选择角色', trigger: 'change' }]
 }
@@ -266,7 +325,8 @@ async function load() {
 
 async function loadLines() {
   try {
-    const data = await adminListProductLines({ is_active: true })
+    // 拉全量：已停用的产品线也要显示（用户当前已分配的仍可保留）
+    const data = await adminListProductLines()
     lines.value = data.items
   } catch {
     lines.value = []
@@ -290,7 +350,15 @@ function onSizeChange() {
 
 function resetForm() {
   editingId.value = null
-  Object.assign(form, { username: '', real_name: '', password: '', role: 'agent', product_lines: [] })
+  originalRole.value = ''
+  Object.assign(form, {
+    username: '',
+    real_name: '',
+    password: '',
+    confirm_password: '',
+    role: 'agent',
+    product_lines: []
+  })
   formRef.value?.clearValidate()
 }
 
@@ -302,6 +370,7 @@ function openCreate() {
 function openEdit(row) {
   resetForm()
   editingId.value = row.id
+  originalRole.value = row.role
   Object.assign(form, {
     username: row.username,
     real_name: row.real_name,
@@ -325,6 +394,19 @@ function toExpiresAt(value) {
 async function onSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
+
+  // 角色变更会立即改变对方权限：保存前明确确认一次
+  if (editingId.value && form.role !== originalRole.value) {
+    try {
+      await ElMessageBox.confirm(
+        `将「${form.real_name}」的角色从「${roleLabel(originalRole.value)}」改为「${roleLabel(form.role)}」？其权限会立即变化。`,
+        '角色变更确认',
+        { type: 'warning', confirmButtonText: '确认变更', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+  }
 
   const assignments = form.product_lines
     .filter((item) => item.line_id)
@@ -362,6 +444,18 @@ async function onSubmit() {
 }
 
 async function onToggleActive(row, value) {
+  // 停用是破坏性操作：开关用 :model-value，取消后不会自己变
+  if (value === false) {
+    try {
+      await ElMessageBox.confirm(
+        `停用后该账号将立即无法登录，确认停用「${row.real_name}」？`,
+        '停用确认',
+        { type: 'warning', confirmButtonText: '确认停用', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+  }
   togglingId.value = row.id
   try {
     await adminUpdateUser(row.id, { is_active: value })
@@ -387,6 +481,15 @@ async function onResetPassword(row) {
     passwordVisible.value = true
   } catch (e) {
     ElMessage.error(errorText(e, '重置失败'))
+  }
+}
+
+async function copyPassword() {
+  try {
+    await navigator.clipboard.writeText(resetPassword.value)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.warning('复制失败，请手动选中密码复制')
   }
 }
 
@@ -451,5 +554,7 @@ onBeforeUnmount(() => clearTimeout(keywordTimer))
 .assignment-row { display: flex; gap: 8px; align-items: center; }
 .line-select { width: 180px; }
 .date { width: 160px; }
-.password { margin-top: 16px; font-family: monospace; font-size: 18px; letter-spacing: 1px; }
+.password-row { margin-top: 16px; display: flex; align-items: center; gap: 12px; }
+.password { font-family: monospace; font-size: 18px; letter-spacing: 1px; word-break: break-all; }
+.grant-tag { margin-top: 4px; cursor: pointer; }
 </style>

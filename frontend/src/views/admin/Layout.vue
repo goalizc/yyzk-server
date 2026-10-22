@@ -123,6 +123,7 @@ const dialogWidth = computed(() => (isNarrow.value ? '92%' : '420px'))
 const NAV_ITEMS = [
   { path: '/admin/tickets', label: '工单管理', permission: 'ticket:read' },
   { path: '/admin/products', label: '产品管理', permission: 'product:read' },
+  { path: '/admin/product-lines', label: '产品线', permission: 'product_line:read' },
   { path: '/admin/parts', label: '零件管理', permission: 'part:read' },
   { path: '/admin/faults', label: '故障知识库', permission: 'fault:read' },
   { path: '/admin/stats', label: '数据看板', permission: 'stats:read' },

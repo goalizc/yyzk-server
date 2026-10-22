@@ -105,7 +105,13 @@
         </el-form-item>
         <el-form-item label="产品线" prop="line_id">
           <el-select v-model="form.line_id" placeholder="请选择产品线" class="line-select">
-            <el-option v-for="line in lines" :key="line.id" :label="line.name" :value="line.id" />
+            <el-option
+              v-for="line in lines"
+              :key="line.id"
+              :label="line.is_active ? line.name : `${line.name}（已停用）`"
+              :value="line.id"
+              :disabled="!line.is_active && line.id !== form.line_id"
+            />
           </el-select>
           <el-button v-if="canManageLines" link type="primary" class="manage" @click="$router.push('/admin/product-lines')">
             管理产品线
@@ -131,7 +137,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   adminCreateProduct,
@@ -145,7 +151,7 @@ import { errorCode, errorText } from '../../../utils/admin'
 import { formatDate } from '../../../utils/format'
 import { hasPermission } from '../../../utils/permissions'
 
-const canWrite = hasPermission('product:write')
+const canWrite = computed(() => hasPermission('product:write'))
 const canManageLines = hasPermission('product_line:read')
 const lines = ref([])
 
@@ -182,7 +188,8 @@ let keywordTimer = null
 
 async function loadLines() {
   try {
-    lines.value = (await adminListProductLines({ is_active: true })).items
+    // 拉全量：编辑已停用产品线下的产品时，当前线仍要能回显
+    lines.value = (await adminListProductLines()).items
   } catch {
     lines.value = []
   }
@@ -360,7 +367,7 @@ async function onDelete(row) {
 }
 
 function onRowClick(row) {
-  if (!canWrite) return
+  if (!canWrite.value) return
   openEdit(row)
 }
 

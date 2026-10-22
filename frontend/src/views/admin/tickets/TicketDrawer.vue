@@ -156,14 +156,14 @@ const saving = ref(false)
 const remarkError = ref('')
 
 // 处理表单只对可写角色渲染；改派入口再额外要求 ticket:assign
-const canWrite = hasPermission('ticket:write')
-const canAssign = hasPermission('ticket:assign')
+const canWrite = computed(() => hasPermission('ticket:write'))
+const canAssign = computed(() => hasPermission('ticket:assign'))
 const assignable = ref([])
 
 const form = reactive({ status: null, remark: '', need_on_site: false, assignee_id: null })
 
 async function loadAssignable(productId) {
-  if (!canAssign || !productId) {
+  if (!canAssign.value || !productId) {
     assignable.value = []
     return
   }
@@ -234,7 +234,7 @@ async function onSave() {
   if (form.remark.trim()) payload.remark = form.remark.trim()
   if (form.need_on_site !== detail.value.need_on_site) payload.need_on_site = form.need_on_site
   // 只有主管（ticket:assign）且确实选了与当前不同的处理人才传，未改则保持后端原归属
-  if (canAssign && form.assignee_id && form.assignee_id !== detail.value.assignee_id) {
+  if (canAssign.value && form.assignee_id && form.assignee_id !== detail.value.assignee_id) {
     payload.assignee_id = form.assignee_id
   }
 

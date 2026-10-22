@@ -129,7 +129,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminDeleteFault, adminListFaults, adminListParts, adminListProducts } from '../../../api/admin'
@@ -138,9 +138,9 @@ import { errorText } from '../../../utils/admin'
 import { formatDate } from '../../../utils/format'
 import { hasPermission } from '../../../utils/permissions'
 
-const canWrite = hasPermission('fault:write')
-// 能进详情页的条件：能读故障 + 能读产品/零件（编辑页依赖这两个下拉）
-const canOpen = hasPermission('fault:read') && hasPermission('product:read') && hasPermission('part:read')
+const canWrite = computed(() => hasPermission('fault:write'))
+// 只读用户也能打开详情：编辑页会按自己的权限降级为只读视图
+const canOpen = computed(() => hasPermission('fault:read'))
 
 const router = useRouter()
 
@@ -270,7 +270,7 @@ function goEdit(row) {
 }
 
 function onRowClick(row) {
-  if (!canOpen) return
+  if (!canOpen.value) return
   goEdit(row)
 }
 

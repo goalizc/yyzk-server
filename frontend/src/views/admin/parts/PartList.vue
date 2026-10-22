@@ -127,7 +127,7 @@ import ErrorState from '../../../components/ErrorState.vue'
 import { errorText } from '../../../utils/admin'
 import { hasPermission } from '../../../utils/permissions'
 
-const canWrite = hasPermission('part:write')
+const canWrite = computed(() => hasPermission('part:write'))
 
 const products = ref([])
 const loadingProducts = ref(false)
@@ -306,7 +306,7 @@ async function onDelete(row) {
 }
 
 function onRowClick(row) {
-  if (!canWrite) return
+  if (!canWrite.value) return
   openEdit(row)
 }
 

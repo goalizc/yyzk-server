@@ -67,7 +67,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   setPermissions(['product:read', 'product:write', 'product_line:read'])
   adminListProducts.mockResolvedValue(page())
-  adminListProductLines.mockResolvedValue({ items: [{ id: 1, name: '扫地机' }] })
+  adminListProductLines.mockResolvedValue({ items: [{ id: 1, name: '扫地机', is_active: true }] })
   adminCreateProduct.mockResolvedValue({})
   adminUpdateProduct.mockResolvedValue({})
   adminDeleteProduct.mockResolvedValue({ success: true })

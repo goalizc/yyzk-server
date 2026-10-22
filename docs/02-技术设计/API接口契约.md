@@ -1125,6 +1125,7 @@ Response 200:
 | 400 | `ASSIGNEE_NO_PERMISSION` | 改派目标没有 `ticket:write` | 刷新候选人下拉 |
 | 400 | `ASSIGNEE_OUT_OF_SCOPE` | 改派目标看不到该工单产品线 | 只选同产品线客服或主管 |
 | 400 | `LINE_INACTIVE` | 产品线已停用，不能用于产品 | 选择启用中的产品线 |
+| 400 | `LINE_DUPLICATED` | 同一用户重复分配同一产品线 | 提示该产品线已授权，去掉重复项 |
 | 401 | `AUTH_INVALID_CREDENTIALS` | 用户名或密码错误 | 提示，**不跳转** |
 | 401 | `AUTH_TOKEN_EXPIRED` | 未登录 / token 过期 | 清 token 跳登录页 |
 | 403 | `AUTH_USER_DISABLED` | 账号已停用 | 提示联系管理员 |

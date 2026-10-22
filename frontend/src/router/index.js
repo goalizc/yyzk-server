@@ -77,7 +77,7 @@ const routes = [
         path: 'faults/edit/:id?',
         name: 'admin-fault-edit',
         component: () => import('../views/admin/faults/FaultEdit.vue'),
-        meta: { title: '故障编辑', permission: 'fault:read', requires: ['product:read', 'part:read'] }
+        meta: { title: '故障编辑', permission: 'fault:read' }
       },
       {
         path: 'stats',

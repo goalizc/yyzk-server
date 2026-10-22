@@ -15,6 +15,7 @@
         <h3 class="section">基本信息</h3>
         <el-form-item label="所属产品" prop="product_id">
           <el-select
+            v-if="canWrite"
             v-model="form.product_id"
             placeholder="请选择产品"
             filterable
@@ -29,9 +30,11 @@
               :value="item.id"
             />
           </el-select>
+          <span v-else class="readonly">{{ productSummary }}</span>
         </el-form-item>
         <el-form-item label="所属零件" prop="part_id">
           <el-select
+            v-if="canWrite"
             v-model="form.part_id"
             :placeholder="form.product_id ? '请选择零件' : '请先选择产品'"
             filterable
@@ -46,7 +49,8 @@
               :value="item.id"
             />
           </el-select>
-          <span v-if="!parts.length && form.product_id && !loadingParts" class="hint">
+          <span v-else class="readonly">{{ partSummary }}</span>
+          <span v-if="canWrite && !parts.length && form.product_id && !loadingParts" class="hint">
             该产品下还没有零件，请先到「零件管理」录入
           </span>
         </el-form-item>
@@ -65,16 +69,16 @@
           <span class="step-no">{{ index + 1 }}</span>
           <el-input v-model="item.text" type="textarea" :rows="2" placeholder="这一步要做什么" />
           <ImageUpload v-model="item.image_url" :readonly="!canWrite" />
-          <el-button link type="danger" @click="removeStep(index)">删除</el-button>
+          <el-button v-if="canWrite" link type="danger" @click="removeStep(index)">删除</el-button>
         </div>
-        <el-button class="add-step" @click="addStep">+ 添加步骤</el-button>
+        <el-button v-if="canWrite" class="add-step" @click="addStep">+ 添加步骤</el-button>
 
         <h3 class="section">其他</h3>
         <el-form-item label="所需工具" prop="required_tools">
           <el-input v-model="form.required_tools" maxlength="200" placeholder="如：十字螺丝刀；无则留空" />
         </el-form-item>
         <el-form-item label="需专业人员" prop="needs_professional">
-          <el-switch v-model="form.needs_professional" />
+          <el-switch v-model="form.needs_professional" :disabled="!canWrite" />
           <span class="hint">开启后客户侧详情页顶部会出现"请勿自行拆机"提示</span>
         </el-form-item>
         <el-form-item label="附件">
@@ -82,9 +86,10 @@
             <div v-for="(item, index) in form.attachment_urls" :key="item.url" class="attachment">
               <span class="att-name">{{ item.name }}</span>
               <span class="att-size">{{ formatSize(item.size) }}</span>
-              <el-button link type="danger" @click="removeAttachment(index)">移除</el-button>
+              <el-button v-if="canWrite" link type="danger" @click="removeAttachment(index)">移除</el-button>
             </div>
             <el-upload
+              v-if="canWrite"
               :show-file-list="false"
               :http-request="doUploadAttachment"
               :before-upload="beforeUploadAttachment"
@@ -97,7 +102,7 @@
           </div>
         </el-form-item>
         <el-form-item label="是否发布" prop="is_published">
-          <el-switch v-model="form.is_published" inline-prompt active-text="发布" inactive-text="草稿" />
+          <el-switch v-model="form.is_published" :disabled="!canWrite" inline-prompt active-text="发布" inactive-text="草稿" />
         </el-form-item>
       </el-form>
     </el-card>
@@ -121,7 +126,7 @@ import { errorCode, errorText } from '../../../utils/admin'
 import { hasPermission } from '../../../utils/permissions'
 import { ATTACHMENT_EXTS, extHint, isAllowedExt, UPLOAD_MAX_SIZE } from '../../../utils/upload'
 
-const canWrite = hasPermission('fault:write')
+const canWrite = computed(() => hasPermission('fault:write'))
 
 const route = useRoute()
 const router = useRouter()
@@ -130,6 +135,8 @@ const formRef = ref()
 const loading = ref(false)
 const submitting = ref(false)
 const uploadingAttachment = ref(false)
+// 只读用户拿不到产品/零件下拉时的可读摘要（详情里没有名称就退回 id）
+const detail = ref(null)
 
 const products = ref([])
 const parts = ref([])
@@ -155,6 +162,18 @@ const form = reactive({
 })
 
 const isEdit = computed(() => Boolean(route.params.id))
+
+const productSummary = computed(() => {
+  const found = products.value.find((item) => item.id === form.product_id)
+  if (found) return `${found.name}（${found.model}）`
+  return detail.value?.product_name || (form.product_id ? `产品 #${form.product_id}` : '-')
+})
+
+const partSummary = computed(() => {
+  const found = parts.value.find((item) => item.id === form.part_id)
+  if (found) return found.group_name ? `${found.group_name} / ${found.name}` : found.name
+  return detail.value?.part_name || (form.part_id ? `零件 #${form.part_id}` : '-')
+})
 
 const rules = {
   product_id: [{ required: true, message: '请选择产品', trigger: 'change' }],
@@ -204,7 +223,8 @@ async function loadProducts() {
 }
 
 async function loadParts(productId) {
-  if (!productId) {
+  // 没有零件读权限时不要发请求（只读用户连下拉都不渲染）
+  if (!hasPermission('part:read') || !productId) {
     parts.value = []
     return
   }
@@ -240,6 +260,7 @@ async function loadFault(id) {
   loading.value = true
   try {
     const data = await adminGetFault(id)
+    detail.value = data
     form.product_id = data.product_id
     form.title = data.title
     form.symptom = data.symptom || ''
@@ -249,8 +270,9 @@ async function loadFault(id) {
     form.is_published = data.is_published
     form.attachment_urls = [...(data.attachment_urls || [])]
     fillSteps(data.solution_steps)
-    // 先拿到零件列表再回填 part_id，否则下拉里没有这一项会显示成原始数字
-    await loadParts(data.product_id)
+    // 先拿到零件列表再回填 part_id，否则下拉里没有这一项会显示成原始数字。
+    // 只读用户不加载下拉（没有 part:read 也不该发请求），直接用详情摘要展示。
+    if (canWrite.value) await loadParts(data.product_id)
     form.part_id = data.part_id
   } catch (e) {
     ElMessage.error(errorText(e, '故障详情加载失败'))
@@ -342,7 +364,8 @@ function goBack() {
 }
 
 onMounted(async () => {
-  await loadProducts()
+  // 写权限 + 产品读权限才需要下拉；只读页只展示详情里的摘要
+  if (canWrite.value && hasPermission('product:read')) await loadProducts()
   if (isEdit.value) {
     await loadFault(route.params.id)
   } else {
@@ -387,6 +410,10 @@ onMounted(async () => {
   margin-left: 8px;
   color: #a8abb2;
   font-size: 12px;
+}
+
+.readonly {
+  color: #606266;
 }
 
 .step {

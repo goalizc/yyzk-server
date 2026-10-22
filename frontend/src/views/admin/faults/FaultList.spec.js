@@ -182,6 +182,17 @@ describe('FaultList', () => {
   })
 
 
+  it('仅有 fault:read 时行点击也能打开故障详情（客服场景）', async () => {
+    setPermissions(['fault:read'])
+    const { wrapper, router } = await mountList()
+
+    await wrapper.findAll('.el-table__row')[0].trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('admin-fault-edit')
+    expect(router.currentRoute.value.params.id).toBe('21')
+  })
+
   it('列表为空时给出"新增第一条"引导', async () => {
     adminListFaults.mockResolvedValue({ total: 0, page: 1, page_size: 20, items: [] })
     const { wrapper } = await mountList()

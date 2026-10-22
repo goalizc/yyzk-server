@@ -29,7 +29,12 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑产品线' : '新增产品线'" width="420px" @closed="resetForm">
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId ? '编辑产品线' : '新增产品线'"
+      :width="isNarrow ? '92%' : '420px'"
+      @closed="resetForm"
+    >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" maxlength="50" />
@@ -50,7 +55,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   adminCreateProductLine, adminDeleteProductLine, adminListProductLines, adminUpdateProductLine
@@ -58,8 +63,10 @@ import {
 import ErrorState from '../../../components/ErrorState.vue'
 import { errorText } from '../../../utils/admin'
 import { hasPermission } from '../../../utils/permissions'
+import { useNarrow } from '../../../utils/viewport'
 
-const canWrite = hasPermission('product_line:write')
+const canWrite = computed(() => hasPermission('product_line:write'))
+const isNarrow = useNarrow()
 const rows = ref([])
 const loading = ref(false)
 const loadError = ref('')
