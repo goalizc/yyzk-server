@@ -150,6 +150,10 @@ NUM_FAULTS=$(echo "$COUNTS" | cut -d'|' -f4)
 
 log "    users=$NUM_USERS products=$NUM_PRODUCTS faults=$NUM_FAULTS 全部关键表非空"
 
+# ---------- 迁移：备份可能来自旧版本 ----------
+log "执行数据库迁移（备份可能来自旧版本）"
+docker compose run --rm -T migrate
+
 # ---------- 6. 附件 ----------
 if [[ -n "$UPLOADS_FILE" ]]; then
   [[ -f "$UPLOADS_FILE" ]] || die "附件包不存在: $UPLOADS_FILE"

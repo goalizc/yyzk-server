@@ -251,7 +251,51 @@ step "启动服务"
 if [[ "$MODE" == "check" ]]; then
   docker compose ps --format 'table {{.Name}}\t{{.Status}}' 2>/dev/null || true
 else
-  # 同 build：管道会吞掉 compose 的退出码，up 失败必须自己取
+  # 1) 只起 db，先完成迁移，避免新代码对旧表
+  set +e
+  docker compose up -d db >/tmp/deploy_up.log 2>&1
+  UP_RC=$?
+  set -e
+  if [[ "$UP_RC" != "0" ]]; then
+    tail -15 /tmp/deploy_up.log >&2
+    die "启动数据库失败，详见上面的输出"
+  fi
+
+  DB_DEADLINE=$(( SECONDS + 120 ))
+  until docker compose ps --format '{{.Name}} {{.Health}}' 2>/dev/null | grep -q "^fault-db healthy"; do
+    if (( SECONDS >= DB_DEADLINE )); then
+      docker compose logs --tail=50 db
+      die "数据库未在 120 秒内就绪"
+    fi
+    sleep 2
+  done
+
+  # 迁移会删除 products.category，不可逆；先备份，失败即中止
+  if [[ -x scripts/backup.sh ]]; then
+    set +e
+    ./scripts/backup.sh >/tmp/deploy_backup.log 2>&1
+    BK_RC=$?
+    set -e
+    tail -2 /tmp/deploy_backup.log
+    if [[ "$BK_RC" != "0" ]]; then
+      tail -20 /tmp/deploy_backup.log >&2
+      die "迁移前备份失败，已中止（本次迁移会删除 products.category）"
+    fi
+    rm -f /tmp/deploy_backup.log
+  fi
+
+  set +e
+  docker compose run --rm -T migrate >/tmp/deploy_migrate.log 2>&1
+  MIG_RC=$?
+  set -e
+  tail -5 /tmp/deploy_migrate.log
+  if [[ "$MIG_RC" != "0" ]]; then
+    tail -30 /tmp/deploy_migrate.log >&2
+    die "数据库迁移失败，详见上面的输出"
+  fi
+  rm -f /tmp/deploy_migrate.log
+
+  # 2) 迁移完成后再起 backend/frontend
   set +e
   docker compose up -d >/tmp/deploy_up.log 2>&1
   UP_RC=$?

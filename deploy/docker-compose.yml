@@ -207,6 +207,30 @@ services:
     networks:
       - fault-net
 
+  # 数据库迁移: docker compose run --rm migrate
+  migrate:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-pypi.org}
+    profiles: ["migrate"]
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${DB_USER:-fault}:${DB_PASSWORD}@db:5432/${DB_NAME:-fault_db}
+      MIGRATION_DIR: /app/migrations
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./migrations:/app/migrations:ro
+    entrypoint: ["python", "/app/scripts/migrate.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - fault-net
+
 networks:
   fault-net:
     driver: bridge

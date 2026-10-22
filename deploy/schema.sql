@@ -26,6 +26,15 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
 -- ------------------------------------------------------------
+-- 0. 迁移登记（已有环境升级用；全新库由本脚本直接建到最新结构）
+-- ------------------------------------------------------------
+CREATE TABLE schema_migrations (
+    version    VARCHAR(50) PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO schema_migrations (version) VALUES ('000_baseline');
+
+-- ------------------------------------------------------------
 -- 1. 后台用户表（仅在册内部人员，一期不做用户管理界面）
 -- ------------------------------------------------------------
 CREATE TABLE users (
@@ -211,3 +220,5 @@ FROM faults f
 JOIN products p ON f.product_id = p.id
 LEFT JOIN parts pt ON f.part_id = pt.id
 ORDER BY f.view_count DESC;
+
+INSERT INTO schema_migrations (version) VALUES ('001_user_permissions');
