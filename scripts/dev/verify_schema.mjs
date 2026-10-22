@@ -30,15 +30,19 @@ check('schema.sql 可整体执行', async (db) => {
   return ok('schema.sql 可整体执行', `${sql.length} 字符`)
 })
 
-check('7 张表齐备', async (db) => {
+check('11 张表齐备', async (db) => {
   const { rows } = await db.query(
     `SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename`
   )
   const got = rows.map((r) => r.tablename)
-  const want = ['faults', 'parts', 'products', 'query_logs', 'ticket_status_logs', 'tickets', 'users']
+  const want = [
+    'faults', 'parts', 'product_lines', 'products', 'query_logs',
+    'schema_migrations', 'ticket_status_logs', 'tickets',
+    'user_permission_grants', 'user_product_lines', 'users'
+  ]
   const missing = want.filter((t) => !got.includes(t))
   if (missing.length) throw new Error(`缺少表：${missing.join(',')}（实际：${got.join(',')}）`)
-  return ok('7 张表齐备', got.join(' / '))
+  return ok('11 张表齐备', got.join(' / '))
 })
 
 check('部分索引与表达式索引已创建', async (db) => {
@@ -82,7 +86,12 @@ check('状态枚举 CHECK 生效', async (db) => {
 })
 
 check('删除故障时引用置 NULL（不是报错）', async (db) => {
-  const p = await db.query(`INSERT INTO products (name,model) VALUES ('扫地机','X1') RETURNING id`)
+  const line = await db.query(`INSERT INTO product_lines (name) VALUES ('扫地机') RETURNING id`)
+  const lineId = line.rows[0].id
+  const p = await db.query(
+    `INSERT INTO products (name,model,line_id) VALUES ('扫地机','X1',$1) RETURNING id`,
+    [lineId]
+  )
   const pid = p.rows[0].id
   const pt = await db.query(`INSERT INTO parts (product_id,name) VALUES ($1,'电源模组') RETURNING id`, [pid])
   const partId = pt.rows[0].id
@@ -112,7 +121,11 @@ check('删除故障时引用置 NULL（不是报错）', async (db) => {
 })
 
 check('删除有零件的产品被 RESTRICT 阻止', async (db) => {
-  const p = await db.query(`INSERT INTO products (name,model) VALUES ('净化器','A2') RETURNING id`)
+  const line = await db.query(`INSERT INTO product_lines (name) VALUES ('净化器线') RETURNING id`)
+  const p = await db.query(
+    `INSERT INTO products (name,model,line_id) VALUES ('净化器','A2',$1) RETURNING id`,
+    [line.rows[0].id]
+  )
   const pid = p.rows[0].id
   await db.query(`INSERT INTO parts (product_id,name) VALUES ($1,'滤芯')`, [pid])
 

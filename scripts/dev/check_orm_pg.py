@@ -28,7 +28,7 @@ from sqlalchemy import select, text  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.database import get_engine  # noqa: E402
-from app.models import Fault, Part, Product, Ticket, TicketStatusLog, User  # noqa: E402
+from app.models import Fault, Part, Product, ProductLine, Ticket, TicketStatusLog, User  # noqa: E402
 
 results: list[str] = []
 
@@ -47,7 +47,10 @@ def main() -> int:
 
     engine = get_engine()
     with Session(engine) as s:
-        product = Product(name="联调验证机", model="ORMTEST-X1", category="验证", sort_order=999)
+        line = ProductLine(name="验证线", sort_order=999)
+        s.add(line)
+        s.flush()
+        product = Product(name="联调验证机", model="ORMTEST-X1", line_id=line.id, sort_order=999)
         s.add(product)
         s.flush()
         part = Part(product_id=product.id, part_no="P-ORM-001", name="主刷模组", group_name="动力系统")
@@ -129,6 +132,7 @@ def main() -> int:
         s.execute(text("DELETE FROM tickets WHERE id = :t"), {"t": tid})
         s.execute(text("DELETE FROM parts WHERE product_id = :p"), {"p": pid})
         s.execute(text("DELETE FROM products WHERE id = :p"), {"p": pid})
+        s.execute(text("DELETE FROM product_lines WHERE name = :n"), {"n": "验证线"})
         s.commit()
 
     print(f"\n结果：{len(results)} 项通过")

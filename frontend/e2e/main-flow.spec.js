@@ -72,6 +72,9 @@ test('@smoke 客户排查到后台处理的主链路', async ({ page }) => {
   // 登录后默认落到工单列表
   await expect(page).toHaveURL(/\/admin\/tickets/)
 
+  // 超级管理员应看到用户管理入口
+  await expect(page.getByRole('menuitem', { name: '用户管理' })).toBeVisible()
+
   // ---------- 5. 按单号搜到刚才那张工单 ----------
   await page.getByPlaceholder('工单号或联系方式').fill(ticketNo)
   await page.waitForTimeout(500) // 关键词 300ms 防抖

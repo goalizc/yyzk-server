@@ -159,6 +159,19 @@ def upload_demo_pdf(client: httpx.Client) -> str | None:
     return resp.json()
 
 
+def ensure_lines(client: httpx.Client, specs: list[dict]) -> dict[str, int]:
+    existing = {item["name"]: item for item in client.get("/api/admin/product-lines").json()["items"]}
+    mapping = {}
+    for spec in specs:
+        name = spec["category"]
+        if name not in existing:
+            existing[name] = client.post(
+                "/api/admin/product-lines", json={"name": name, "sort_order": 0}
+            ).json()
+        mapping[name] = existing[name]["id"]
+    return mapping
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成演示数据")
     parser.add_argument("--base-url", default="http://127.0.0.1")
@@ -173,6 +186,8 @@ def main() -> int:
             for item in client.get("/api/admin/products", params={"page_size": 100}).json()["items"]
         }
 
+        lines = ensure_lines(client, PRODUCTS)
+
         for spec in PRODUCTS:
             if spec["model"] in existing:
                 print(f"[seed] 产品 {spec['model']} 已存在，跳过")
@@ -180,7 +195,13 @@ def main() -> int:
 
             product = client.post(
                 "/api/admin/products",
-                json={key: spec[key] for key in ("name", "model", "category", "description", "sort_order")},
+                json={
+                    "name": spec["name"],
+                    "model": spec["model"],
+                    "line_id": lines[spec["category"]],
+                    "description": spec["description"],
+                    "sort_order": spec["sort_order"],
+                },
             ).json()
             created["products"] += 1
 
