@@ -27,6 +27,7 @@ from app.schemas.ticket import (
 )
 from app.services.pagination import paginate
 from app.services.ticket import apply_update
+from app.services.ticket_scope import apply_ticket_scope, ensure_ticket_visible
 from app.utils.search import LIKE_ESCAPE, like_pattern
 
 router = APIRouter()
@@ -94,7 +95,7 @@ def list_tickets(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _: User = Depends(require(TICKET_READ)),
+    user: User = Depends(require(TICKET_READ)),
 ) -> TicketPage:
     stmt = (
         select(Ticket, Product.name, Product.model, Part.name, Fault.title, User.real_name)
@@ -130,6 +131,7 @@ def list_tickets(
             )
         )
 
+    stmt = apply_ticket_scope(stmt, db, user)
     stmt = stmt.order_by(Ticket.created_at.desc(), Ticket.id.desc())
     total, rows = paginate(db, stmt, page, page_size)
 
@@ -167,11 +169,12 @@ def list_tickets(
 def get_ticket(
     ticket_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require(TICKET_READ)),
+    user: User = Depends(require(TICKET_READ)),
 ) -> TicketDetail:
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
         raise BusinessError("NOT_FOUND", "工单不存在", 404)
+    ensure_ticket_visible(db, user, ticket)
     return _detail(db, ticket)
 
 
@@ -193,6 +196,7 @@ def update_ticket(
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
         raise BusinessError("NOT_FOUND", "工单不存在", 404)
+    ensure_ticket_visible(db, user, ticket)
     if payload.assignee_id is not None and db.get(User, payload.assignee_id) is None:
         raise BusinessError("NOT_FOUND", "处理人不存在", 404)
 
