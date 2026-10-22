@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -113,3 +113,40 @@ class UserPage(BaseModel):
 
 class ResetPasswordResponse(BaseModel):
     password: str
+
+
+class GrantCreate(BaseModel):
+    permission: str
+    expires_at: datetime
+    reason: str = Field(min_length=1, max_length=200)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("请填写授权事由")
+        return value
+
+    @field_validator("expires_at")
+    @classmethod
+    def _future_within_limit(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        if value <= now:
+            raise ValueError("到期时间必须晚于当前时间")
+        if value > now + timedelta(days=180):
+            raise ValueError("临时授权最长 180 天")
+        return value
+
+
+class GrantOut(BaseModel):
+    id: int
+    permission: str
+    expires_at: AppDateTime
+    reason: str
+    granted_by_name: str | None = None
+    granted_at: AppDateTime
+    revoked_at: AppDateTime | None = None
+    is_active: bool

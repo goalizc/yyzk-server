@@ -12,12 +12,25 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import BusinessError
-from app.core.permissions import USER_READ, USER_WRITE, require
+from app.core.permissions import (
+    USER_READ,
+    USER_WRITE,
+    effective_permissions,
+    grantable_permissions,
+    require,
+)
 from app.core.security import hash_password
 from app.database import get_db
-from app.models import ProductLine, User, UserProductLine
-from app.schemas.common import ErrorBody
+from app.models import (
+    ProductLine,
+    User,
+    UserPermissionGrant,
+    UserProductLine,
+)
+from app.schemas.common import ErrorBody, SuccessResponse
 from app.schemas.user import (
+    GrantCreate,
+    GrantOut,
     ProductLineAssignment,
     ProductLineBrief,
     ResetPasswordResponse,
@@ -237,3 +250,123 @@ def reset_password(
     user.updated_at = datetime.now(timezone.utc)
     db.commit()
     return ResetPasswordResponse(password=password)
+
+
+@router.get("/users/{user_id}/grants", response_model=list[GrantOut], summary="临时授权列表")
+def list_grants(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require(USER_READ)),
+) -> list[GrantOut]:
+    if db.get(User, user_id) is None:
+        raise BusinessError("NOT_FOUND", "用户不存在", 404)
+    now = datetime.now(timezone.utc)
+    rows = db.execute(
+        select(UserPermissionGrant, User.real_name)
+        .outerjoin(User, UserPermissionGrant.granted_by == User.id)
+        .where(UserPermissionGrant.user_id == user_id)
+        .order_by(UserPermissionGrant.granted_at.desc(), UserPermissionGrant.id.desc())
+    ).all()
+    return [
+        GrantOut(
+            id=grant.id,
+            permission=grant.permission,
+            expires_at=grant.expires_at,
+            reason=grant.reason,
+            granted_by_name=granted_by_name,
+            granted_at=grant.granted_at,
+            revoked_at=grant.revoked_at,
+            is_active=grant.revoked_at is None
+            and (grant.expires_at if grant.expires_at.tzinfo else grant.expires_at.replace(tzinfo=timezone.utc)) > now,
+        )
+        for grant, granted_by_name in rows
+    ]
+
+
+@router.post(
+    "/users/{user_id}/grants",
+    status_code=201,
+    response_model=GrantOut,
+    summary="发放临时授权",
+)
+def create_grant(
+    user_id: int,
+    payload: GrantCreate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require(USER_WRITE)),
+) -> GrantOut:
+    target = db.get(User, user_id)
+    if target is None:
+        raise BusinessError("NOT_FOUND", "用户不存在", 404)
+    if not target.is_active:
+        raise BusinessError("USER_DISABLED", "账号已停用，不能发放临时授权", 400)
+    if payload.permission not in grantable_permissions():
+        raise BusinessError("INVALID_PERMISSION", "该权限不可临时授予", 400)
+    if payload.permission not in effective_permissions(db, actor):
+        raise BusinessError("INVALID_PERMISSION", "不能授予自己不具备的权限", 400)
+
+    grant = UserPermissionGrant(
+        user_id=user_id,
+        permission=payload.permission,
+        expires_at=payload.expires_at,
+        reason=payload.reason.strip(),
+        granted_by=actor.id,
+    )
+    db.add(grant)
+    db.commit()
+    db.refresh(grant)
+    return GrantOut(
+        id=grant.id,
+        permission=grant.permission,
+        expires_at=grant.expires_at,
+        reason=grant.reason,
+        granted_by_name=actor.real_name,
+        granted_at=grant.granted_at,
+        revoked_at=None,
+        is_active=True,
+    )
+
+
+@router.delete(
+    "/users/{user_id}/grants/{grant_id}",
+    response_model=SuccessResponse,
+    summary="提前收回临时授权",
+)
+def revoke_grant(
+    user_id: int,
+    grant_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require(USER_WRITE)),
+) -> SuccessResponse:
+    grant = db.get(UserPermissionGrant, grant_id)
+    if grant is None or grant.user_id != user_id:
+        raise BusinessError("NOT_FOUND", "临时授权不存在", 404)
+    if grant.revoked_at is None:
+        grant.revoked_at = datetime.now(timezone.utc)
+        db.commit()
+    return SuccessResponse()
+
+
+@router.put(
+    "/users/{user_id}/product-lines",
+    response_model=UserListItem,
+    summary="整体替换产品线授权",
+)
+def replace_product_lines(
+    user_id: int,
+    assignments: list[ProductLineAssignment],
+    db: Session = Depends(get_db),
+    _: User = Depends(require(USER_WRITE)),
+) -> UserListItem:
+    user = db.get(User, user_id)
+    if user is None:
+        raise BusinessError("NOT_FOUND", "用户不存在", 404)
+
+    _replace_lines(db, user, assignments)
+    db.commit()
+    user = db.scalar(
+        select(User)
+        .options(selectinload(User.product_lines).selectinload(UserProductLine.line))
+        .where(User.id == user_id)
+    )
+    return _to_item(user)
