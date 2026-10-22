@@ -42,15 +42,18 @@ def test_assignable_filters_by_line(client, db):
 
 
 def test_agent_cannot_assign(client, db):
-    _, _, _, ticket = _setup(db)
-    make_user(db, username="agent1", role="agent")
+    line_a, _, _, ticket = _setup(db)
+    agent = make_user(db, username="agent1", role="agent")
+    db.add(UserProductLine(user_id=agent.id, line_id=line_a.id))
+    db.commit()
     headers = auth_headers(login(client, "agent1")["access_token"])
 
     response = client.put(
-        f"/api/admin/tickets/{ticket.id}", json={"assignee_id": 1}, headers=headers
+        f"/api/admin/tickets/{ticket.id}", json={"assignee_id": agent.id}, headers=headers
     )
 
     assert response.status_code == 403
+    assert response.json()["code"] == "PERMISSION_DENIED"
 
 
 def test_supervisor_can_assign_same_line_agent(client, db):
