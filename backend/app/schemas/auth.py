@@ -48,6 +48,12 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     expires_at: datetime = Field(description="带 +08:00 偏移的 ISO 8601 时间")
     user: UserOut
+    permissions: list[str] = Field(default_factory=list, description="生效权限码，已展开依赖")
+
+
+class MeResponse(BaseModel):
+    user: UserOut
+    permissions: list[str] = Field(default_factory=list)
 
 
 class PasswordChangeRequest(BaseModel):

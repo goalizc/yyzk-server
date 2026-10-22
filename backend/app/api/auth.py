@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
 from app.core.exceptions import BusinessError
+from app.core.permissions import current_permissions
 from app.core.security import (
     create_access_token,
     hash_password,
@@ -21,6 +22,7 @@ from app.models import User
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
+    MeResponse,
     PasswordChangeRequest,
     PasswordChangeResponse,
     UserOut,
@@ -61,6 +63,18 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
         access_token=token,
         expires_at=expires_at,
         user=UserOut.model_validate(user),
+        permissions=current_permissions(user, db),
+    )
+
+
+@router.get("/me", response_model=MeResponse, summary="当前账号与生效权限")
+def me(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MeResponse:
+    return MeResponse(
+        user=UserOut.model_validate(user),
+        permissions=current_permissions(user, db),
     )
 
 
