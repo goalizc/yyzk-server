@@ -71,7 +71,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { changePassword, fetchMe } from '../../api/auth'
-import { hasPermission, setPermissions } from '../../utils/permissions'
+import { clearPermissions, hasPermission, setPermissions } from '../../utils/permissions'
 import { errorCode, errorText } from '../../utils/admin'
 
 const route = useRoute()
@@ -233,6 +233,7 @@ async function onSubmit() {
 function onLogout() {
   localStorage.removeItem('token')
   localStorage.removeItem('user')
+  clearPermissions()
   router.replace('/admin/login')
 }
 </script>
