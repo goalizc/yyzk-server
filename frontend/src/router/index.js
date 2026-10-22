@@ -78,6 +78,12 @@ const routes = [
         name: 'admin-stats',
         component: () => import('../views/admin/stats/StatsDashboard.vue'),
         meta: { title: '数据看板', permission: 'stats:read' }
+      },
+      {
+        path: 'users',
+        name: 'admin-users',
+        component: () => import('../views/admin/users/UserList.vue'),
+        meta: { title: '用户管理', permission: 'user:read' }
       }
     ]
   },

@@ -125,7 +125,8 @@ const NAV_ITEMS = [
   { path: '/admin/products', label: '产品管理', permission: 'product:read' },
   { path: '/admin/parts', label: '零件管理', permission: 'part:read' },
   { path: '/admin/faults', label: '故障知识库', permission: 'fault:read' },
-  { path: '/admin/stats', label: '数据看板', permission: 'stats:read' }
+  { path: '/admin/stats', label: '数据看板', permission: 'stats:read' },
+  { path: '/admin/users', label: '用户管理', permission: 'user:read' }
 ]
 
 const navItems = computed(() => NAV_ITEMS.filter((item) => hasPermission(item.permission)))

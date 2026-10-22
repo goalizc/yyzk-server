@@ -115,3 +115,57 @@ export function adminUpload(file, onProgress) {
 export function adminDeleteUpload(url) {
   return request.delete('/admin/upload', { params: { url } })
 }
+
+// ---------------------------------------------------------------- 用户与产品线
+
+export function adminListUsers(params) {
+  return request.get('/admin/users', { params })
+}
+
+export function adminCreateUser(payload) {
+  return request.post('/admin/users', payload)
+}
+
+export function adminUpdateUser(id, payload) {
+  return request.put(`/admin/users/${id}`, payload)
+}
+
+export function adminResetPassword(id) {
+  return request.post(`/admin/users/${id}/reset-password`)
+}
+
+export function adminListGrants(id) {
+  return request.get(`/admin/users/${id}/grants`)
+}
+
+export function adminCreateGrant(id, payload) {
+  return request.post(`/admin/users/${id}/grants`, payload)
+}
+
+export function adminRevokeGrant(id, grantId) {
+  return request.delete(`/admin/users/${id}/grants/${grantId}`)
+}
+
+export function adminReplaceUserLines(id, assignments) {
+  return request.put(`/admin/users/${id}/product-lines`, assignments)
+}
+
+export function adminListProductLines(params) {
+  return request.get('/admin/product-lines', { params })
+}
+
+export function adminCreateProductLine(payload) {
+  return request.post('/admin/product-lines', payload)
+}
+
+export function adminUpdateProductLine(id, payload) {
+  return request.put(`/admin/product-lines/${id}`, payload)
+}
+
+export function adminDeleteProductLine(id) {
+  return request.delete(`/admin/product-lines/${id}`)
+}
+
+export function adminListAssignable(params) {
+  return request.get('/admin/users/assignable', { params })
+}
