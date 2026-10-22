@@ -14,6 +14,7 @@ from app.api import (
     admin_faults,
     admin_product_lines,
     admin_tickets,
+    admin_users,
     auth,
     health,
     public,
@@ -47,4 +48,5 @@ app.include_router(admin.router, prefix="/api/admin", tags=["后台"])
 app.include_router(admin_product_lines.router, prefix="/api/admin", tags=["后台"])
 app.include_router(admin_faults.router, prefix="/api/admin", tags=["后台"])
 app.include_router(admin_tickets.router, prefix="/api/admin", tags=["后台"])
+app.include_router(admin_users.router, prefix="/api/admin", tags=["后台"])
 app.include_router(stats.router, prefix="/api/admin/stats", tags=["统计"])
