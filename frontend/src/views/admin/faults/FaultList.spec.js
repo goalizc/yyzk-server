@@ -1,5 +1,5 @@
 // FaultList.vue：筛选参数拼装、产品切换清空零件、进入编辑、删除确认、空态
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -7,6 +7,7 @@ import FaultList from './FaultList.vue'
 import { setPermissions } from '../../../utils/permissions'
 
 vi.mock('../../../api/admin', () => ({
+  adminGetFault: vi.fn(),
   adminListFaults: vi.fn(),
   adminListProducts: vi.fn(),
   adminListParts: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock('../../../api/admin', () => ({
 
 import {
   adminDeleteFault,
+  adminGetFault,
   adminListFaults,
   adminListParts,
   adminListProducts
@@ -51,6 +53,8 @@ function makeRouter() {
   })
 }
 
+const mountedWrappers = []
+
 async function mountList() {
   const router = makeRouter()
   await router.push('/admin/faults')
@@ -58,9 +62,16 @@ async function mountList() {
     global: { plugins: [ElementPlus, router] },
     attachTo: document.body
   })
+  mountedWrappers.push(wrapper)
   await flushPromises()
   return { wrapper, router }
 }
+
+// 抽屉会 teleport 到 body，不卸载会残留 DOM 拖慢后续用例
+afterEach(() => {
+  for (const wrapper of mountedWrappers) wrapper.unmount()
+  mountedWrappers.length = 0
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -68,6 +79,12 @@ beforeEach(() => {
   adminListProducts.mockResolvedValue({ total: 1, page: 1, page_size: 100, items: PRODUCTS })
   adminListParts.mockResolvedValue({ total: 1, page: 1, page_size: 100, items: PARTS })
   adminListFaults.mockResolvedValue({ total: 1, page: 1, page_size: 20, items: FAULTS })
+  adminGetFault.mockResolvedValue({
+    ...FAULTS[0],
+    root_cause: '毛发缠绕',
+    solution_steps: [{ step: 1, text: '拆下主刷', image_url: null }],
+    attachment_urls: []
+  })
   adminDeleteFault.mockResolvedValue({ success: true })
 })
 
@@ -195,11 +212,24 @@ describe('FaultList', () => {
     expect(wrapper.text()).toContain('主刷不转')
   })
 
-  it('仅有 fault:read 时行点击也能打开故障详情（客服场景）', async () => {
+  it('仅有 fault:read 时行点击打开阅读抽屉（客服场景）', async () => {
     setPermissions(['fault:read'])
     const { wrapper, router } = await mountList()
 
     await wrapper.findAll('.el-table__row')[0].trigger('click')
+    await flushPromises()
+
+    expect(adminGetFault).toHaveBeenCalledWith(21)
+    // el-drawer 会 teleport 到 body，不能只看 wrapper.text()
+    expect(document.body.textContent).toContain('主刷不转')
+    expect(router.currentRoute.value.name).toBe('admin-faults')
+  })
+
+  it('行内编辑按钮仍进入编辑页', async () => {
+    const { wrapper, router } = await mountList()
+
+    const editButton = wrapper.findAll('button').find((node) => node.text() === '编辑')
+    await editButton.trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.name).toBe('admin-fault-edit')

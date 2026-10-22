@@ -124,6 +124,8 @@
         @current-change="load"
         @size-change="onSizeChange"
       />
+
+      <FaultReaderDrawer v-model="readerVisible" :fault-id="readerId" @edit="goEditById" />
     </el-card>
   </div>
 </template>
@@ -134,6 +136,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminDeleteFault, adminListFaults, adminListParts, adminListProducts } from '../../../api/admin'
 import ErrorState from '../../../components/ErrorState.vue'
+import FaultReaderDrawer from './FaultReaderDrawer.vue'
 import { errorText } from '../../../utils/admin'
 import { formatDate } from '../../../utils/format'
 import { hasPermission } from '../../../utils/permissions'
@@ -272,9 +275,17 @@ function goEdit(row) {
   router.push({ name: 'admin-fault-edit', params: { id: row.id } })
 }
 
+const readerVisible = ref(false)
+const readerId = ref(null)
+
 function onRowClick(row) {
   if (!canOpen.value) return
-  goEdit(row)
+  readerId.value = row.id
+  readerVisible.value = true
+}
+
+function goEditById(id) {
+  router.push({ name: 'admin-fault-edit', params: { id } })
 }
 
 async function onDelete(row) {
