@@ -332,7 +332,7 @@ schema_migrations (
 )
 ```
 
-- `deploy/migrations/NNN_name.sql` 按文件名顺序执行
+- `deploy/migrations/` 目录下的 `NNN_` 前缀 SQL 文件按文件名顺序执行
 - `deploy/scripts/migrate.py`：读取已应用版本，跳过已完成，逐个在事务中执行并记录；失败即退出。用 Python 而不是 shell + psql，是因为 backend 镜像里没有 psql，但已有 psycopg2
 - 新增 compose 一次性服务 `migrate`（与 `init` 同构）：`docker compose run --rm migrate`，挂载 `./scripts` 与 `./migrations`
 - `deploy/schema.sql` 表示最新目标状态，并在末尾把随包发布的迁移版本一次性写入 `schema_migrations`（全新库不会重复执行迁移）

@@ -341,3 +341,31 @@ A-02 评审 0.5
 20 个工作日窗口下，后端仅余 2 天浮动。**B-04（2.5 天，最重）一旦超时 1 天，上线日直接顺延**。
 
 > 上一版关键路径漏了 B-05、B-09、D-02（都是后端任务，单人无法并行），把路径算短了 3.5 天。
+
+---
+
+## 追加批次：用户权限与产品线（T1–T16）
+
+> 2026-10-22 追加。原排在三期 3.5 的用户与权限管理，因上线运营刚需提前到一期上线前实施。本批次独立于上方一期任务卡，**不改变 A/B/C/D 的历史工期与人天数据**；详细设计见 `docs/superpowers/specs/2026-10-22-user-permissions-design.md`，实施步骤见 `docs/superpowers/plans/2026-10-22-user-permissions.md`。
+
+| 编号 | 任务 | 交付物 |
+|---|---|---|
+| T1 | 迁移机制与部署顺序 | `schema_migrations` 表、`deploy/scripts/migrate.py`、compose `migrate` 一次性服务、`deploy.sh` 改为「db 就绪 → 迁移 → 起后端」 |
+| T2 | 产品线、用户授权表与 ORM | `product_lines` / `user_product_lines` / `user_permission_grants` 三表；`Product.line_id`；`schema.sql`、`init_admin.py` 角色值同步 |
+| T3 | 权限核心模块 | `backend/app/core/permissions.py`：15 个权限码、四角色模板、数据范围、临时授权、依赖闭包、`require()` |
+| T4 | 权限接入现有接口 | 现有产品/零件/故障/工单/上传/统计接口由 `get_current_user` 换成 `require(...)`；改密与登录保持开放 |
+| T5 | 登录与 `/auth/me` 下发权限 | 登录响应增加 `permissions`；新增 `GET /api/auth/me` |
+| T6 | 产品线接口与产品接口改造 | `admin_product_lines.py` 四个端点；产品新增/修改/响应改用 `line_id`、`line_name`，删除 `category` |
+| T7 | 工单数据范围 | `backend/app/services/ticket_scope.py`；工单列表/详情/更新按产品线过滤，越权 403 |
+| T8 | 用户管理接口 | `admin_users.py`：列表、新建、修改、重置密码；自停用/自降级/最后超管保护 |
+| T9 | 临时授权与产品线分配接口 | 授权列表/发放/收回、产品线整体替换；`user:write` 不可授予、不能超出自身权限 |
+| T10 | 工单改派与候选人接口 | `GET /api/admin/users/assignable`；改派校验启用/权限/数据范围；`ticket:assign` 与认领分离 |
+| T11 | 前端权限基础设施 | `utils/permissions.js`、路由 `meta.permission` 守卫、菜单按权限渲染、`/auth/me` 刷新与旧 localStorage 兼容 |
+| T12 | 用户管理页（P-18） | `frontend/src/views/admin/users/`：列表、新建/编辑、重置密码一次性展示、临时授权管理 |
+| T13 | 产品线管理页、产品页改造与只读态 | `admin/product-lines/ProductLineList.vue`、产品页产品线下拉、审计角色隐藏写操作 |
+| T14 | 工单抽屉改派 | 工单抽屉处理人下拉（仅 `ticket:assign` 可见）、候选人按工单产品线过滤 |
+| T15 | 联调工具、种子与 E2E | `seed_demo.py` 改产品线、`check_orm_pg.py`、E2E 四角色菜单断言 |
+| T16 | 文档同步与最终验证 | 14 份文档同步；后端/前端/schema/链接检查全绿，逐条记录验收证据 |
+
+> 验证结果见 `docs/03-测试与验收/验收检查表.md` §九；其中四角色登录截图与旧库迁移需在具备真实旧数据的部署环境执行，标注为「待人工验收」。
+

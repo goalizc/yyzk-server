@@ -1,10 +1,22 @@
 # API 接口契约
 
-> **版本**：v1.3 ｜ 修订日期：2026-10-20
+> **版本**：v1.4 ｜ 修订日期：2026-10-22
 > **Base URL**：`/api`
 > 数据格式：JSON，UTF-8
 > 时间格式：ISO 8601 带时区（如 `2026-10-19T10:00:00+08:00`），服务端统一 `TZ=Asia/Shanghai`
 > 鉴权：后台接口需 Header `Authorization: Bearer <token>`
+
+## v1.4 修订说明（用户权限、产品线与迁移机制）
+
+| # | 变更 | 原因 |
+|---|---|---|
+| 1 | 删除"role 不参与鉴权"；改为权限码 + 角色模板 + 数据范围 | 四角色权限已落地，旧说明与实现相反 |
+| 2 | 登录响应增加 `permissions`；新增 `GET /api/auth/me` | 前端按权限码渲染菜单、路由与按钮 |
+| 3 | 产品 `category` 改为 `line_id` / `line_name`；删除 `category` | 产品线取代分类，且成为数据权限判定依据 |
+| 4 | 工单列表/详情/更新增加数据范围与改派规则 | 一线客服只能操作自己产品线工单；改派与认领分离 |
+| 5 | 新增用户管理、临时授权、产品线共 13 个端点 | 超管需在界面完成账号与授权维护 |
+| 6 | 错误码增加权限、用户、产品线、改派相关 12 项 | 前端需按稳定 code 分支处理 |
+| 7 | 部署顺序改为「db 就绪 → 迁移 → 启动后端」 | `/api/health` 只查 `SELECT 1`，旧表结构也可能返回 ok |
 
 ## v1.3 修订说明（开发中产品确认）
 
@@ -70,11 +82,11 @@
 }
 ```
 
-`code` 为稳定机器码，前端按 `code` 判断分支、按 `detail` 展示文案。完整清单见 §7。
+`code` 为稳定机器码，前端按 `code` 判断分支、按 `detail` 展示文案。完整清单见 §8。
 
-### 0.3 鉴权失败
+### 0.3 鉴权与授权
 
-> **角色说明**：`users.role` 有 `admin` / `agent` 两个值，但**一期不参与鉴权判断** —— 两者可调用的接口完全相同（PRD §5 已声明不做权限管理）。不要按 role 额外加限制，否则与文档不一致。
+> **权限模型**：`users.role` 取值为 `super_admin` / `supervisor` / `agent` / `auditor`，角色对应固定权限码集合；接口按权限码校验（`require("资源:动作")`），不按角色名硬编码。生效权限 = 角色模板权限 ∪ 未过期且未收回的临时授权，并按依赖闭包补齐。数据范围只作用于工单：`ALL` 不受限，`LINES` 仅被授权产品线。
 
 未带 token、token 非法或过期，一律返回：
 
@@ -84,6 +96,12 @@
 
 前端拦截器**只在 `code === "AUTH_TOKEN_EXPIRED"` 时**清除本地 token 并跳转 `/admin/login`。
 登录失败同样返回 401，但 `code` 为 `AUTH_INVALID_CREDENTIALS`，必须在表单内提示，**不得触发跳转**（否则用户输错密码会被"闪回"登录页）。
+
+已登录但权限不足（缺少权限码、越权访问工单、无改派权限却传 `assignee_id`）返回 403：
+
+```json
+{ "detail": "无权限执行此操作", "code": "PERMISSION_DENIED" }
+```
 
 ---
 
@@ -108,15 +126,41 @@ Response 200:
     "id": 1,
     "username": "admin",
     "real_name": "系统管理员",
-    "role": "admin"
-  }
+    "role": "super_admin"
+  },
+  "permissions": ["fault:read", "fault:write", "product:read", "ticket:read", "..."]
 }
 ```
+
+`permissions` 为**已展开依赖闭包**的生效权限码数组（含未过期且未收回的临时授权），前端直接存入 localStorage，按码渲染菜单/路由/按钮，不再判断角色名。
 
 Error 401：`{"detail": "用户名或密码错误", "code": "AUTH_INVALID_CREDENTIALS"}`
 Error 403：`{"detail": "账号已停用", "code": "AUTH_USER_DISABLED"}`
 
 成功后服务端更新 `users.last_login_at`。
+
+---
+
+### GET /api/auth/me
+
+**需鉴权**。返回当前账号与**实时计算**的生效权限，用于跨天/临时授权到期后刷新菜单。
+
+Response 200:
+```json
+{
+  "user": {
+    "id": 1,
+    "username": "admin",
+    "real_name": "系统管理员",
+    "role": "super_admin"
+  },
+  "permissions": ["fault:read", "fault:write", "product:read", "ticket:read", "..."]
+}
+```
+
+- 401 按 `AUTH_TOKEN_EXPIRED` 处理（清 token 跳登录）；网络错误保持当前页面并提示，不要误退出。
+- 前端进入后台布局及每次后台路由切换时调用，角色变更或临时授权到期后菜单及时更新。
+- 老版本 localStorage 只有 token、没有 `permissions` 时，路由守卫先调用本接口补齐。
 
 ---
 
@@ -143,7 +187,7 @@ Error 400：`{"detail": "原密码不正确", "code": "PASSWORD_INVALID"}`
 Error 400：`{"detail": "新密码不能与原密码相同", "code": "PASSWORD_SAME"}`
 Error 422：`{"detail": "新密码至少 8 位", "code": "VALIDATION_ERROR"}`
 
-> 一期不做用户增删改与角色权限管理（见 PRD §5 边界）。本接口只解决"必须能改默认密码"这一验收项。
+> 本接口任何在用账号都可调用（登录与改密不受权限码限制）。用户管理见 §6；已知限制：改密后不强制下线，超管重置某人密码后其已登录会话仍有效直到 token 过期，停用则下一个请求立即被拒。
 
 ---
 
@@ -160,13 +204,14 @@ Response 200:
     "id": 1,
     "name": "智能扫地机器人",
     "model": "X1",
-    "category": "扫地机",
+    "line_id": 1,
+    "line_name": "扫地机",
     "sort_order": 0
   }
 ]
 ```
 
-> 无分页：产品数量在百级以内，一次返全量便于前端缓存。
+> 无分页：产品数量在百级以内，一次返全量便于前端缓存。`line_id`/`line_name` 取代原 `category`；客户侧 `ProductPublic` 同样返回这两个字段。
 
 ### GET /api/products/{product_id}/parts
 
@@ -204,7 +249,8 @@ Response 200:
       "id": 1,
       "name": "智能扫地机器人",
       "model": "X1",
-      "category": "扫地机",
+      "line_id": 1,
+      "line_name": "扫地机",
       "description": "",
       "is_active": true,
       "sort_order": 0,
@@ -226,7 +272,7 @@ Response 200:
 {
   "name": "智能扫地机器人",
   "model": "X1",
-  "category": "扫地机",
+  "line_id": 1,
   "description": "",
   "is_active": true,
   "sort_order": 0
@@ -236,6 +282,10 @@ Response 200:
 Response 201：返回创建后的产品对象（结构同列表项）。
 
 Error 409：`{"detail": "型号 X1 已存在", "code": "MODEL_DUPLICATED"}`
+Error 400：`{"detail": "产品线已停用，不能用于产品", "code": "LINE_INACTIVE"}`
+Error 404：`line_id` 不存在
+
+> `line_id` 为必填；`line_name` 由服务端通过关联一次取回（`selectinload`），不接受客户端写入。
 
 ### PUT /api/admin/products/{id}
 
@@ -630,7 +680,9 @@ Error 400：`{"detail": "请填写联系方式", "code": "VALIDATION_ERROR"}`
 
 ### GET /api/admin/tickets
 
-**需鉴权**。工单列表。
+**需鉴权，权限 `ticket:read`**。工单列表。
+
+> **数据范围**：`super_admin` / `supervisor` / `auditor` 为 `ALL`，不受限；`agent` 为 `LINES`，只返回被授权产品线（`user_product_lines` 未过期）下的工单。过滤发生在搜索之前——`keyword` 只在可见范围内匹配；客服未分配任何产品线时返回 0 条；`tickets.product_id` 为空的工单对客服不可见。
 
 Query：
 
@@ -672,7 +724,9 @@ Response 200:
 
 ### GET /api/admin/tickets/{id}
 
-**需鉴权**。工单详情（抽屉用）。
+**需鉴权，权限 `ticket:read`**。工单详情（抽屉用）。
+
+> **数据范围**：与列表同一套 `ticket_scope` 校验；客服访问不可见工单返回 403 `PERMISSION_DENIED`，不能只在列表过滤。`tickets.product_id` 为空时仅 `ALL` 范围可见。
 
 Response 200:
 ```json
@@ -715,7 +769,7 @@ Error 404：`NOT_FOUND`
 
 ### PUT /api/admin/tickets/{id}
 
-**需鉴权**。更新状态 / 备注 / 处理人。
+**需鉴权，权限 `ticket:write`**。更新状态 / 备注 / 处理人。
 
 Request（字段均可选，至少传一项）：
 ```json
@@ -728,14 +782,18 @@ Request（字段均可选，至少传一项）：
 ```
 
 服务端行为：
-1. `status` 变化时**必须**带非空 `remark`（否则 400 `VALIDATION_ERROR`），并写入 `ticket_status_logs`，`operator_id` 从 token 取（前端不可指定操作人）
-2. 处理人归属（v1.3 修订，替代原"不传即设为当前用户"）：
-   - 显式传 `assignee_id` → **转派**给该人（转派即确认认领）
+1. **数据范围**：更新前同样校验工单可见性，客服改不可见工单返回 403 `PERMISSION_DENIED`
+2. `status` 变化时**必须**带非空 `remark`（否则 400 `VALIDATION_ERROR`），并写入 `ticket_status_logs`，`operator_id` 从 token 取（前端不可指定操作人）
+3. 处理人归属：
+   - 显式传 `assignee_id` → **改派**（转派即确认认领）；操作者必须持有 `ticket:assign`，否则 403 `PERMISSION_DENIED`，**不能靠前端隐藏按钮**
    - 未传且工单**当前无处理人** → 由操作人认领（首次处理即归属）
-   - 未传但已有人处理 → **保持原处理人**，不静默抢占；要接手必须显式转派
-3. `remark` 同时更新 `tickets.remark`（只保留最新一条，历史在 logs 里）
-4. `need_on_site` 允许更正（客服电话确认后修改）
-5. 仅改 `remark` / `need_on_site` 不写流转日志，只更新 `tickets.updated_at`
+   - 未传但已有人处理 → **保持原处理人**，不静默抢占；要接手必须显式改派
+4. 改派校验：候选人必须启用（否则 400 `ASSIGNEE_DISABLED`）、有 `ticket:write`（否则 400 `ASSIGNEE_NO_PERMISSION`）、对工单产品线可见（否则 400 `ASSIGNEE_OUT_OF_SCOPE`）；`product_id` 为空时只允许 `ALL` 范围账号
+5. `remark` 同时更新 `tickets.remark`（只保留最新一条，历史在 logs 里）
+6. `need_on_site` 允许更正（客服电话确认后修改）
+7. 仅改 `remark` / `need_on_site` 不写流转日志，只更新 `tickets.updated_at`
+
+> 改派到其他产品线后，原处理人不再可见该工单。候选人下拉由 `GET /api/admin/users/assignable` 提供，见 §6。
 
 状态流转约束：
 
@@ -752,7 +810,214 @@ Response 200：返回更新后的工单详情（结构同 GET 详情）。
 
 ---
 
-## 6. 统计
+## 6. 用户管理与产品线
+
+> 本章为 v1.4 新增。除候选人接口外，用户相关端点要求 `user:read` / `user:write`；产品线端点要求 `product_line:read` / `product_line:write`。任何接口都不返回 `password_hash`。
+
+### GET /api/admin/users
+
+**权限 `user:read`**。用户列表。
+
+Query：`keyword`（匹配用户名/姓名，≤100 字）、`role`、`is_active`、`page`、`page_size`
+
+Response 200:
+```json
+{
+  "total": 2,
+  "page": 1,
+  "page_size": 20,
+  "items": [
+    {
+      "id": 1,
+      "username": "admin",
+      "real_name": "系统管理员",
+      "role": "super_admin",
+      "is_active": true,
+      "last_login_at": "2026-10-22T09:00:00+08:00",
+      "created_at": "2026-10-01T09:00:00+08:00",
+      "product_lines": [
+        { "id": 1, "name": "扫地机", "expires_at": null }
+      ]
+    }
+  ]
+}
+```
+
+### GET /api/admin/users/assignable
+
+**权限 `ticket:assign`**。可改派的启用账号，供工单抽屉处理人下拉。
+
+Query：`product_id`（选填；传入时按产品线可见性过滤）
+
+Response 200:
+```json
+[{ "id": 2, "real_name": "李工" }]
+```
+
+候选规则：账号启用、持有 `ticket:write`，且数据范围为 `ALL` 或已被授权该产品线；工单 `product_id` 为空时只返回 `ALL` 范围账号。
+
+### POST /api/admin/users
+
+**权限 `user:write`**。新建账号。
+
+```json
+{
+  "username": "li",
+  "real_name": "李工",
+  "password": "Init@12345",
+  "role": "agent",
+  "product_lines": [
+    { "line_id": 1, "expires_at": null },
+    { "line_id": 2, "expires_at": "2026-12-31T23:59:59+08:00" }
+  ]
+}
+```
+
+规则：`username` ≤50 且唯一；`real_name` ≤50；密码 8 位以上且 ≤72 字节；`role` 取四个合法值；产品线到期时间必须晚于当前时间或为 `null`（长期）。
+
+Response 201：返回用户列表项结构（同 GET 列表项）。
+Error 409：`{"detail": "用户名 li 已存在", "code": "USERNAME_DUPLICATED"}`
+Error 404：`line_id` 不存在
+
+### PUT /api/admin/users/{id}
+
+**权限 `user:write`**。修改姓名 / 角色 / 启用状态（用户名不可改）。
+
+```json
+{ "real_name": "李工", "role": "supervisor", "is_active": true }
+```
+
+硬约束：
+- 不能停用自己 → 400 `SELF_DISABLE`
+- 不能修改自己的角色 → 400 `SELF_ROLE_CHANGE`
+- 停用或降级最后一个在用超管 → 400 `LAST_SUPER_ADMIN`（事务内 `FOR UPDATE` 锁定在用超管行后判断）
+
+不提供删除用户，只停用；历史 `tickets.assignee_id`、`ticket_status_logs.operator_id`、`faults.created_by` 保留。
+
+### POST /api/admin/users/{id}/reset-password
+
+**权限 `user:write`**。服务端生成 12 位密码。
+
+Response 200:
+```json
+{ "password": "Ab3dEf6hJk9m" }
+```
+
+> 明文**只在本次响应返回一次**，不落库、不可再次查看。重置后该用户已登录会话仍有效直到 token 过期（与改密契约一致）；停用则下一个请求立即被拒。
+
+### GET /api/admin/users/{id}/grants
+
+**权限 `user:read`**。临时授权列表，含已过期与已收回记录。
+
+Response 200:
+```json
+[
+  {
+    "id": 3,
+    "permission": "ticket:assign",
+    "expires_at": "2026-11-01T23:59:59+08:00",
+    "reason": "双十一临时支援",
+    "granted_by_name": "系统管理员",
+    "granted_at": "2026-10-22T10:00:00+08:00",
+    "revoked_at": null,
+    "is_active": true
+  }
+]
+```
+
+### POST /api/admin/users/{id}/grants
+
+**权限 `user:write`**。发放临时授权。
+
+```json
+{
+  "permission": "ticket:assign",
+  "expires_at": "2026-11-01T23:59:59+08:00",
+  "reason": "双十一临时支援"
+}
+```
+
+规则：`expires_at` 必填、必须晚于当前时间、最长 180 天；`reason` 1–200 字。**只增不减**；不可授予 `user:write`；发放者不能授予自己不具备的权限；已停用账号不能发放。
+
+Response 201：返回授权对象（结构同 GET 列表项）。
+Error 400：`INVALID_PERMISSION`（不可授予的权限码 / 超出自身权限）、`USER_DISABLED`（目标账号已停用）
+Error 422：到期时间或事由不满足校验
+
+### DELETE /api/admin/users/{id}/grants/{grant_id}
+
+**权限 `user:write`**。提前收回。重复收回幂等。
+
+Response 200：`{ "success": true }`
+Error 404：`NOT_FOUND`
+
+### PUT /api/admin/users/{id}/product-lines
+
+**权限 `user:write`**。整体替换产品线授权。
+
+```json
+[
+  { "line_id": 1, "expires_at": null },
+  { "line_id": 2, "expires_at": "2026-12-31T23:59:59+08:00" }
+]
+```
+
+Response 200：返回更新后的用户列表项。传空数组即清空授权（客服随后看到 0 条工单）。
+
+### GET /api/admin/product-lines
+
+**权限 `product_line:read`**。产品线列表。
+
+Query：`is_active`（选填）
+
+Response 200:
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "name": "扫地机",
+      "sort_order": 0,
+      "is_active": true,
+      "product_count": 8,
+      "created_at": "2026-10-22T09:00:00+08:00",
+      "updated_at": "2026-10-22T09:00:00+08:00"
+    }
+  ]
+}
+```
+
+### POST /api/admin/product-lines
+
+**权限 `product_line:write`**。
+
+```json
+{ "name": "净化器", "sort_order": 1 }
+```
+
+Response 201：返回产品线对象。Error 409：`LINE_NAME_DUPLICATED`
+
+### PUT /api/admin/product-lines/{id}
+
+**权限 `product_line:write`**。改名、排序、启用/停用。
+
+```json
+{ "name": "净化器", "sort_order": 2, "is_active": false }
+```
+
+Response 200：返回产品线对象。Error 409：`LINE_NAME_DUPLICATED`
+
+> `is_active=false` 表示不再用于新建产品与新授权；已有产品归属与授权继续有效。
+
+### DELETE /api/admin/product-lines/{id}
+
+**权限 `product_line:write`**。
+
+Response 200：`{ "success": true }`
+Error 409：`{"detail": "该产品线下还有 3 个产品，请先迁移后再试", "code": "DELETE_BLOCKED"}`
+
+---
+
+## 7. 统计
 
 > **统一口径（v1.2 明确）**
 > - 统计窗口由 `days` 控制：默认 30，`days=0` 表示**全部**（不加时间条件，对应页面"全部"档），其余取值 1–365
@@ -839,7 +1104,7 @@ Response 200:
 
 ---
 
-## 7. 错误码表
+## 8. 错误码表
 
 | HTTP | code | 含义 | 前端处理建议 |
 |---|---|---|---|
@@ -850,12 +1115,24 @@ Response 200:
 | 400 | `PART_PRODUCT_MISMATCH` | 零件不属于所选产品 | 重置零件选择 |
 | 400 | `QUERY_LOG_MISMATCH` | 反馈的日志与故障不匹配 | 静默忽略并刷新详情 |
 | 400 | `TICKET_STATUS_INVALID` | 状态流转不被允许 | 刷新列表 |
+| 400 | `LAST_SUPER_ADMIN` | 不能停用/降级最后一个在用超级管理员 | 提示至少保留一个在用超管 |
+| 400 | `INVALID_PERMISSION` | 临时授权权限码不可授予或超出自身权限 | 刷新可选权限列表 |
+| 400 | `SELF_DISABLE` | 不能停用自己 | 提示不能停用当前登录账号 |
+| 400 | `SELF_ROLE_CHANGE` | 不能修改自己的角色 | 角色下拉置灰 |
+| 400 | `USER_DISABLED` | 目标账号已停用，不能发放临时授权 | 先启用账号 |
+| 400 | `ASSIGNEE_DISABLED` | 改派目标账号已停用 | 刷新候选人下拉 |
+| 400 | `ASSIGNEE_NO_PERMISSION` | 改派目标没有 `ticket:write` | 刷新候选人下拉 |
+| 400 | `ASSIGNEE_OUT_OF_SCOPE` | 改派目标看不到该工单产品线 | 只选同产品线客服或主管 |
+| 400 | `LINE_INACTIVE` | 产品线已停用，不能用于产品 | 选择启用中的产品线 |
 | 401 | `AUTH_INVALID_CREDENTIALS` | 用户名或密码错误 | 提示，**不跳转** |
 | 401 | `AUTH_TOKEN_EXPIRED` | 未登录 / token 过期 | 清 token 跳登录页 |
 | 403 | `AUTH_USER_DISABLED` | 账号已停用 | 提示联系管理员 |
+| 403 | `PERMISSION_DENIED` | 缺少权限码 / 越权访问工单 / 无改派权限 | 提示无权限；工单场景返回列表并刷新 |
 | 404 | `NOT_FOUND` | 资源不存在 | 空态页 |
 | 405 | `METHOD_NOT_ALLOWED` | 接口不支持该请求方法（客户端调用错误） | 开发期问题，提示刷新并检查调用方法 |
 | 409 | `MODEL_DUPLICATED` | 产品型号重复（POST 与 PUT 均可能） | 表单内联报错 |
+| 409 | `USERNAME_DUPLICATED` | 用户名重复 | 用户名输入框内联报错 |
+| 409 | `LINE_NAME_DUPLICATED` | 产品线名称重复 | 名称输入框内联报错 |
 | 409 | `DELETE_BLOCKED` | 存在关联数据，禁止删除 | 展示 `detail` 中的引用统计 |
 | 409 | `UPLOAD_IN_USE` | 上传文件仍被故障方案引用，不可删除 | **静默忽略**（文件留给孤儿清理回收） |
 | 413 | `UPLOAD_TOO_LARGE` | 文件超过 20MB | 提示压缩后重试 |
@@ -864,7 +1141,7 @@ Response 200:
 | 500 | `INTERNAL_ERROR` | 未捕获的服务端异常（全局处理器兜底） | 通用错误提示，不暴露堆栈 |
 | 503 | `SERVICE_UNAVAILABLE` | 数据库不可用（health）或上游未就绪（Nginx） | 提示稍后重试 |
 
-## 8. 运维接口
+## 9. 运维接口
 
 ### GET /api/health
 
@@ -886,15 +1163,17 @@ Error 503:
 
 ---
 
-## 9. 端点总览（30 个）
+## 10. 端点总览（44 个）
 
 | 分组 | 数量 | 明细 |
 |---|---|---|
-| 鉴权 | 2 | `POST /auth/login`、`PUT /auth/password` |
+| 鉴权 | 3 | `POST /auth/login`、`GET /auth/me`、`PUT /auth/password` |
 | 公开接口 | 7 | 产品列表、零件级联、故障列表、故障详情、反馈、日志上报、工单提交 |
 | 后台内容管理 | 17 | 产品 4 + 零件 4 + 故障 5 + 工单 3 + 上传 1 |
+| 用户管理与临时授权 | 9 | 用户列表、候选人、新建、修改、重置密码、授权列表、发放、收回、产品线分配 |
+| 产品线 | 4 | 列表、新建、修改、删除 |
 | 统计 | 3 | overview / top-faults / missed |
 | 运维 | 1 | health |
-| **合计** | **30** | 其中需鉴权 **21 个**（后台 17 + 统计 3 + 改密 1） |
+| **合计** | **44** | 其中需鉴权 **35 个**（内容 17 + 用户 9 + 产品线 4 + 统计 3 + `/auth/me` + 改密） |
 
 > 所有响应保持 `{"detail": string, "code": string}` 结构；`detail` 面向用户可直接展示（中文、无技术细节）。
