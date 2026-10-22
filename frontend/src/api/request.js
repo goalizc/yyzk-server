@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { clearPermissions } from '../utils/permissions'
 
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '/api',
@@ -21,6 +22,7 @@ request.interceptors.response.use(
     if (code === 'AUTH_TOKEN_EXPIRED' || code === 'AUTH_USER_DISABLED') {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
+      clearPermissions()
       if (!location.pathname.endsWith('/admin/login')) {
         location.href = '/admin/login'
       }

@@ -39,6 +39,7 @@
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { login } from '../../api/auth'
+import { setPermissions } from '../../utils/permissions'
 
 const router = useRouter()
 const route = useRoute()
@@ -62,6 +63,7 @@ async function onSubmit() {
     const data = await login({ username: form.username, password: form.password })
     localStorage.setItem('token', data.access_token)
     localStorage.setItem('user', JSON.stringify(data.user))
+    setPermissions(data.permissions)
     ElMessage.success('登录成功')
     router.replace(typeof route.query.redirect === 'string' ? route.query.redirect : '/admin')
   } catch (error) {

@@ -5,9 +5,13 @@ import ElementPlus from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import Layout from './Layout.vue'
 
-vi.mock('../../api/auth', () => ({ changePassword: vi.fn() }))
+vi.mock('../../api/auth', () => ({
+  changePassword: vi.fn(),
+  fetchMe: vi.fn().mockResolvedValue({ permissions: ['ticket:read'] })
+}))
 
 import { changePassword } from '../../api/auth'
+import { setPermissions } from '../../utils/permissions'
 
 async function mountLayout(path = '/admin/tickets') {
   const router = createRouter({
@@ -47,7 +51,8 @@ async function fillForm(state, { oldPassword, newPassword, confirmPassword }) {
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
-  localStorage.setItem('user', JSON.stringify({ username: 'admin', real_name: '超级管理员', role: 'admin' }))
+  localStorage.setItem('user', JSON.stringify({ username: 'admin', real_name: '超级管理员', role: 'super_admin' }))
+  setPermissions(['ticket:read'])
   changePassword.mockResolvedValue({})
 })
 

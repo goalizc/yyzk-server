@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { fetchMe } from '../api/auth'
+import { clearPermissions, hasPermission, setPermissions } from '../utils/permissions'
 
 const routes = [
   {
@@ -44,38 +46,38 @@ const routes = [
         path: 'tickets',
         name: 'admin-tickets',
         component: () => import('../views/admin/tickets/TicketList.vue'),
-        meta: { title: '工单管理' }
+        meta: { title: '工单管理', permission: 'ticket:read' }
       },
       {
         path: 'products',
         name: 'admin-products',
         component: () => import('../views/admin/products/ProductList.vue'),
-        meta: { title: '产品管理' }
+        meta: { title: '产品管理', permission: 'product:read' }
       },
       {
         path: 'parts',
         name: 'admin-parts',
         component: () => import('../views/admin/parts/PartList.vue'),
-        meta: { title: '零件管理' }
+        meta: { title: '零件管理', permission: 'part:read' }
       },
       {
         path: 'faults',
         name: 'admin-faults',
         component: () => import('../views/admin/faults/FaultList.vue'),
-        meta: { title: '故障知识库' }
+        meta: { title: '故障知识库', permission: 'fault:read' }
       },
       {
         // id 可选：不带 id 即新建（P-16 的路由约定 /admin/faults/edit/:id?）
         path: 'faults/edit/:id?',
         name: 'admin-fault-edit',
         component: () => import('../views/admin/faults/FaultEdit.vue'),
-        meta: { title: '故障编辑' }
+        meta: { title: '故障编辑', permission: 'fault:write' }
       },
       {
         path: 'stats',
         name: 'admin-stats',
         component: () => import('../views/admin/stats/StatsDashboard.vue'),
-        meta: { title: '数据看板' }
+        meta: { title: '数据看板', permission: 'stats:read' }
       }
     ]
   },
@@ -93,11 +95,31 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to) => {
-  // 客户侧与登录页公开；其余后台页面需要 token
+router.beforeEach(async (to) => {
+  // 客户侧与登录页公开
   if (to.meta.public) return true
   if (!localStorage.getItem('token')) {
     return { path: '/admin/login', query: { redirect: to.fullPath } }
+  }
+
+  // 老会话只存了 token（此前的版本不落权限），首次进入先拉一次 /auth/me
+  if (!localStorage.getItem('permissions')) {
+    try {
+      const data = await fetchMe()
+      setPermissions(data.permissions)
+    } catch {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      clearPermissions()
+      return { path: '/admin/login', query: { redirect: to.fullPath } }
+    }
+  }
+
+  if (to.meta.permission && !hasPermission(to.meta.permission)) {
+    return { path: '/admin/faults' }
+  }
+  if (to.meta.requires && !to.meta.requires.every(hasPermission)) {
+    return { path: '/admin/faults' }
   }
   return true
 })

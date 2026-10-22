@@ -3,11 +3,9 @@
     <el-aside v-if="!isNarrow" width="200px" class="aside">
       <div class="brand">售后故障诊断</div>
       <el-menu :default-active="activeMenu" router class="menu">
-        <el-menu-item index="/admin/tickets">工单管理</el-menu-item>
-        <el-menu-item index="/admin/products">产品管理</el-menu-item>
-        <el-menu-item index="/admin/parts">零件管理</el-menu-item>
-        <el-menu-item index="/admin/faults">故障知识库</el-menu-item>
-        <el-menu-item index="/admin/stats">数据看板</el-menu-item>
+        <el-menu-item v-for="item in navItems" :key="item.path" :index="item.path">
+          {{ item.label }}
+        </el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -24,7 +22,7 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item
-                v-for="item in NAV_ITEMS"
+                v-for="item in navItems"
                 :key="item.path"
                 :command="item.path"
                 :disabled="activeMenu === item.path"
@@ -69,10 +67,11 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { changePassword } from '../../api/auth'
+import { changePassword, fetchMe } from '../../api/auth'
+import { hasPermission, setPermissions } from '../../utils/permissions'
 import { errorCode, errorText } from '../../utils/admin'
 
 const route = useRoute()
@@ -96,7 +95,12 @@ const user = computed(() => {
 
 const displayName = computed(() => user.value.real_name || user.value.username || '已登录')
 const roleLabel = computed(() => {
-  const map = { admin: '管理员', agent: '客服' }
+  const map = {
+    super_admin: '超级管理员',
+    supervisor: '售后主管',
+    agent: '一线客服',
+    auditor: '只读审计'
+  }
   return map[user.value.role] || ''
 })
 
@@ -117,12 +121,14 @@ const isNarrow = ref(false)
 const dialogWidth = computed(() => (isNarrow.value ? '92%' : '420px'))
 
 const NAV_ITEMS = [
-  { path: '/admin/tickets', label: '工单管理' },
-  { path: '/admin/products', label: '产品管理' },
-  { path: '/admin/parts', label: '零件管理' },
-  { path: '/admin/faults', label: '故障知识库' },
-  { path: '/admin/stats', label: '数据看板' }
+  { path: '/admin/tickets', label: '工单管理', permission: 'ticket:read' },
+  { path: '/admin/products', label: '产品管理', permission: 'product:read' },
+  { path: '/admin/parts', label: '零件管理', permission: 'part:read' },
+  { path: '/admin/faults', label: '故障知识库', permission: 'fault:read' },
+  { path: '/admin/stats', label: '数据看板', permission: 'stats:read' }
 ]
+
+const navItems = computed(() => NAV_ITEMS.filter((item) => hasPermission(item.permission)))
 
 function onNav(path) {
   router.push(path)
@@ -141,6 +147,19 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => narrowMql?.removeEventListener?.('change', syncNarrow))
+
+// 每次后台路由切换刷新权限（管理员可能刚改了授权/角色）
+watch(
+  () => route.fullPath,
+  async () => {
+    try {
+      const data = await fetchMe()
+      setPermissions(data.permissions)
+    } catch {
+      // 401/403 已由拦截器跳登录；网络错误忽略，避免误退出
+    }
+  }
+)
 
 const rules = {
   oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
