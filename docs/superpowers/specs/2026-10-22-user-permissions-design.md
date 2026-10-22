@@ -50,7 +50,8 @@
 | 权限码 | 覆盖的接口 |
 |---|---|
 | `ticket:read` | 工单列表、工单详情 |
-| `ticket:write` | 工单更新（状态/备注/处理人） |
+| `ticket:write` | 工单更新（状态/备注/上门，含首次认领） |
+| `ticket:assign` | 工单改派（指定处理人） |
 | `product:read` | 产品列表 |
 | `product:write` | 产品新建/修改/删除 |
 | `part:read` | 零件列表 |
@@ -74,6 +75,7 @@
 |---|:---:|:---:|:---:|:---:|
 | `ticket:read` | ✅ | ✅ | ✅ | ✅ |
 | `ticket:write` | ✅ | ✅ | ✅ | ❌ |
+| `ticket:assign` | ✅ | ✅ | ❌ | ❌ |
 | `product:read` | ✅ | ✅ | ❌ | ✅ |
 | `product:write` | ✅ | ✅ | ❌ | ❌ |
 | `part:read` | ✅ | ✅ | ❌ | ✅ |
@@ -103,7 +105,7 @@
 
 - 新依赖 `require("fault:write")`，放在 `backend/app/core/permissions.py`，返回 403 `PERMISSION_DENIED`。
 - 现有接口把 `Depends(get_current_user)` 换成 `Depends(require(...))`，登录与修改自己密码除外（任何在用账号都可调用）。
-- 403 需写入 `_STATUS_CODE_MAP` 语义与错误码表；`BusinessError` 已携带显式 code，不受默认映射影响。
+- `PERMISSION_DENIED` 只登记到 API 契约的错误码表，**不要加入 `_STATUS_CODE_MAP`**：该映射用于没有显式 code 的裸 403（当前映射为 `AUTH_USER_DISABLED`），加入会把停用账号的错误码也改错。`BusinessError` 自带 code，不依赖映射。
 
 ### 4.5 临时授权数据模型
 
@@ -123,6 +125,22 @@ CREATE INDEX idx_user_grants_active ON user_permission_grants (user_id, expires_
 ```
 
 `permission` 不加数据库 CHECK 约束：新增权限码不应触发 DDL，合法性由应用层常量校验。
+
+### 4.6 权限依赖闭包
+
+部分权限脱离前置权限无法使用。计算生效权限（含临时授权）时按下面的闭包自动补齐，避免"勾了写权限却打不开编辑页"：
+
+| 权限 | 自动补齐 |
+|---|---|
+| `ticket:write` | `ticket:read` |
+| `ticket:assign` | `ticket:read`、`ticket:write` |
+| `fault:write` | `fault:read`、`product:read`、`part:read`、`upload:write` |
+| `product:write` | `product:read` |
+| `part:write` | `part:read`、`product:read` |
+| `product_line:write` | `product_line:read` |
+| `user:write` | `user:read` |
+
+角色模板本身已满足闭包；闭包用于临时授权的校验与展开，并经 `/auth/me` 下发给前端。前端 `hasPermission` 只看后端展开后的结果，不自行推导依赖。
 
 ## 5. 产品线
 
@@ -187,18 +205,29 @@ ticket_scope(user):
 2. `tickets.product_id` 为空的工单 → 仅 `ALL` 范围可见（客服不可见）。
 3. **过滤先于搜索**：工单号/联系方式关键字只在可见范围内匹配。
 4. 详情与更新同样校验，越权返回 403 `PERMISSION_DENIED`，不能只在列表过滤。
-5. 主管、超管、审计不受限；主管可改派工单给任意客服。
+5. 主管、超管、审计不受限；改派规则见 5.3。
 6. 产品线授权在用户管理页维护，支持到期时间；临时接手另一条线无需改角色。
+
+### 5.3 工单改派
+
+现有接口接受 `assignee_id`，但前端没有处理人选择器，`apply_update` 只校验"用户存在"。补三处：
+
+1. **新增权限 `ticket:assign`**（超管/主管），改派与认领分离：客服只能首次认领，不能把工单转给别人。`PUT` 工单时只要 payload 含 `assignee_id` 而操作者没有 `ticket:assign`，直接返回 403 `PERMISSION_DENIED`，不能靠前端隐藏按钮。
+2. **候选人接口** `GET /api/admin/users/assignable`（权限 `ticket:assign`）：返回启用中、持有 `ticket:write` 的账号 `id/real_name`，供前端下拉。
+3. **改派校验**：候选人必须启用且具备 `ticket:write`；若工单 `product_id` 非空，候选人必须对该产品线可见（数据范围 `ALL` 或已被授权该产品线）；`product_id` 为空时只允许选 `ALL` 范围的账号。
+4. 未传 `assignee_id` 时保持现有规则：当前无处理人则由操作人认领，已有处理人不抢占。
+5. 前端工单抽屉增加处理人下拉，仅 `ticket:assign` 持有者可见；客服没有改派入口，需要转单时由主管操作。把工单改派到其他产品线后，原处理人不再可见。
 
 ## 6. 用户管理
 
 ### 6.1 接口
 
-全部要求 `user:read` / `user:write`：
+除候选人接口外，其余均要求 `user:read` / `user:write`：
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/admin/users` | `user:read` | 列表，支持 keyword（用户名/姓名）、role、is_active、分页 |
+| GET | `/api/admin/users/assignable` | `ticket:assign` | 可改派的启用账号（id、real_name），可选 `product_id` 按产品线过滤 |
 | POST | `/api/admin/users` | `user:write` | 新建：username、real_name、password、role、product_lines |
 | PUT | `/api/admin/users/{id}` | `user:write` | 改 real_name / role / is_active |
 | POST | `/api/admin/users/{id}/reset-password` | `user:write` | 服务端生成 12 位密码，响应中返回一次 |
@@ -221,8 +250,8 @@ ticket_scope(user):
 产品接口变更：
 
 - `POST/PUT /api/admin/products` 的 `category` 字段替换为必填 `line_id`
-- 产品列表/详情响应返回 `line_id` 与 `line_name`，不再返回 `category`
-- 客户侧 `GET /api/products` 同步改为返回 `line_id`、`line_name`
+- 产品列表/详情响应返回 `line_id` 与 `line_name`，不再返回 `category`；列表查询用 `selectinload(Product.line)` 一次取回产品线，避免逐行查询
+- 客户侧 `GET /api/products` 同步改为返回 `line_id`、`line_name`（`ProductPublic` 同步调整）
 
 认证侧：
 
@@ -244,6 +273,7 @@ ticket_scope(user):
 4. 不提供删除用户，只停用（保留 `tickets.assignee_id`、`ticket_status_logs.operator_id`、`faults.created_by` 的历史归属）。
 5. 用户名唯一，长度 ≤ 50，密码 ≥ 8 位且 ≤ 72 字节（与现有 bcrypt 限制一致）。
 6. 已停用账号的临时授权保留但无效。
+7. 最后超管校验在事务内用 `SELECT id FROM users WHERE role='super_admin' AND is_active FOR UPDATE` 锁定在用超管行后再判断，避免两个超管同时互相降级导致无人可用。
 
 ### 6.4 已知限制（沿用现有契约）
 
@@ -254,9 +284,12 @@ ticket_scope(user):
 ### 7.1 权限驱动渲染
 
 - 登录响应与 `/auth/me` 都把 `permissions` 存入 localStorage。
-- 菜单、路由、按钮统一按 `hasPermission(code)` 判断，**不再出现角色名判断**。
-- 路由 `meta.permission` 声明所需权限；无权限直接访问 URL 时重定向到有权限的第一个页面。
+- 菜单、路由、按钮统一按 `hasPermission(code)` 判断，**不再出现角色名判断**；顶栏角色标签映射扩为四个角色值。
+- 路由 `meta.permission` 声明所需权限；无权限直接访问 URL 时重定向到有权限的第一个页面。列表页用 `*:read`，编辑页用 `*:write`（如 `/admin/faults/edit/:id?` 要求 `fault:write`）。
+- 生效权限按请求实时计算（角色模板 1 次查询 + 临时授权 1 次索引查询），属于读多写少的小表，压测后如成为热点再考虑按请求级缓存。
 - 进入后台布局及每次后台路由切换时调用 `/auth/me` 刷新权限（角色变更、临时授权到期后菜单及时更新）。
+- **升级兼容**：老版本 localStorage 里只有 token 和 user、没有 permissions。路由守卫生效前若 permissions 缺失，先 `await /auth/me`；请求失败（401/403）则清 token 跳登录，避免"没权限 → 重定向 → 再没权限"的循环。
+- `/auth/me` 返回 401 时按 `AUTH_TOKEN_EXPIRED` 处理（清 token 跳登录）；网络错误保持当前页面并提示，不要误退出。
 
 菜单映射：
 
@@ -300,31 +333,68 @@ schema_migrations (
 ```
 
 - `deploy/migrations/NNN_name.sql` 按文件名顺序执行
-- `deploy/migrate.sh`：读取已应用版本，跳过已完成，逐个在事务中执行并记录；失败即退出
-- `deploy/deploy.sh` 在服务健康后、初始化管理员前调用 `migrate.sh`
+- `deploy/scripts/migrate.py`：读取已应用版本，跳过已完成，逐个在事务中执行并记录；失败即退出。用 Python 而不是 shell + psql，是因为 backend 镜像里没有 psql，但已有 psycopg2
+- 新增 compose 一次性服务 `migrate`（与 `init` 同构）：`docker compose run --rm migrate`，挂载 `./scripts` 与 `./migrations`
 - `deploy/schema.sql` 表示最新目标状态，并在末尾把随包发布的迁移版本一次性写入 `schema_migrations`（全新库不会重复执行迁移）
 
 ### 8.2 本次迁移 `001_user_permissions.sql`
 
-1. 建 `product_lines`、`user_product_lines`、`user_permission_grants`
-2. 把 `products.category` 的去重非空值插入 `product_lines.name`；`category` 为空的产品归入"未分类"
+1. 建 `schema_migrations`、`product_lines`、`user_product_lines`、`user_permission_grants`
+2. 把 `products.category` 的 `TRIM` 后去重非空值插入 `product_lines.name`；`category` 为空或空串的产品归入"未分类"
 3. `products` 增加 `line_id` 并按 category 名称回填，然后 `SET NOT NULL`
 4. 删除 `products.category`
-5. `users.role` 的 `admin` 更新为 `super_admin`
+5. 删除并重建 `users.role` 的 CHECK 约束，改为 `('super_admin','supervisor','agent','auditor')`；随后执行 `UPDATE users SET role='super_admin' WHERE role='admin'`（顺序不能反，否则旧值违反新约束）
 6. 建索引：`user_permission_grants(user_id, expires_at)`、`user_product_lines(line_id)`
 
 迁移是一次性的，不写兼容双读逻辑。
+
+同步修改的代码（不做会直接导致部署失败）：
+
+- `deploy/scripts/init_admin.py`：创建管理员的 SQL 硬编码 `role='admin'`，且 `--role` 的 choices 只有 `agent/admin`。必须改为 `super_admin`，choices 扩为四个角色值；否则全新部署创建的管理员违反新 CHECK，或建出没有任何权限的账号
+- `deploy/schema.sql`：users 的 CHECK 改为四个值；products 定义改为 `line_id NOT NULL`、删除 `category`；追加三张新表；末尾写入迁移版本
+- `backend/app/core/deps.py` 顶部"role 不参与鉴权"的注释删除
+- `backend/app/models/user.py`、`backend/app/models/product.py`：模型字段与注释同步
+- `backend/app/api/admin.py` 的 `_PRODUCT_NOT_NULL` 加入 `line_id`
+- `backend/app/models/__init__.py`、`backend/app/api/__init__.py`：注册新模型与新路由模块
+
+### 8.3 执行顺序与恢复
+
+**部署顺序必须是：db 就绪 → 迁移 → 启动后端对外服务。**
+
+`deploy.sh` 现在先 `docker compose up -d` 全量起服，再等 `db/backend` healthy。但 `/api/health` 只做 `SELECT 1`（`backend/app/api/health.py`），旧表结构也能返回 ok，于是新代码会在迁移前对外提供 500。改为：
+
+1. `docker compose up -d db`，等 db healthy
+2. `docker compose run --rm -T migrate`
+3. `docker compose up -d`
+4. 等 backend healthy，再初始化管理员
+
+**恢复**：`restore.sh` 是 `DROP SCHEMA` 后整库还原。若还原的是迁移前的备份，库结构停留在旧版本，必须在恢复后追加执行 `docker compose run --rm -T migrate`，否则新代码对旧表。恢复脚本末尾一并做，运维手册记录。
+
+**回滚**：本次迁移删除了 `products.category`，属不可逆变更。执行前必须按现有 `backup.sh` 做一次数据库备份；回滚以备份还原 + 回退镜像为准，不写反向迁移脚本。
 
 ## 9. 测试
 
 后端（pytest）：
 
-- 角色 × 接口矩阵：四角色对 14 个权限码对应端点逐一断言 200/403
+- 角色 × 接口矩阵：四角色对 15 个权限码对应端点逐一断言 200/403
 - 数据范围：客服可见/不可见工单、空产品线、空 product_id、搜索不越界、详情与更新越权
-- 临时授权：生效、到期失效、提前收回、不可授予 `user:write`、不可授予超出自身权限
+- 改派：候选人必须在用、有 `ticket:write`、对工单产品线可见；空产品工单只能转给 `ALL` 范围
+- 临时授权：生效、到期失效、提前收回、不可授予 `user:write`、不可授予超出自身权限、依赖闭包自动补齐
 - 用户管理：自停用/自降级被拒、最后一个超管保护、重置密码只返回一次、重复用户名
 - 产品线：被产品引用时禁止删除、停用后不可用于新授权
 - 迁移：扩展 `scripts/dev/check_orm_pg.py` 校验新表与 ORM 一致
+
+现有测试与联调工具的同步修改（不改会大面积失败）：
+
+| 位置 | 现状 | 改法 |
+|---|---|---|
+| `backend/tests/conftest.py` | `make_user` 默认 `role="admin"` | 默认 `super_admin`，并提供 `make_user(role=...)` 供矩阵用例 |
+| `backend/tests/test_auth.py` | 断言登录返回 `role == "admin"` | 改为 `super_admin` |
+| `backend/tests/test_products.py` | 创建/响应含 `category` | 改为 `line_id`，并断言 `line_name` |
+| `frontend/src/views/admin/Layout.spec.js` | fixture `role: 'admin'` | 改为 `super_admin`，并注入 permissions |
+| `frontend/e2e/*.spec.js` | 用 admin 账号走全流程 | 账号角色迁移后仍可用，补充菜单断言 |
+| `scripts/dev/seed_demo.py` | 产品请求带 `category` | 先建产品线，再用 `line_id` |
+| `scripts/dev/check_orm_pg.py` | 创建产品时 `category="验证"` | 改为 `line_id` |
 
 前端（vitest）：
 
@@ -343,6 +413,7 @@ E2E：四角色登录后菜单项与预期一致；客服访问他人产品线�
 5. 不能停用自己、不能改自己的角色，系统至少保留一个在用超管。
 6. 现有 `admin` 账号迁移后仍可登录且权限完整；现有产品的 category 正确映射为产品线。
 7. 超管/主管可维护产品线；删除仍被产品引用的产品线返回 409 `DELETE_BLOCKED`。
+8. 主管能把工单改派给同产品线的客服或任意主管；客服无改派入口；候选人下拉不出现无权限或跨线账号。
 
 ## 11. 文档同步清单
 
@@ -358,7 +429,8 @@ E2E：四角色登录后菜单项与预期一致；客服访问他人产品线�
 | `docs/05-评估审查/01-需求基线清单.md` / `03-评估审查报告.md` | 更新 C-06 裁决与 R-A-15 状态 |
 | `docs/00-项目管理/WBS任务拆解.md` / `排期计划.md` | 追加本次任务卡与工期，不改一期历史数据 |
 | `docs/03-测试与验收/测试用例清单.md` / `验收检查表.md` | 新增角色矩阵、数据范围、临时授权用例 |
-| `docs/04-运维与运营/运维手册.md` | 账号维护从脚本改为界面；脚本保留为应急兜底；新增迁移执行说明 |
+| `docs/04-运维与运营/运维手册.md` | 账号维护从脚本改为界面；脚本保留为应急兜底；新增迁移执行与恢复后迁移说明 |
+| 代码注释与测试夹具 | `deps.py`、`user.py`、`product.py` 中"一期不做用户管理/role 不参与鉴权"的注释；conftest、test_auth、test_products、Layout.spec、seed_demo、check_orm_pg |
 
 ## 12. 未来扩展点
 
@@ -377,4 +449,4 @@ E2E：四角色登录后菜单项与预期一致；客服访问他人产品线�
 
 1. 删除 `products.category`，由产品线取代，不做双写兼容。
 2. 登录响应与 `/auth/me` 下发权限码，前端按权限码渲染，不再判断角色名。
-3. 引入 `schema_migrations` + `deploy/migrate.sh`，`deploy.sh` 自动执行。
+3. 引入 `schema_migrations` + `deploy/scripts/migrate.py` + `migrate` 一次性服务；部署顺序改为「db 就绪 → 迁移 → 启动后端」。
