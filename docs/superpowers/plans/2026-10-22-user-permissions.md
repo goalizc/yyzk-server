@@ -229,6 +229,20 @@ INSERT INTO schema_migrations (version) VALUES ('001_user_permissions');
     sleep 2
   done
 
+  # 迁移会删除 products.category，不可逆；先备份，失败即中止
+  if [[ -x scripts/backup.sh ]]; then
+    set +e
+    ./scripts/backup.sh >/tmp/deploy_backup.log 2>&1
+    BK_RC=$?
+    set -e
+    tail -2 /tmp/deploy_backup.log
+    if [[ "$BK_RC" != "0" ]]; then
+      tail -20 /tmp/deploy_backup.log >&2
+      die "迁移前备份失败，已中止（本次迁移会删除 products.category）"
+    fi
+    rm -f /tmp/deploy_backup.log
+  fi
+
   set +e
   docker compose run --rm -T migrate >/tmp/deploy_migrate.log 2>&1
   MIG_RC=$?
@@ -1549,12 +1563,67 @@ def make_line(db, name: str = "扫地机") -> int:
 
 创建产品的请求体加 `"line_id": make_line(db)`；响应断言改为 `"line_name"`；公共产品接口的键集合断言改为 `{"id", "name", "model", "line_id", "line_name", "sort_order"}`。
 
-- [ ] **Step 9: 运行测试**
+- [ ] **Step 9: 全局测试夹具补 line_id（否则除产品外的测试全部红）**
 
-Run: `pytest backend/tests/test_product_lines.py backend/tests/test_products.py -v`
-Expected: PASS
+`Product.line_id` 变成 NOT NULL 后，另外 5 个测试文件里的造数助手也会失败。先把产品线助手放进 `backend/tests/conftest.py`：
 
-- [ ] **Step 10: 提交**
+```python
+from sqlalchemy import select
+
+from app.models import ProductLine, User
+
+
+def make_line(db: Session, name: str = "测试产品线") -> ProductLine:
+    line = db.scalar(select(ProductLine).where(ProductLine.name == name))
+    if line is None:
+        line = ProductLine(name=name)
+        db.add(line)
+        db.commit()
+        db.refresh(line)
+    return line
+```
+
+逐个改造数助手（只列改动部分，其余保持原样）：
+
+```python
+# backend/tests/test_faults.py
+from tests.conftest import auth_headers, login, make_line, make_user
+
+def make_product(db, name: str = "智能扫地机器人", model: str = "X1") -> Product:
+    product = Product(name=name, model=model, line_id=make_line(db).id)
+    ...
+
+# backend/tests/test_tickets.py
+from tests.conftest import auth_headers, login, make_line, make_user
+
+def make_product(db, name: str = "智能扫地机器人", model: str = "X1") -> Product:
+    product = Product(name=name, model=model, line_id=make_line(db).id)
+    ...
+
+# backend/tests/test_security.py
+from tests.conftest import admin_headers, auth_headers, login, make_line, make_user
+
+def make_product(db, name: str = "智能扫地机器人", model: str = "X1") -> Product:
+    product = Product(name=name, model=model, line_id=make_line(db).id, is_active=True, sort_order=0)
+    ...
+
+# backend/tests/test_stats.py
+def make_product_part(db, model: str = "X1"):
+    product = Product(name="智能扫地机器人", model=model, line_id=make_line(db).id)
+    ...
+
+# backend/tests/test_upload.py
+    product = Product(name="扫地机", model="X1", line_id=make_line(db).id, is_active=True, sort_order=0)
+```
+
+`test_products.py` 里的局部 `make_line` 可以删除，改用 conftest 的同名函数。
+
+- [ ] **Step 10: 跑全量后端测试**
+
+Run: `pytest -q`
+Expected: 全部 PASS
+
+- [ ] **Step 11: 提交**
 
 ```bash
 git add backend/app/api backend/app/schemas backend/app/main.py backend/tests
@@ -2019,7 +2088,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import BusinessError
-from app.core.permissions import USER_READ, USER_WRITE, require
+from app.core.permissions import USER_READ, USER_WRITE, effective_permissions, require
 from app.core.security import hash_password
 from app.database import get_db
 from app.models import ProductLine, User, UserProductLine
@@ -2486,6 +2555,8 @@ def create_grant(
         raise BusinessError("USER_DISABLED", "账号已停用，不能发放临时授权", 400)
     if payload.permission not in grantable_permissions():
         raise BusinessError("INVALID_PERMISSION", "该权限不可临时授予", 400)
+    if payload.permission not in effective_permissions(db, actor):
+        raise BusinessError("INVALID_PERMISSION", "不能授予自己不具备的权限", 400)
 
     grant = UserPermissionGrant(
         user_id=user_id,
@@ -4156,7 +4227,46 @@ def ensure_lines(client, specs):
     product = Product(name="联调验证机", model="ORMTEST-X1", line_id=line.id, sort_order=999)
 ```
 
-- [ ] **Step 3: E2E 菜单断言**
+同时在该文件顶部把 `ProductLine` 加入 `from app.models import ...`。
+
+- [ ] **Step 3: verify_schema.mjs 适配新表与必填 line_id**
+
+`scripts/dev/verify_schema.mjs`：
+
+1. 表清单改为：
+
+```javascript
+  const want = [
+    'faults', 'parts', 'product_lines', 'products', 'query_logs',
+    'schema_migrations', 'ticket_status_logs', 'tickets',
+    'user_permission_grants', 'user_product_lines', 'users'
+  ]
+```
+
+2. "删除故障时引用置 NULL" 用例里，产品插入前先建产品线：
+
+```javascript
+  const line = await db.query(`INSERT INTO product_lines (name) VALUES ('扫地机') RETURNING id`)
+  const lineId = line.rows[0].id
+  const p = await db.query(
+    `INSERT INTO products (name,model,line_id) VALUES ('扫地机','X1',$1) RETURNING id`,
+    [lineId]
+  )
+```
+
+3. "删除有零件的产品被 RESTRICT 阻止" 用例同样先建一条产品线（可复用上一步的 `lineId`，但每个 check 独立执行，需在该 check 内新建）：
+
+```javascript
+  const line = await db.query(`INSERT INTO product_lines (name) VALUES ('净化器线') RETURNING id`)
+  const p = await db.query(
+    `INSERT INTO products (name,model,line_id) VALUES ('净化器','A2',$1) RETURNING id`,
+    [line.rows[0].id]
+  )
+```
+
+4. 末尾 `SELECT id FROM products WHERE model='X1'` 无需改（产品已由第 2 步插入）。
+
+- [ ] **Step 4: E2E 菜单断言**
 
 `main-flow.spec.js` 在第 4 段登录成功、`toHaveURL(/\/admin\/tickets/)` 之后追加一行：
 
@@ -4165,16 +4275,17 @@ def ensure_lines(client, specs):
   await expect(page.getByRole('menuitem', { name: '用户管理' })).toBeVisible()
 ```
 
-- [ ] **Step 4: 运行全量测试**
+- [ ] **Step 5: 运行全量测试**
 
 Run:
 ```bash
 pytest -q
+npm run verify:schema
 cd frontend && npm test && npm run lint && npm run build
 ```
-Expected: 后端全部 PASS；前端全部 PASS；lint 0 error；build 成功
+Expected: 后端全部 PASS；schema 校验通过（11 张表）；前端全部 PASS；lint 0 error；build 成功
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 6: 提交**
 
 ```bash
 git add scripts/dev frontend/e2e
@@ -4223,17 +4334,33 @@ git commit -m "test: 联调种子与 E2E 适配产品线及用户管理"
 Run: `python scripts/dev/check_links.py`
 Expected: 0 条失效链接
 
-- [ ] **Step 3: 最终验证**
+- [ ] **Step 3: 对照设计稿 §10 的 8 条验收标准逐项核对**
+
+在 PR 描述或验收记录中写下证据，不能只写"已实现"：
+
+| # | 验收项 | 证据 |
+|---|---|---|
+| 1 | 四角色菜单与接口符合矩阵，越权 403 | `test_permission_endpoints.py` 全绿 + 手动登录四个角色截图菜单 |
+| 2 | 客服只看本产品线工单，空产品线 0 条，空产品工单不可见 | `test_ticket_scope.py` 四个用例全绿 |
+| 3 | 超管可完成建号/停用/启用/重置密码/改角色/分配产品线/发收回授权 | `test_admin_users.py`、`test_grants.py` 全绿 + 手动走一遍 P-18 |
+| 4 | 临时授权到期失效、提前收回立即失效 | `test_permissions.py`、`test_grants.py` 对应用例 |
+| 5 | 不能停用自己/改自己角色/最后一个超管保护 | `test_admin_users.py` 自保护与守卫用例 |
+| 6 | 现有 admin 迁移后权限完整，category 正确映射 | 在带旧数据的库上跑 `docker compose run --rm migrate`，登录 admin 检查菜单与产品线 |
+| 7 | 产品线可维护，被引用时删除 409 | `test_product_lines.py` 全绿 |
+| 8 | 主管可改派同线客服，客服无改派入口，候选人过滤正确 | `test_ticket_assign.py` 全绿 + 手动打开工单抽屉看下拉 |
+
+- [ ] **Step 4: 最终验证**
 
 Run:
 ```bash
 pytest -q
+npm run verify:schema
 cd frontend && npm test && npm run lint && npm run build
 python scripts/dev/check_links.py
 ```
 Expected: 全部通过
 
-- [ ] **Step 4: 提交**
+- [ ] **Step 5: 提交**
 
 ```bash
 git add docs
@@ -4242,8 +4369,13 @@ git commit -m "docs: 用户权限、产品线与迁移机制同步到需求/契�
 
 ---
 
-## 自查记录
+## 自查记录（含第二轮复审修订）
 
 - **Spec 覆盖**：角色矩阵（T3）、角色值与 init_admin 迁移（T2）、产品线（T2/T6）、数据范围（T7）、临时授权（T3/T9）、用户管理（T8）、改派（T10）、前端权限与只读态（T11–T14）、迁移机制与部署顺序（T1）、文档（T16）。
-- **补充说明**：`deploy/scripts/init_admin.py` 的角色值、`deploy/schema.sql` 的 CHECK 约束、老 localStorage 无 permissions、E2E 的 `.el-select` 选择器顺序、auditor 只读页面，均已在对应 Task 中写成明确步骤。
+- **第二轮复审补丁**：
+  1. 迁移前增加 `backup.sh` 备份并失败即中止（设计稿 §8.3 要求，原计划漏了）。
+  2. 临时授权增加"不能授予自己不具备的权限"校验（设计稿 §4.3）。
+  3. `Product.line_id` 非空会打挂 5 个测试文件的造数助手，T6 增加全局夹具改造步骤。
+  4. `scripts/dev/verify_schema.mjs` 固定 7 张表且产品插入不带 `line_id`，T15 补齐。
+  5. T16 增加逐条验收证据表，避免"实现了但没验"。
 - **类型一致性**：`UserProductLine`、`UserPermissionGrant`、`ProductLine` 在模型、schema、服务、测试中名称一致；权限常量统一由 `app.core.permissions` 导出；`ticket:assign` 在权限码表、角色矩阵、接口表格、前端菜单与测试中保持一致。
