@@ -22,4 +22,14 @@ describe('copyText', () => {
     expect(document.execCommand).toHaveBeenCalledWith('copy')
     expect(document.querySelector('textarea')).toBeNull()
   })
+
+  it('execCommand 抛错时返回 false 且清理 textarea', async () => {
+    vi.stubGlobal('navigator', {})
+    document.execCommand = vi.fn().mockImplementation(() => {
+      throw new Error('copy denied')
+    })
+
+    await expect(copyText('boom')).resolves.toBe(false)
+    expect(document.querySelector('textarea')).toBeNull()
+  })
 })
