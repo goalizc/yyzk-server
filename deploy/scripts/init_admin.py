@@ -100,7 +100,10 @@ def cmd_init(args) -> int:
             print(f"[init_admin] 已创建管理员 {username}（初始密码见 ADMIN_INIT_PASSWORD）")
         elif args.reset_password:
             conn.execute(
-                text("UPDATE users SET password_hash = :p, updated_at = NOW() WHERE id = :id"),
+                text(
+                    "UPDATE users SET password_hash = :p, token_version = token_version + 1, "
+                    "updated_at = NOW() WHERE id = :id"
+                ),
                 {"p": password_hash, "id": row[0]},
             )
             print(f"[init_admin] 已重置 {username} 的密码")
@@ -210,7 +213,10 @@ def cmd_user(args) -> int:
                 print("[init_admin] 密码至少 8 位", file=sys.stderr)
                 return 2
             conn.execute(
-                text("UPDATE users SET password_hash = :p, updated_at = NOW() WHERE id = :id"),
+                text(
+                    "UPDATE users SET password_hash = :p, token_version = token_version + 1, "
+                    "updated_at = NOW() WHERE id = :id"
+                ),
                 {"p": pwd_context.hash(password), "id": user_id},
             )
             print(f"[init_admin] 已重置 {username} 的密码")
