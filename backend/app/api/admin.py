@@ -32,6 +32,7 @@ from app.schemas.common import ErrorBody, SuccessResponse, UploadResult
 from app.schemas.part import PartAdmin, PartCreate, PartPage, PartUpdate
 from app.schemas.product import ProductAdmin, ProductCreate, ProductPage, ProductUpdate
 from app.services.pagination import paginate
+from app.services.ticket_scope import visible_line_ids
 from app.services.upload_cleanup import referenced_by_fault
 from app.utils.search import LIKE_ESCAPE, like_pattern
 from app.utils.upload import ALLOWED_EXTENSIONS, save_upload
@@ -128,6 +129,13 @@ def _drop_nulls(data: dict, key: tuple[str, ...]) -> dict:
     return data
 
 
+def _ensure_line_visible(db: Session, user: User, line_id: int, message: str) -> None:
+    """LINES 数据范围的产品线写操作校验；ALL 范围不受限。"""
+    line_ids = visible_line_ids(db, user)
+    if line_ids is not None and line_id not in line_ids:
+        raise BusinessError("PERMISSION_DENIED", message, 403)
+
+
 def _ensure_model_available(db: Session, model: str, exclude_id: int | None = None) -> None:
     stmt = select(Product.id).where(Product.model == model)
     if exclude_id is not None:
@@ -188,10 +196,11 @@ def list_products(
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require(PRODUCT_WRITE)),
+    user: User = Depends(require(PRODUCT_WRITE)),
 ) -> ProductAdmin:
     _ensure_model_available(db, payload.model)
     _ensure_line(db, payload.line_id)
+    _ensure_line_visible(db, user, payload.line_id, "无权在其它产品线下创建产品")
 
     product = Product(**payload.model_dump())
     db.add(product)
@@ -217,18 +226,22 @@ def update_product(
     product_id: int,
     payload: ProductUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require(PRODUCT_WRITE)),
+    user: User = Depends(require(PRODUCT_WRITE)),
 ) -> ProductAdmin:
     product = db.get(Product, product_id)
     if product is None:
         raise BusinessError("NOT_FOUND", "产品不存在", 404)
 
+    _ensure_line_visible(db, user, product.line_id, "无权修改其它产品线的产品")
+
     data = _drop_nulls(payload.model_dump(exclude_unset=True), _PRODUCT_NOT_NULL)
     if "model" in data and data["model"] != product.model:
         _ensure_model_available(db, data["model"], exclude_id=product_id)
-    # 同一条已停用的产品线保持不变时允许，只有真正换线才校验启用状态
-    if "line_id" in data and data["line_id"] != product.line_id:
-        _ensure_line(db, data["line_id"])
+    if "line_id" in data:
+        _ensure_line_visible(db, user, data["line_id"], "无权把产品移到其它产品线")
+        # 同一条已停用的产品线保持不变时允许，只有真正换线才校验启用状态
+        if data["line_id"] != product.line_id:
+            _ensure_line(db, data["line_id"])
 
     for field, value in data.items():
         setattr(product, field, value)
@@ -254,11 +267,13 @@ def update_product(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require(PRODUCT_WRITE)),
+    user: User = Depends(require(PRODUCT_WRITE)),
 ) -> SuccessResponse:
     product = db.get(Product, product_id)
     if product is None:
         raise BusinessError("NOT_FOUND", "产品不存在", 404)
+
+    _ensure_line_visible(db, user, product.line_id, "无权删除其它产品线的产品")
 
     part_count = db.scalar(select(func.count(Part.id)).where(Part.product_id == product_id)) or 0
     fault_count = _product_fault_count(db, product_id)

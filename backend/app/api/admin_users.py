@@ -75,18 +75,32 @@ def _to_item(user: User) -> UserListItem:
     )
 
 
-def _ensure_lines_exist(db: Session, assignments: list[ProductLineAssignment]) -> None:
+def _ensure_lines_exist(
+    db: Session, assignments: list[ProductLineAssignment]
+) -> dict[int, ProductLine]:
     ids = {item.line_id for item in assignments}
     if not ids:
-        return
-    found = set(db.scalars(select(ProductLine.id).where(ProductLine.id.in_(ids))).all())
-    missing = ids - found
+        return {}
+    rows = db.scalars(select(ProductLine).where(ProductLine.id.in_(ids))).all()
+    found = {line.id: line for line in rows}
+    missing = ids - found.keys()
     if missing:
         raise BusinessError("NOT_FOUND", f"产品线不存在：{sorted(missing)}", 404)
+    return found
 
 
 def _replace_lines(db: Session, user: User, assignments: list[ProductLineAssignment]) -> None:
-    _ensure_lines_exist(db, assignments)
+    lines = _ensure_lines_exist(db, assignments)
+    existing = set(
+        db.scalars(
+            select(UserProductLine.line_id).where(UserProductLine.user_id == user.id)
+        ).all()
+    )
+    for item in assignments:
+        if item.line_id in existing:
+            continue
+        if not lines[item.line_id].is_active:
+            raise BusinessError("LINE_INACTIVE", "产品线已停用，不能新授权", 400)
     db.execute(
         UserProductLine.__table__.delete().where(UserProductLine.user_id == user.id)
     )
@@ -101,16 +115,16 @@ def _replace_lines(db: Session, user: User, assignments: list[ProductLineAssignm
 
 
 def _ensure_other_super_admin(db: Session, user_id: int) -> None:
-    others = db.scalars(
-        select(User.id)
-        .where(
-            User.role == "super_admin",
-            User.is_active.is_(True),
-            User.id != user_id,
-        )
-        .with_for_update()
-    ).all()
-    if not others:
+    # 锁全部在用超管行再计数：ORDER BY id 保证并发时锁顺序一致，避免互相锁对方
+    active_ids = set(
+        db.scalars(
+            select(User.id)
+            .where(User.role == "super_admin", User.is_active.is_(True))
+            .order_by(User.id)
+            .with_for_update()
+        ).all()
+    )
+    if len(active_ids - {user_id}) == 0:
         raise BusinessError("LAST_SUPER_ADMIN", "系统至少需要保留一个在用超级管理员", 400)
 
 

@@ -27,9 +27,13 @@ def _since(days: int) -> datetime | None:
     return datetime.now(timezone.utc) - timedelta(days=days)
 
 
-def overview(db: Session, days: int) -> dict[str, Any]:
+def overview(
+    db: Session, days: int, product_ids: set[int] | None = None
+) -> dict[str, Any]:
     since = _since(days)
     log_filters = [] if since is None else [QueryLog.created_at >= since]
+    if product_ids is not None:
+        log_filters.append(QueryLog.product_id.in_(product_ids))
 
     total, views, resolved, missed = db.execute(
         select(
@@ -41,14 +45,15 @@ def overview(db: Session, days: int) -> dict[str, Any]:
     ).one()
 
     ticket_filters = [] if since is None else [Ticket.created_at >= since]
+    if product_ids is not None:
+        ticket_filters.append(Ticket.product_id.in_(product_ids))
     total_tickets = db.scalar(select(func.count(Ticket.id)).where(*ticket_filters)) or 0
+
     # 当前积压：不带时间条件
-    open_tickets = (
-        db.scalar(
-            select(func.count(Ticket.id)).where(Ticket.status.in_(("open", "processing")))
-        )
-        or 0
-    )
+    open_filters = [Ticket.status.in_(("open", "processing"))]
+    if product_ids is not None:
+        open_filters.append(Ticket.product_id.in_(product_ids))
+    open_tickets = db.scalar(select(func.count(Ticket.id)).where(*open_filters)) or 0
 
     return {
         "period_days": days,
@@ -62,11 +67,15 @@ def overview(db: Session, days: int) -> dict[str, Any]:
     }
 
 
-def top_faults(db: Session, days: int, limit: int) -> list[dict[str, Any]]:
+def top_faults(
+    db: Session, days: int, limit: int, product_ids: set[int] | None = None
+) -> list[dict[str, Any]]:
     since = _since(days)
     filters = [QueryLog.fault_id.is_not(None)]
     if since is not None:
         filters.append(QueryLog.created_at >= since)
+    if product_ids is not None:
+        filters.append(QueryLog.product_id.in_(product_ids))
 
     views = (
         select(
@@ -102,11 +111,15 @@ def top_faults(db: Session, days: int, limit: int) -> list[dict[str, Any]]:
     ]
 
 
-def missed(db: Session, days: int, limit: int) -> list[dict[str, Any]]:
+def missed(
+    db: Session, days: int, limit: int, product_ids: set[int] | None = None
+) -> list[dict[str, Any]]:
     since = _since(days)
     filters = [QueryLog.hit.is_(False)]
     if since is not None:
         filters.append(QueryLog.created_at >= since)
+    if product_ids is not None:
+        filters.append(QueryLog.product_id.in_(product_ids))
 
     # 归一化：去首尾空格 + 转小写；空值统一落进 (未输入关键词)
     key = func.coalesce(

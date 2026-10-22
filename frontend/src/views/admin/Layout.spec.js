@@ -10,7 +10,7 @@ vi.mock('../../api/auth', () => ({
   fetchMe: vi.fn().mockResolvedValue({ permissions: ['ticket:read'] })
 }))
 
-import { changePassword } from '../../api/auth'
+import { changePassword, fetchMe } from '../../api/auth'
 import { setPermissions } from '../../utils/permissions'
 
 async function mountLayout(path = '/admin/tickets') {
@@ -62,6 +62,25 @@ describe('Layout', () => {
     expect(wrapper.vm.$.setupState.activeMenu).toBe('/admin/faults')
     // 顶栏标题取当前路由 meta.title
     expect(wrapper.text()).toContain('编辑故障')
+  })
+
+  it('进入后台立即刷新权限，不必等路由切换', async () => {
+    // 独立路由：Layout 不作为匹配到的路由组件，避免测试里出现自嵌套的两份实例
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/admin/tickets', component: { template: '<div>工单页</div>' }, meta: { title: '工单管理' } }
+      ]
+    })
+    await router.push('/admin/tickets')
+    const wrapper = mount(Layout, {
+      global: { plugins: [ElementPlus, router] },
+      attachTo: document.body
+    })
+    await flushPromises()
+
+    expect(fetchMe).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 
   it('顶栏展示用户名与角色中文名', async () => {

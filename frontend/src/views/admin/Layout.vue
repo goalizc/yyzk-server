@@ -140,7 +140,18 @@ const syncNarrow = (event) => {
   isNarrow.value = event.matches
 }
 
+// 进入后台与每次路由切换都刷新权限（管理员可能刚改了授权/角色）
+async function refreshPermissions() {
+  try {
+    const data = await fetchMe()
+    setPermissions(data.permissions)
+  } catch {
+    // 401/403 已由拦截器跳登录；网络错误忽略，避免误退出
+  }
+}
+
 onMounted(() => {
+  refreshPermissions()
   narrowMql = window.matchMedia?.(NARROW_QUERY)
   if (!narrowMql) return
   isNarrow.value = narrowMql.matches
@@ -149,18 +160,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => narrowMql?.removeEventListener?.('change', syncNarrow))
 
-// 每次后台路由切换刷新权限（管理员可能刚改了授权/角色）
-watch(
-  () => route.fullPath,
-  async () => {
-    try {
-      const data = await fetchMe()
-      setPermissions(data.permissions)
-    } catch {
-      // 401/403 已由拦截器跳登录；网络错误忽略，避免误退出
-    }
-  }
-)
+watch(() => route.fullPath, refreshPermissions)
 
 const rules = {
   oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],

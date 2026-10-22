@@ -16,8 +16,8 @@ def _as_utc(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def visible_product_ids(db: Session, user: User) -> set[int] | None:
-    """None 表示不受限；空集合表示一条也看不到。"""
+def visible_line_ids(db: Session, user: User) -> set[int] | None:
+    """None 表示不受限；空集合表示一条也看不到。与 visible_product_ids 同源。"""
     if data_scope(user) == ALL:
         return None
 
@@ -27,11 +27,18 @@ def visible_product_ids(db: Session, user: User) -> set[int] | None:
             UserProductLine.user_id == user.id
         )
     ).all()
-    line_ids = [
+    return {
         line_id
         for line_id, expires_at in rows
         if expires_at is None or _as_utc(expires_at) > now
-    ]
+    }
+
+
+def visible_product_ids(db: Session, user: User) -> set[int] | None:
+    """None 表示不受限；空集合表示一条也看不到。"""
+    line_ids = visible_line_ids(db, user)
+    if line_ids is None:
+        return None
     if not line_ids:
         return set()
 

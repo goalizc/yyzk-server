@@ -1025,6 +1025,7 @@ Error 409：`{"detail": "该产品线下还有 3 个产品，请先迁移后再�
 >   - 分母用 `hit=true`（查看了方案）而不是 `fault_id IS NOT NULL`：`fault_id` 会因故障被删而置 NULL，但 `hit` 永久保留，否则分母会凭空缩小、解决率虚高甚至超过 100%
 > - 不使用 `faults.resolved_count / view_count` 作为看板口径（历史累计值，与时间筛选冲突）
 > - `open_tickets` 是**当前积压**，不随窗口变化（见字段说明）
+> - 数据范围：`LINES` 角色（如临时授予 `stats:read` 的客服）只统计其可见产品线的工单与查询日志；`ALL` 角色不受限
 
 ### GET /api/admin/stats/overview
 

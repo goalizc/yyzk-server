@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.core.permissions import effective_permissions
+from app.models import ProductLine, UserProductLine
 from tests.conftest import auth_headers, login, make_user
 
 
@@ -82,9 +83,42 @@ def test_revoke_grant(client, db):
     assert "stats:read" not in effective_permissions(db, agent)
 
 
-def test_replace_product_lines(client, db):
-    from app.models import ProductLine
+def test_inactive_line_cannot_be_newly_assigned(client, db):
+    headers = _admin_headers(client, db)
+    agent = _make_agent(db)
+    line = ProductLine(name="停用线", is_active=False)
+    db.add(line)
+    db.commit()
 
+    response = client.put(
+        f"/api/admin/users/{agent.id}/product-lines",
+        json=[{"line_id": line.id, "expires_at": None}],
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "LINE_INACTIVE"
+
+
+def test_existing_inactive_line_can_be_kept(client, db):
+    headers = _admin_headers(client, db)
+    agent = _make_agent(db)
+    line = ProductLine(name="停用线", is_active=False)
+    db.add(line)
+    db.flush()
+    db.add(UserProductLine(user_id=agent.id, line_id=line.id))
+    db.commit()
+
+    response = client.put(
+        f"/api/admin/users/{agent.id}/product-lines",
+        json=[{"line_id": line.id, "expires_at": None}],
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+
+
+def test_replace_product_lines(client, db):
     headers = _admin_headers(client, db)
     agent = _make_agent(db)
     line = ProductLine(name="扫地机")
