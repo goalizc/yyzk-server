@@ -16,8 +16,8 @@
 --        idx_tickets_no
 --     7) 创建 pg_stat_statements 扩展（仅 preload 库不会自动建扩展）
 --
--- ⚠ 本脚本仅在数据卷为空时由 initdb 执行一次。已有环境升级需手工执行
---    对应 DDL（本项目一期不引入迁移框架）。
+-- ⚠ 本脚本仅在数据卷为空时由 initdb 执行一次，直接建到最新结构；
+--    已有环境的升级由 deploy/migrations 下的迁移文件完成（migrate.py 按版本执行）。
 -- ============================================================
 
 -- 扩展：用于 gen_random_uuid()
@@ -35,7 +35,7 @@ CREATE TABLE schema_migrations (
 INSERT INTO schema_migrations (version) VALUES ('000_baseline');
 
 -- ------------------------------------------------------------
--- 1. 后台用户表（仅在册内部人员，一期不做用户管理界面）
+-- 1. 后台用户表（仅在册内部人员，账号可界面维护）
 -- ------------------------------------------------------------
 CREATE TABLE users (
     id            SERIAL PRIMARY KEY,
@@ -43,23 +43,62 @@ CREATE TABLE users (
     password_hash VARCHAR(200) NOT NULL,
     real_name     VARCHAR(50) NOT NULL,
     role          VARCHAR(20) NOT NULL DEFAULT 'agent'
-                  CHECK (role IN ('admin', 'agent')),
+                  CHECK (role IN ('super_admin', 'supervisor', 'agent', 'auditor')),
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     last_login_at TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
--- 说明：一期不提供用户增删改界面，账号由 init_admin.py 与运维 SQL 维护；
+-- 说明：账号可界面维护，init_admin.py 与运维 SQL 保留为兜底入口；
 --       「修改自己密码」走 API 完成。
 
 -- ------------------------------------------------------------
--- 2. 产品表
+-- 2. 产品线表（客服数据范围按产品线划分）
+-- ------------------------------------------------------------
+CREATE TABLE product_lines (
+    id         SERIAL PRIMARY KEY,
+    name       VARCHAR(50) NOT NULL UNIQUE,
+    sort_order INT NOT NULL DEFAULT 0,
+    is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ------------------------------------------------------------
+-- 3. 用户产品线授权
+-- ------------------------------------------------------------
+CREATE TABLE user_product_lines (
+    user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    line_id    INT NOT NULL REFERENCES product_lines(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ,
+    PRIMARY KEY (user_id, line_id)
+);
+CREATE INDEX idx_user_product_lines_line ON user_product_lines(line_id);
+
+-- ------------------------------------------------------------
+-- 4. 用户临时权限授权
+-- ------------------------------------------------------------
+CREATE TABLE user_permission_grants (
+    id          SERIAL PRIMARY KEY,
+    user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission  VARCHAR(30) NOT NULL,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    reason      VARCHAR(200) NOT NULL,
+    granted_by  INT REFERENCES users(id) ON DELETE SET NULL,
+    granted_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    revoked_at  TIMESTAMPTZ
+);
+CREATE INDEX idx_user_grants_active ON user_permission_grants (user_id, expires_at)
+    WHERE revoked_at IS NULL;
+
+-- ------------------------------------------------------------
+-- 5. 产品表
 -- ------------------------------------------------------------
 CREATE TABLE products (
     id          SERIAL PRIMARY KEY,
     name        VARCHAR(100) NOT NULL,
     model       VARCHAR(50) NOT NULL UNIQUE,
-    category    VARCHAR(50),
+    line_id     INT NOT NULL REFERENCES product_lines(id) ON DELETE RESTRICT,
     description TEXT,
     is_active   BOOLEAN NOT NULL DEFAULT TRUE,
     sort_order  INT NOT NULL DEFAULT 0,
@@ -68,9 +107,10 @@ CREATE TABLE products (
 );
 
 CREATE INDEX idx_products_active ON products(is_active);
+CREATE INDEX idx_products_line ON products(line_id);
 
 -- ------------------------------------------------------------
--- 3. 零件表（归属产品）
+-- 6. 零件表（归属产品）
 --    ON DELETE RESTRICT：产品下还有零件时禁止删除产品（API 返回 409）
 -- ------------------------------------------------------------
 CREATE TABLE parts (
@@ -86,7 +126,7 @@ CREATE TABLE parts (
 CREATE INDEX idx_parts_product ON parts(product_id);
 
 -- ------------------------------------------------------------
--- 4. 故障知识库表
+-- 7. 故障知识库表
 --    part_id NOT NULL：与 PRD「所属零件必选」一致
 -- ------------------------------------------------------------
 CREATE TABLE faults (
@@ -124,7 +164,7 @@ CREATE INDEX idx_faults_list ON faults(product_id, part_id, view_count DESC);
 -- 但读路径的 800 倍差距更不可接受，所以保留。
 
 -- ------------------------------------------------------------
--- 5. 查询日志表
+-- 8. 查询日志表
 --    每次详情访问写入；检索无结果时由前端补写 hit=false
 --    关联对象删除后置 NULL，保留历史计数（hit 不受影响）
 -- ------------------------------------------------------------
@@ -151,7 +191,7 @@ CREATE INDEX idx_query_logs_missed_q ON query_logs (lower(btrim(raw_query))) WHE
 CREATE INDEX idx_query_logs_hit ON query_logs(created_at) WHERE hit = TRUE;
 
 -- ------------------------------------------------------------
--- 6. 工单表
+-- 9. 工单表
 -- ------------------------------------------------------------
 CREATE TABLE tickets (
     id           SERIAL PRIMARY KEY,
@@ -180,7 +220,7 @@ CREATE INDEX idx_tickets_status_created ON tickets(status, created_at DESC);
 CREATE INDEX idx_tickets_created ON tickets(created_at);
 
 -- ------------------------------------------------------------
--- 7. 工单状态变更日志（PRD F-10「流转时记录操作人」的落地表）
+-- 10. 工单状态变更日志（PRD F-10「流转时记录操作人」的落地表）
 -- ------------------------------------------------------------
 CREATE TABLE ticket_status_logs (
     id          SERIAL PRIMARY KEY,

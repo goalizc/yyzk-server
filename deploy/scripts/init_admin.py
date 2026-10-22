@@ -22,7 +22,7 @@
     - 账号已存在 → 默认跳过（幂等，重复执行安全）
     - 加 --reset-password 参数 → 强制重置密码（用于找回）
 
-用户管理（一期不做界面，PRD §141，全部靠本脚本）：
+用户管理（也可在界面维护；本脚本作为运维兜底入口）：
     python init_admin.py user list                   列出全部账号
     python init_admin.py user add wangwei             新建客服（密码自动生成并打印一次）
     python init_admin.py user disable wangwei         停用（离职），保留历史工单归属
@@ -92,7 +92,7 @@ def cmd_init(args) -> int:
                 text(
                     """
                     INSERT INTO users (username, password_hash, real_name, role, is_active)
-                    VALUES (:u, :p, :r, 'admin', TRUE)
+                    VALUES (:u, :p, :r, 'super_admin', TRUE)
                     """
                 ),
                 {"u": username, "p": password_hash, "r": real_name},
@@ -111,7 +111,7 @@ def cmd_init(args) -> int:
 
 
 def cmd_user(args) -> int:
-    """用户管理子命令。一期没有用户管理界面，这里是唯一入口。"""
+    """用户管理子命令。"""
     database_url = _require_database_url()
     if not database_url:
         return 2
@@ -239,8 +239,8 @@ def main() -> int:
     p_user.add_argument(
         "--role",
         default="agent",
-        choices=["agent", "admin"],
-        help="角色，默认 agent（注意：一期不区分权限，仅作标识）",
+        choices=["super_admin", "supervisor", "agent", "auditor"],
+        help="角色，默认 agent",
     )
 
     args = parser.parse_args()
