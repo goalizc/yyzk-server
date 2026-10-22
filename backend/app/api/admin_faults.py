@@ -60,7 +60,9 @@ def _to_admin_detail(fault: Fault) -> FaultAdminDetail:
     return FaultAdminDetail(
         id=fault.id,
         product_id=fault.product_id,
+        product_name=fault.product.name if fault.product else None,
         part_id=fault.part_id,
+        part_name=fault.part.name if fault.part else None,
         title=fault.title,
         symptom=fault.symptom,
         root_cause=fault.root_cause,

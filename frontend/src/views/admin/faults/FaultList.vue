@@ -9,7 +9,7 @@
       </template>
 
       <el-form :inline="true" class="filters" @submit.prevent>
-        <el-form-item label="产品">
+        <el-form-item v-if="canFilterProduct" label="产品">
           <el-select
             v-model="filters.productId"
             placeholder="全部产品"
@@ -27,7 +27,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="零件">
+        <el-form-item v-if="canFilterPart" label="零件">
           <el-select
             v-model="filters.partId"
             placeholder="全部零件"
@@ -141,6 +141,9 @@ import { hasPermission } from '../../../utils/permissions'
 const canWrite = computed(() => hasPermission('fault:write'))
 // 只读用户也能打开详情：编辑页会按自己的权限降级为只读视图
 const canOpen = computed(() => hasPermission('fault:read'))
+// 一线客服只有 fault:read：没有产品/零件读权限时不请求也不显示对应筛选
+const canFilterProduct = computed(() => hasPermission('product:read'))
+const canFilterPart = computed(() => hasPermission('part:read'))
 
 const router = useRouter()
 
@@ -175,7 +178,7 @@ let partsSeq = 0
 
 async function loadParts(productId) {
   const my = (partsSeq += 1)
-  if (!productId) {
+  if (!canFilterPart.value || !productId) {
     parts.value = []
     return
   }
@@ -296,7 +299,7 @@ async function onDelete(row) {
 }
 
 onMounted(async () => {
-  await loadProducts()
+  if (canFilterProduct.value) await loadProducts()
   await load()
 })
 

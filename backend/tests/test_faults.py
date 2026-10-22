@@ -354,6 +354,8 @@ def test_admin_fault_detail_has_no_side_effects(client: TestClient, db) -> None:
     body = response.json()
     assert "query_log_id" not in body
     assert body["solution_steps"]
+    assert body["product_name"] == product.name
+    assert body["part_name"] == part.name
     assert body["created_by"] is None or isinstance(body["created_by"], int)
 
     db.expire_all()

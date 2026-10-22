@@ -120,7 +120,9 @@ class FaultAdminDetail(BaseModel):
 
     id: int
     product_id: int
+    product_name: str | None = None
     part_id: int
+    part_name: str | None = None
     title: str
     symptom: str | None = None
     root_cause: str | None = None

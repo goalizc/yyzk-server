@@ -33,7 +33,9 @@ const PARTS = [
 const DETAIL = {
   id: 21,
   product_id: 1,
+  product_name: '扫地机器人',
   part_id: 12,
+  part_name: '主刷模组',
   title: '主刷不转',
   symptom: '启动后主刷不转',
   root_cause: '电机损坏',
@@ -112,9 +114,11 @@ describe('FaultEdit', () => {
     expect(adminListParts).not.toHaveBeenCalled()
     // 详情字段仍回显（输入框的值不会出现在 text() 里）
     expect(wrapper.vm.$.setupState.form.title).toBe('主刷不转')
-    // 详情没有名称字段时退回 id，至少不是空白
-    expect(wrapper.text()).toContain('产品 #1')
-    expect(wrapper.text()).toContain('零件 #12')
+    // 只读摘要优先用详情里的名称，不是 id
+    expect(wrapper.text()).toContain('扫地机器人')
+    expect(wrapper.text()).toContain('主刷模组')
+    expect(wrapper.text()).not.toContain('产品 #1')
+    expect(wrapper.text()).not.toContain('零件 #12')
     // 写控件全部隐藏/禁用
     expect(wrapper.findAll('button').some((b) => b.text().includes('保存'))).toBe(false)
     expect(wrapper.findAll('button').some((b) => b.text().includes('添加步骤'))).toBe(false)

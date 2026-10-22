@@ -182,6 +182,19 @@ describe('FaultList', () => {
   })
 
 
+  it('仅有 fault:read 时不请求产品/零件接口，也不显示对应筛选（客服场景）', async () => {
+    setPermissions(['fault:read'])
+    const { wrapper } = await mountList()
+
+    expect(adminListProducts).not.toHaveBeenCalled()
+    expect(adminListParts).not.toHaveBeenCalled()
+    const labels = wrapper.findAll('.el-form-item__label').map((node) => node.text())
+    expect(labels).not.toContain('产品')
+    expect(labels).not.toContain('零件')
+    expect(adminListFaults).toHaveBeenCalledWith({ page: 1, page_size: 20 })
+    expect(wrapper.text()).toContain('主刷不转')
+  })
+
   it('仅有 fault:read 时行点击也能打开故障详情（客服场景）', async () => {
     setPermissions(['fault:read'])
     const { wrapper, router } = await mountList()
