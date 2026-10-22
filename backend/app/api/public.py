@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import case, func, or_, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import BusinessError
 from app.database import get_db
@@ -38,6 +38,7 @@ def list_products(db: Session = Depends(get_db)) -> list[Product]:
     stmt = (
         select(Product)
         .where(Product.is_active.is_(True))
+        .options(selectinload(Product.line))
         .order_by(Product.sort_order, Product.id)
     )
     return list(db.scalars(stmt))

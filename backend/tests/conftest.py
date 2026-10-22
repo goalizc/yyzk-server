@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -34,7 +34,7 @@ os.environ["MAX_UPLOAD_MB"] = "20"
 from app.core.security import hash_password  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import User  # noqa: E402
+from app.models import ProductLine, User  # noqa: E402
 
 DEFAULT_PASSWORD = "Admin@12345"
 DEFAULT_PASSWORD_HASH = hash_password(DEFAULT_PASSWORD)
@@ -115,3 +115,13 @@ def login(client: TestClient, username: str = "admin", password: str = DEFAULT_P
 
 def auth_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
+
+
+def make_line(db: Session, name: str = "测试产品线") -> ProductLine:
+    line = db.scalar(select(ProductLine).where(ProductLine.name == name))
+    if line is None:
+        line = ProductLine(name=name)
+        db.add(line)
+        db.commit()
+        db.refresh(line)
+    return line

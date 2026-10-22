@@ -15,7 +15,8 @@ class ProductPublic(BaseModel):
     id: int
     name: str
     model: str
-    category: str | None = None
+    line_id: int
+    line_name: str | None = None
     sort_order: int
 
 
@@ -27,7 +28,8 @@ class ProductAdmin(BaseModel):
     id: int
     name: str
     model: str
-    category: str | None = None
+    line_id: int
+    line_name: str | None = None
     description: str = ""
     is_active: bool
     sort_order: int
@@ -39,7 +41,7 @@ class ProductAdmin(BaseModel):
 class ProductCreate(BaseModel):
     name: str = Field(max_length=100, examples=["智能扫地机器人"])
     model: str = Field(max_length=50, examples=["X1"])
-    category: str | None = Field(default=None, max_length=50, examples=["扫地机"])
+    line_id: int
     description: str | None = None
     is_active: bool = True
     sort_order: int = 0
@@ -58,7 +60,7 @@ class ProductUpdate(BaseModel):
 
     name: str | None = Field(default=None, max_length=100)
     model: str | None = Field(default=None, max_length=50)
-    category: str | None = Field(default=None, max_length=50)
+    line_id: int | None = None
     description: str | None = None
     is_active: bool | None = None
     sort_order: int | None = None

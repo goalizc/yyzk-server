@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
-from tests.conftest import auth_headers, login, make_user
+from tests.conftest import auth_headers, login, make_line, make_user
 
 JPEG = b"\xff\xd8\xff\xe0" + b"0" * 200
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 200
@@ -311,7 +311,7 @@ def test_delete_upload_refuses_referenced_file(
     stored = target / url.rsplit("/", 1)[-1]
 
     # 造一条引用该图的故障
-    product = Product(name="扫地机", model="X1", is_active=True, sort_order=0)
+    product = Product(name="扫地机", model="X1", line_id=make_line(db).id, is_active=True, sort_order=0)
     db.add(product)
     db.flush()
     part = Part(name="电池", product_id=product.id, sort_order=0)

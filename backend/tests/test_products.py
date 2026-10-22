@@ -5,11 +5,11 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app.models import Fault, Part, Product
-from tests.conftest import auth_headers, login, make_user
+from tests.conftest import auth_headers, login, make_line, make_user
 
 
 def make_product(db, name: str = "智能扫地机器人", model: str = "X1", **kwargs) -> Product:
-    product = Product(name=name, model=model, **kwargs)
+    product = Product(name=name, model=model, line_id=make_line(db).id, **kwargs)
     db.add(product)
     db.commit()
     db.refresh(product)
@@ -50,7 +50,7 @@ def test_public_products_only_active_sorted(client: TestClient, db) -> None:
     assert response.status_code == 200
     body = response.json()
     assert [item["model"] for item in body] == ["A2", "X2"]
-    assert set(body[0]) == {"id", "name", "model", "category", "sort_order"}
+    assert set(body[0]) == {"id", "name", "model", "line_id", "line_name", "sort_order"}
 
 
 def test_public_parts_cascade_by_product(client: TestClient, db) -> None:
@@ -106,7 +106,7 @@ def test_admin_products_pagination_and_fault_count(client: TestClient, db) -> No
     assert first["model"] == "X1"
     assert first["fault_count"] == 2
     assert set(first) == {
-        "id", "name", "model", "category", "description", "is_active",
+        "id", "name", "model", "line_id", "line_name", "description", "is_active",
         "sort_order", "fault_count", "created_at", "updated_at",
     }
     assert first["created_at"].endswith("+08:00")
@@ -140,13 +140,14 @@ def test_admin_products_page_size_limit(client: TestClient, db) -> None:
 
 def test_create_product(client: TestClient, db) -> None:
     headers = admin_headers(client, db)
+    line = make_line(db)
 
     response = client.post(
         "/api/admin/products",
         json={
             "name": "智能扫地机器人",
             "model": "X1",
-            "category": "扫地机",
+            "line_id": line.id,
             "description": "",
             "is_active": True,
             "sort_order": 3,
@@ -157,6 +158,8 @@ def test_create_product(client: TestClient, db) -> None:
     assert response.status_code == 201
     body = response.json()
     assert body["model"] == "X1"
+    assert body["line_id"] == line.id
+    assert body["line_name"] == line.name
     assert body["sort_order"] == 3
     assert body["fault_count"] == 0
 
@@ -166,7 +169,9 @@ def test_create_product_duplicated_model(client: TestClient, db) -> None:
     make_product(db, model="X1")
 
     response = client.post(
-        "/api/admin/products", json={"name": "另一个", "model": "X1"}, headers=headers
+        "/api/admin/products",
+        json={"name": "另一个", "model": "X1", "line_id": make_line(db).id},
+        headers=headers,
     )
 
     assert response.status_code == 409

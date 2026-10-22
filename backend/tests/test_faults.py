@@ -6,11 +6,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.models import Fault, Part, Product, QueryLog, Ticket
-from tests.conftest import auth_headers, login, make_user
+from tests.conftest import auth_headers, login, make_line, make_user
 
 
 def make_product(db, name: str = "智能扫地机器人", model: str = "X1") -> Product:
-    product = Product(name=name, model=model)
+    product = Product(name=name, model=model, line_id=make_line(db).id)
     db.add(product)
     db.commit()
     db.refresh(product)

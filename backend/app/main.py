@@ -9,7 +9,16 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from app import models  # noqa: F401  确保 7 张表的模型注册到 Base.metadata
-from app.api import admin, admin_faults, admin_tickets, auth, health, public, stats
+from app.api import (
+    admin,
+    admin_faults,
+    admin_product_lines,
+    admin_tickets,
+    auth,
+    health,
+    public,
+    stats,
+)
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import RequestContextMiddleware, setup_logging
@@ -35,6 +44,7 @@ app.include_router(health.router, prefix="/api", tags=["运维"])
 app.include_router(auth.router, prefix="/api/auth", tags=["鉴权"])
 app.include_router(public.router, prefix="/api", tags=["公开"])
 app.include_router(admin.router, prefix="/api/admin", tags=["后台"])
+app.include_router(admin_product_lines.router, prefix="/api/admin", tags=["后台"])
 app.include_router(admin_faults.router, prefix="/api/admin", tags=["后台"])
 app.include_router(admin_tickets.router, prefix="/api/admin", tags=["后台"])
 app.include_router(stats.router, prefix="/api/admin/stats", tags=["统计"])

@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models import Fault, Part, Product, User
-from tests.conftest import DEFAULT_PASSWORD, auth_headers, login, make_user
+from tests.conftest import DEFAULT_PASSWORD, auth_headers, login, make_line, make_user
 
 
 # ---- 本地构造助手 ----
@@ -31,7 +31,9 @@ def admin_headers(client: TestClient, db: Session) -> dict:
 
 def make_product(db: Session, name: str = "智能扫地机器人", model: str = "X1") -> Product:
     # 注意：产品用 is_active（上下架），故障用 is_published（发布）。两者不是同一语义。
-    product = Product(name=name, model=model, is_active=True, sort_order=0)
+    product = Product(
+        name=name, model=model, line_id=make_line(db).id, is_active=True, sort_order=0
+    )
     db.add(product)
     db.commit()
     db.refresh(product)

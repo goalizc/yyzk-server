@@ -8,13 +8,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.models import Fault, Part, Product, QueryLog, Ticket
-from tests.conftest import auth_headers, login, make_user
+from tests.conftest import auth_headers, login, make_line, make_user
 
 NOW = datetime.now(timezone.utc)
 
 
 def make_product_part(db, model: str = "X1"):
-    product = Product(name="智能扫地机器人", model=model)
+    product = Product(name="智能扫地机器人", model=model, line_id=make_line(db).id)
     db.add(product)
     db.commit()
     db.refresh(product)

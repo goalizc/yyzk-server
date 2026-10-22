@@ -14,7 +14,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.core.exceptions import BusinessError
@@ -27,7 +27,7 @@ from app.core.permissions import (
     require,
 )
 from app.database import get_db
-from app.models import Fault, Part, Product, User
+from app.models import Fault, Part, Product, ProductLine, User
 from app.schemas.common import ErrorBody, SuccessResponse, UploadResult
 from app.schemas.part import PartAdmin, PartCreate, PartPage, PartUpdate
 from app.schemas.product import ProductAdmin, ProductCreate, ProductPage, ProductUpdate
@@ -49,7 +49,7 @@ _UPLOAD_NAME_RE = re.compile(
 )
 
 # 这些字段在库中 NOT NULL，前端传 null 时直接忽略
-_PRODUCT_NOT_NULL = ("name", "model", "is_active", "sort_order")
+_PRODUCT_NOT_NULL = ("name", "model", "line_id", "is_active", "sort_order")
 _PART_NOT_NULL = ("name", "product_id", "sort_order")
 
 
@@ -85,12 +85,21 @@ def _upload_name_from_url(url: str) -> str:
     return name
 
 
+def _ensure_line(db: Session, line_id: int, *, allow_inactive: bool = False) -> None:
+    line = db.get(ProductLine, line_id)
+    if line is None:
+        raise BusinessError("NOT_FOUND", "产品线不存在", 404)
+    if not line.is_active and not allow_inactive:
+        raise BusinessError("LINE_INACTIVE", "产品线已停用，不能用于产品", 400)
+
+
 def _to_product_admin(product: Product, fault_count: int) -> ProductAdmin:
     return ProductAdmin(
         id=product.id,
         name=product.name,
         model=product.model,
-        category=product.category,
+        line_id=product.line_id,
+        line_name=product.line_name,
         description=product.description or "",
         is_active=product.is_active,
         sort_order=product.sort_order,
@@ -145,7 +154,7 @@ def list_products(
         .correlate(Product)
         .scalar_subquery()
     )
-    stmt = select(Product, fault_count.label("fault_count"))
+    stmt = select(Product, fault_count.label("fault_count")).options(selectinload(Product.line))
 
     if keyword:
         lowered = like_pattern(keyword.lower())
@@ -182,6 +191,7 @@ def create_product(
     _: User = Depends(require(PRODUCT_WRITE)),
 ) -> ProductAdmin:
     _ensure_model_available(db, payload.model)
+    _ensure_line(db, payload.line_id)
 
     product = Product(**payload.model_dump())
     db.add(product)
@@ -216,6 +226,9 @@ def update_product(
     data = _drop_nulls(payload.model_dump(exclude_unset=True), _PRODUCT_NOT_NULL)
     if "model" in data and data["model"] != product.model:
         _ensure_model_available(db, data["model"], exclude_id=product_id)
+    # 同一条已停用的产品线保持不变时允许，只有真正换线才校验启用状态
+    if "line_id" in data and data["line_id"] != product.line_id:
+        _ensure_line(db, data["line_id"])
 
     for field, value in data.items():
         setattr(product, field, value)
