@@ -9,7 +9,7 @@
       </template>
 
       <ErrorState v-if="loadError" :error="loadError" @retry="load" />
-      <el-table v-else v-loading="loading" :data="rows" row-key="id" border>
+      <el-table v-else v-loading="loading" :data="rows" row-key="id" border @row-click="onRowClick">
         <el-table-column prop="name" :label="$t('admin.line.colName')" min-width="200" />
         <el-table-column prop="product_count" :label="$t('admin.line.colProductCount')" width="100" align="center" />
         <el-table-column prop="sort_order" :label="$t('admin.line.colSort')" width="100" align="center" />
@@ -22,8 +22,8 @@
         </el-table-column>
         <el-table-column v-if="canWrite" :label="$t('admin.line.colActions')" width="160" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">{{ $t('common.action.edit') }}</el-button>
-            <el-button link type="danger" @click="onDelete(row)">{{ $t('common.action.delete') }}</el-button>
+            <el-button link type="primary" @click.stop="openEdit(row)">{{ $t('common.action.edit') }}</el-button>
+            <el-button link type="danger" @click.stop="onDelete(row)">{{ $t('common.action.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -104,6 +104,12 @@ function resetForm() {
 function openCreate() {
   resetForm()
   dialogVisible.value = true
+}
+
+// 与产品/零件页一致：点行即编辑（只读角色不开弹窗）
+function onRowClick(row) {
+  if (!canWrite.value) return
+  openEdit(row)
 }
 
 function openEdit(row) {

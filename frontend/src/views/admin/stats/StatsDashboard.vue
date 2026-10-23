@@ -217,6 +217,10 @@ function renderChart() {
 
   // 横向条形图：标签过长时不挤，且顺序与"最多的在最上"一致
   const data = [...topFaults.value].reverse()
+  // 故障标题是运营录入的长文本，固定宽度截断，完整标题在 tooltip 里看；
+  // 窄屏再收窄，否则左侧标签会把柱子挤没
+  const boxWidth = chartRef.value.clientWidth || 600
+  const labelWidth = boxWidth < 480 ? 96 : 168
   chart.setOption(
     {
       grid: { left: 8, right: 48, top: 8, bottom: 8, containLabel: true },
@@ -230,12 +234,25 @@ function renderChart() {
           return `${source.title}<br/>${source.product_name} / ${source.part_name}<br/>${t('admin.stats.chartTooltip', { views: source.period_views, total: source.view_count })}`
         }
       },
-      xAxis: { type: 'value', splitLine: { lineStyle: { color: '#f0f2f5' } } },
+      xAxis: {
+        type: 'value',
+        splitLine: { lineStyle: { color: '#f0f2f5' } },
+        // 刻度数字是次要信息，用次级文字色；默认浅灰在浅底上不够清楚
+        axisLabel: { color: '#606266', fontSize: 12 }
+      },
       yAxis: {
         type: 'category',
         data: data.map((item) => item.title),
         axisTick: { show: false },
-        axisLine: { lineStyle: { color: '#e4e7ed' } }
+        axisLine: { lineStyle: { color: '#e4e7ed' } },
+        // ECharts 默认标签色是浅灰（#6E7079），在浅色卡片上偏淡；
+        // 这里用正文色 #303133，与页面其余文字一致
+        axisLabel: {
+          color: '#303133',
+          fontSize: 12,
+          width: labelWidth,
+          overflow: 'truncate'
+        }
       },
       series: [
         {

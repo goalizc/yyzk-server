@@ -186,3 +186,64 @@ describe('UserList', () => {
     confirm.mockRestore()
   })
 })
+
+// 一致性：其它列表都是"点行即编辑"，用户管理此前没有。
+// 但用户行里有开关、授权标签、三个按钮 —— 这些都不能被行点击抢走，
+// 否则"点删除/点授权"会顺带弹出编辑窗。
+describe('UserList 行点击', () => {
+  function mountList() {
+    return mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+  }
+
+  it('点击行打开编辑弹窗并带上该行 id', async () => {
+    const wrapper = mountList()
+    await flushPromises()
+
+    await wrapper.findAll('.el-table__row')[0].trigger('click')
+    await flushPromises()
+
+    const state = wrapper.vm.$.setupState
+    expect(state.dialogVisible).toBe(true)
+    expect(state.editingId).toBe(1)
+  })
+
+  it('点状态开关不打开编辑弹窗', async () => {
+    const wrapper = mountList()
+    await flushPromises()
+
+    // 只断言"没被行点击抢走"：停用本身要过二次确认，请求不在这一步发出。
+    // 若开关上的 @click.stop 被删掉，这次点击会冒泡到 tr 打开编辑弹窗，用例即红
+    await wrapper.findAll('.el-table__row')[0].find('.el-switch').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.vm.$.setupState.dialogVisible).toBe(false)
+  })
+
+  it('点「临时授权 N」标签只开授权面板，不打开编辑弹窗', async () => {
+    adminListUsers.mockResolvedValue({
+      total: 1, page: 1, page_size: 20,
+      items: [makeUser({ active_grant_count: 2 })]
+    })
+    const wrapper = mountList()
+    await flushPromises()
+
+    const tag = wrapper.findAll('.el-tag').find((el) => el.text().includes('临时授权 2'))
+    await tag.trigger('click')
+    await flushPromises()
+
+    const state = wrapper.vm.$.setupState
+    expect(state.grantsVisible).toBe(true)
+    expect(state.dialogVisible).toBe(false)
+  })
+
+  it('只读角色点行不打开弹窗', async () => {
+    setPermissions(['user:read'])
+    const wrapper = mountList()
+    await flushPromises()
+
+    await wrapper.findAll('.el-table__row')[0].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.vm.$.setupState.dialogVisible).toBe(false)
+  })
+})

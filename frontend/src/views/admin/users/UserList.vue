@@ -19,7 +19,7 @@
       </template>
 
       <ErrorState v-if="loadError" :error="loadError" @retry="load" />
-      <el-table v-else v-loading="loading" :data="rows" row-key="id" border>
+      <el-table v-else v-loading="loading" :data="rows" row-key="id" border @row-click="onRowClick">
         <el-table-column :label="$t('admin.user.list.colUser')" min-width="180">
           <template #default="{ row }">
             <div class="name">{{ row.username }}</div>
@@ -34,7 +34,7 @@
               type="warning"
               size="small"
               class="grant-tag"
-              @click="openGrants(row)"
+              @click.stop="openGrants(row)"
             >
               {{ $t('admin.user.list.activeGrants', { count: row.active_grant_count }) }}
             </el-tag>
@@ -57,6 +57,7 @@
               inline-prompt
               :active-text="$t('admin.user.list.enabled')"
               :inactive-text="$t('admin.user.list.disabled')"
+              @click.stop
               @change="(value) => onToggleActive(row, value)"
             />
             <span v-else>{{ row.is_active ? $t('admin.user.list.enabled') : $t('admin.user.list.disabled') }}</span>
@@ -67,9 +68,9 @@
         </el-table-column>
         <el-table-column :label="$t('admin.user.list.colActions')" width="270" align="center">
           <template #default="{ row }">
-            <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">{{ $t('common.action.edit') }}</el-button>
-            <el-button v-if="canWrite" link type="warning" @click="onResetPassword(row)">{{ $t('admin.user.list.resetPassword') }}</el-button>
-            <el-button link type="info" @click="openGrants(row)">{{ $t('admin.user.list.grant') }}</el-button>
+            <el-button v-if="canWrite" link type="primary" @click.stop="openEdit(row)">{{ $t('common.action.edit') }}</el-button>
+            <el-button v-if="canWrite" link type="warning" @click.stop="onResetPassword(row)">{{ $t('admin.user.list.resetPassword') }}</el-button>
+            <el-button link type="info" @click.stop="openGrants(row)">{{ $t('admin.user.list.grant') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -384,6 +385,12 @@ function resetForm() {
 function openCreate() {
   resetForm()
   dialogVisible.value = true
+}
+
+// 与其它列表一致：点行即编辑；只读角色不弹窗
+function onRowClick(row) {
+  if (!canWrite.value) return
+  openEdit(row)
 }
 
 function openEdit(row) {
