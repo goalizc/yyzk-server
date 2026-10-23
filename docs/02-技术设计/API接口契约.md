@@ -77,12 +77,21 @@
 
 ```json
 {
-  "detail": "型号已存在",
-  "code": "MODEL_DUPLICATED"
+  "detail": "型号 X1 已存在",
+  "code": "MODEL_DUPLICATED",
+  "params": { "model": "X1" }
 }
 ```
 
 `code` 为稳定机器码，前端按 `code` 判断分支、按 `detail` 展示文案。完整清单见 §8。
+
+**`params`（v1.6 新增，可选）**：承载错误文案里的动态片段（型号、名称、缺失列表），
+供多语言前端按该语言的句子结构插值。规则：
+
+- 只在有内容时出现，**不改变既有响应的形状**（老客户端忽略该字段即可）
+- 与 `detail` 里的值保持一致：`detail` 仍是「厂商可读的完整中文句子」，`params` 只是把其中的变量单独给出
+- 中文界面**不依赖** `params`（直接用 `detail`，最精确）；它只服务非中文界面
+- 新增带变量的错误码时，`params` 的键名与 `frontend/src/locales/*/error.js` 的插值占位符一致
 
 ### 0.3 鉴权与授权
 
@@ -724,7 +733,7 @@ Response 200:
 
 ### GET /api/admin/tickets/{id}
 
-**需鉴权，权限 `ticket:read`**。工单详情（抽屉用）。
+**需鉴权，权限 `ticket:read`**。工单详情（详情面板用）。
 
 > **数据范围**：与列表同一套 `ticket_scope` 校验；客服访问不可见工单返回 403 `PERMISSION_DENIED`，不能只在列表过滤。`tickets.product_id` 为空时仅 `ALL` 范围可见。
 
@@ -845,7 +854,7 @@ Response 200:
 
 ### GET /api/admin/users/assignable
 
-**权限 `ticket:assign`**。可改派的启用账号，供工单抽屉处理人下拉。
+**权限 `ticket:assign`**。可改派的启用账号，供工单详情面板的处理人下拉。
 
 Query：`product_id`（选填；传入时按产品线可见性过滤）
 
