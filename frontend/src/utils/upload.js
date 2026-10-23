@@ -1,3 +1,5 @@
+import { i18n } from '../locales'
+
 // 上传约束（与契约 §4 POST /api/admin/upload 保持一致）
 // 后端仍会二次校验 MIME，这里只是尽早拦住、避免用户等整个文件传完才失败
 
@@ -20,5 +22,6 @@ export function isAllowedExt(filename, allowed) {
 
 /** 后缀不合法时的统一文案 */
 export function extHint(allowed) {
-  return `仅支持 ${allowed.map((ext) => ext.replace('.', '')).join(' / ')} 格式`
+  const formats = allowed.map((ext) => ext.replace('.', '')).join(' / ')
+  return i18n.global.t('common.upload.onlyFormats', { formats })
 }

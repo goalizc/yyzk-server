@@ -1,6 +1,6 @@
 <template>
   <div class="detail">
-    <el-page-header content="解决方案" @back="router.back()" class="page-header" />
+    <el-page-header :content="$t('public.faultDetail.pageTitle')" @back="router.back()" class="page-header" />
 
     <el-card v-if="loading" shadow="never">
       <el-skeleton :rows="6" animated />
@@ -9,8 +9,8 @@
     <el-card v-else-if="error" shadow="never">
       <el-result icon="warning" :title="error.title" :sub-title="error.detail">
         <template #extra>
-          <el-button @click="router.push('/')">返回首页</el-button>
-          <el-button type="primary" @click="load">重试</el-button>
+          <el-button @click="goHome">{{ $t('public.faultDetail.backHome') }}</el-button>
+          <el-button type="primary" @click="load">{{ $t('public.faultDetail.retry') }}</el-button>
         </template>
       </el-result>
     </el-card>
@@ -19,24 +19,30 @@
       <FaultSolutionView :fault="fault" show-stats />
 
       <el-card shadow="never" class="block">
-        <template #header>这个方案解决您的问题了吗？</template>
+        <template #header>{{ $t('public.faultDetail.feedbackTitle') }}</template>
 
         <el-alert
           v-if="feedbackDone"
           type="success"
           show-icon
           :closable="false"
-          :title="feedbackResolved ? '感谢反馈，很高兴帮到您' : '已记录，建议提交工单由工程师跟进'"
+          :title="feedbackResolved
+            ? $t('public.faultDetail.thanksResolved')
+            : $t('public.faultDetail.thanksUnresolved')"
           class="fb-alert"
         />
 
         <div class="actions">
           <el-button type="success" :disabled="feedbackDone" @click="feedback(true)">
-            已解决
+            {{ $t('public.faultDetail.solved') }}
           </el-button>
-          <el-button :disabled="feedbackDone" @click="feedback(false)">未解决</el-button>
+          <el-button :disabled="feedbackDone" @click="feedback(false)">
+            {{ $t('public.faultDetail.unsolved') }}
+          </el-button>
           <el-divider direction="vertical" />
-          <el-button type="primary" plain @click="goTicket">仍然不行，提交工单</el-button>
+          <el-button type="primary" plain @click="goTicket">
+            {{ $t('public.faultDetail.stillNotWorking') }}
+          </el-button>
         </div>
       </el-card>
     </template>
@@ -46,11 +52,15 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { getFault, sendFeedback } from '../../api/fault'
 import FaultSolutionView from '../../components/FaultSolutionView.vue'
+import { errorMessage } from '../../utils/error'
+import { currentLocale, localeRoute } from '../../locales'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 
 const fault = ref(null)
 const loading = ref(true)
@@ -68,10 +78,13 @@ async function load() {
     // 契约：query_log_id 必须保存，反馈时回传（否则并发下无法定位日志）
     queryLogId.value = data.query_log_id
   } catch (e) {
-    const body = e.response?.data
+    const code = e.response?.data?.code
     error.value = {
-      title: body?.code === 'NOT_FOUND' ? '方案不存在或已下架' : '加载失败',
-      detail: body?.detail || '请稍后重试'
+      title:
+        code === 'NOT_FOUND'
+          ? t('public.faultDetail.notFound')
+          : t('public.faultDetail.loadFailed'),
+      detail: errorMessage(e, { fallbackKey: 'public.faultDetail.retryLater' })
     }
   } finally {
     loading.value = false
@@ -80,7 +93,7 @@ async function load() {
 
 async function feedback(resolved) {
   if (!queryLogId.value) {
-    ElMessage.warning('反馈信息缺失，请刷新页面重试')
+    ElMessage.warning(t('public.faultDetail.feedbackMissing'))
     return
   }
   try {
@@ -94,26 +107,29 @@ async function feedback(resolved) {
     const body = e.response?.data
     if (body?.code === 'QUERY_LOG_MISMATCH') {
       // 契约建议：静默忽略并刷新详情（重新取一次日志 id）
-      ElMessage.warning('页面数据已过期，正在刷新')
+      ElMessage.warning(t('public.faultDetail.feedbackExpired'))
       await load()
       return
     }
-    ElMessage.error(body?.detail || '反馈失败，请稍后重试')
+    ElMessage.error(errorMessage(e, { fallbackKey: 'public.faultDetail.feedbackFailed' }))
   }
 }
 
+function goHome() {
+  router.push(currentLocale() === 'en-US' ? '/en' : '/')
+}
+
 function goTicket() {
-  router.push({
-    name: 'ticket-new',
-    query: {
+  router.push(
+    localeRoute('ticket-new', {}, {
       product_id: fault.value.product_id,
       part_id: fault.value.part_id,
       fault_id: fault.value.id,
       product_name: fault.value.product_name,
       part_name: fault.value.part_name,
       fault_title: fault.value.title
-    }
-  })
+    })
+  )
 }
 
 onMounted(load)

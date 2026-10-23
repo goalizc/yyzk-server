@@ -3,16 +3,18 @@
     <el-card shadow="never">
       <template #header>
         <div class="head">
-          <span>故障知识库</span>
-          <el-button v-if="canWrite" type="primary" @click="goCreate">新增故障</el-button>
+          <span>{{ $t('admin.page.faults') }}</span>
+          <el-button v-if="canWrite" type="primary" @click="goCreate">
+            {{ $t('admin.fault.list.newFault') }}
+          </el-button>
         </div>
       </template>
 
       <el-form :inline="true" class="filters" @submit.prevent>
-        <el-form-item v-if="canFilterProduct" label="产品">
+        <el-form-item v-if="canFilterProduct" :label="$t('admin.fault.list.product')">
           <el-select
             v-model="filters.productId"
-            placeholder="全部产品"
+            :placeholder="$t('admin.fault.list.allProducts')"
             filterable
             clearable
             class="wd"
@@ -27,10 +29,10 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="canFilterPart" label="零件">
+        <el-form-item v-if="canFilterPart" :label="$t('admin.fault.list.part')">
           <el-select
             v-model="filters.partId"
-            placeholder="全部零件"
+            :placeholder="$t('admin.fault.list.allParts')"
             filterable
             clearable
             class="wd"
@@ -46,24 +48,30 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="关键词">
+        <el-form-item :label="$t('admin.fault.list.keyword')">
           <el-input
             v-model="filters.keyword"
-            placeholder="标题或现象"
+            :placeholder="$t('admin.fault.list.keywordPlaceholder')"
             clearable
             class="wd"
             @input="onKeywordInput"
             @clear="reload"
           />
         </el-form-item>
-        <el-form-item label="发布状态">
-          <el-select v-model="filters.published" placeholder="全部" clearable class="sm" @change="reload">
-            <el-option label="已发布" :value="true" />
-            <el-option label="未发布" :value="false" />
+        <el-form-item :label="$t('admin.fault.list.publishStatus')">
+          <el-select
+            v-model="filters.published"
+            :placeholder="$t('admin.fault.list.all')"
+            clearable
+            class="sm"
+            @change="reload"
+          >
+            <el-option :label="$t('admin.fault.list.published')" :value="true" />
+            <el-option :label="$t('admin.fault.list.draft')" :value="false" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button @click="onReset">重置</el-button>
+          <el-button @click="onReset">{{ $t('common.action.reset') }}</el-button>
         </el-form-item>
       </el-form>
 
@@ -76,40 +84,42 @@
         border
         @row-click="onRowClick"
       >
-        <el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip />
-        <el-table-column label="所属产品" width="150" show-overflow-tooltip>
+        <el-table-column prop="title" :label="$t('admin.fault.list.colTitle')" min-width="180" show-overflow-tooltip />
+        <el-table-column :label="$t('admin.fault.list.colProduct')" width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ row.product_name }}</template>
         </el-table-column>
-        <el-table-column label="所属零件" width="130" show-overflow-tooltip>
+        <el-table-column :label="$t('admin.fault.list.colPart')" width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.part_name }}</template>
         </el-table-column>
-        <el-table-column prop="view_count" label="查看次数" width="90" align="center" />
-        <el-table-column prop="resolved_count" label="解决次数" width="90" align="center" />
-        <el-table-column label="状态" width="100" align="center">
+        <el-table-column prop="view_count" :label="$t('admin.fault.list.colViews')" width="90" align="center" />
+        <el-table-column prop="resolved_count" :label="$t('admin.fault.list.colResolved')" width="90" align="center" />
+        <el-table-column :label="$t('admin.fault.list.colStatus')" width="100" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.is_published" size="small" type="success">已发布</el-tag>
-            <el-tag v-else size="small" type="info">未发布</el-tag>
+            <el-tag v-if="row.is_published" size="small" type="success">
+              {{ $t('admin.fault.list.published') }}
+            </el-tag>
+            <el-tag v-else size="small" type="info">{{ $t('admin.fault.list.draft') }}</el-tag>
             <el-tag
               v-if="row.needs_professional"
               size="small"
               type="warning"
               class="tag-gap"
             >
-              需专业
+              {{ $t('admin.fault.list.needsPro') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="更新时间" width="120">
+        <el-table-column :label="$t('admin.fault.list.colUpdated')" width="120">
           <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="canWrite" label="操作" width="130" align="center">
+        <el-table-column v-if="canWrite" :label="$t('admin.fault.list.colActions')" width="130" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" @click.stop="goEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click.stop="onDelete(row)">删除</el-button>
+            <el-button link type="primary" @click.stop="goEdit(row)">{{ $t('common.action.edit') }}</el-button>
+            <el-button link type="danger" @click.stop="onDelete(row)">{{ $t('common.action.delete') }}</el-button>
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty description="暂无故障，点击「新增故障」录入第一条" />
+          <el-empty :description="$t('admin.fault.list.empty')" />
         </template>
       </el-table>
 
@@ -134,13 +144,15 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { adminDeleteFault, adminListFaults, adminListParts, adminListProducts } from '../../../api/admin'
 import ErrorState from '../../../components/ErrorState.vue'
 import FaultReaderDrawer from './FaultReaderDrawer.vue'
-import { errorText } from '../../../utils/admin'
+import { errorMessage } from '../../../utils/error'
 import { formatDate } from '../../../utils/format'
 import { hasPermission } from '../../../utils/permissions'
 
+const { t } = useI18n()
 const canWrite = computed(() => hasPermission('fault:write'))
 // 只读用户也能打开详情：编辑页会按自己的权限降级为只读视图
 const canOpen = computed(() => hasPermission('fault:read'))
@@ -170,7 +182,7 @@ async function loadProducts() {
     const data = await adminListProducts({ page: 1, page_size: 100 })
     products.value = data.items
   } catch (e) {
-    ElMessage.error(errorText(e, '产品列表加载失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.fault.list.productLoadFailed' }))
   } finally {
     loadingProducts.value = false
   }
@@ -193,7 +205,7 @@ async function loadParts(productId) {
   } catch (e) {
     if (my !== partsSeq) return
     parts.value = []
-    ElMessage.error(errorText(e, '零件列表加载失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.fault.list.partLoadFailed' }))
   } finally {
     if (my === partsSeq) loadingParts.value = false
   }
@@ -229,7 +241,7 @@ async function load() {
     if (my !== listSeq) return
     rows.value = []
     pagination.total = 0
-    loadError.value = errorText(e, '故障列表加载失败')
+    loadError.value = errorMessage(e, { fallbackKey: 'admin.fault.list.listLoadFailed' })
   } finally {
     if (my === listSeq) loading.value = false
   }
@@ -292,9 +304,13 @@ async function onDelete(row) {
   try {
     // 契约 §4：被工单引用时不阻止删除（引用置 NULL），但要明确告知不可恢复
     await ElMessageBox.confirm(
-      `确认删除故障「${row.title}」？删除后不可恢复，相关工单会保留但不再关联该故障。`,
-      '删除确认',
-      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+      t('admin.fault.list.deleteConfirm', { title: row.title }),
+      t('common.confirm.deleteTitle'),
+      {
+        type: 'warning',
+        confirmButtonText: t('common.confirm.delete'),
+        cancelButtonText: t('common.action.cancel')
+      }
     )
   } catch {
     return
@@ -302,10 +318,10 @@ async function onDelete(row) {
 
   try {
     await adminDeleteFault(row.id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('admin.fault.list.deleted'))
     await load()
   } catch (e) {
-    ElMessage.error(errorText(e, '删除失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.fault.list.deleteFailed' }))
   }
 }
 

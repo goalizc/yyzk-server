@@ -4,20 +4,24 @@
       <div class="title-row">
         <h1 class="title">{{ fault.title }}</h1>
         <div v-if="showStatus" class="tags">
-          <el-tag v-if="fault.is_published" type="success" size="small">已发布</el-tag>
-          <el-tag v-else type="info" size="small">未发布</el-tag>
-          <el-tag v-if="fault.needs_professional" type="warning" size="small">需专业</el-tag>
+          <el-tag v-if="fault.is_published" type="success" size="small">
+            {{ $t('fault.published') }}
+          </el-tag>
+          <el-tag v-else type="info" size="small">{{ $t('fault.draft') }}</el-tag>
+          <el-tag v-if="fault.needs_professional" type="warning" size="small">
+            {{ $t('fault.needsPro') }}
+          </el-tag>
         </div>
       </div>
 
       <p class="meta">
-        {{ fault.product_name }} / {{ fault.part_name }}
+        {{ $t('fault.meta', { product: fault.product_name, part: fault.part_name }) }}
         <template v-if="showStats">
-          <span class="dot">·</span>{{ fault.view_count }} 人看过
-          <span class="dot">·</span>{{ fault.resolved_count }} 人反馈已解决
+          <span class="dot">·</span>{{ $t('common.count.viewed', fault.view_count) }}
+          <span class="dot">·</span>{{ $t('common.count.resolved', fault.resolved_count) }}
         </template>
         <template v-if="fault.updated_at">
-          <span class="dot">·</span>更新于 {{ formatDate(fault.updated_at) }}
+          <span class="dot">·</span>{{ $t('fault.updatedAt', { date: formatDate(fault.updated_at) }) }}
         </template>
       </p>
 
@@ -26,25 +30,25 @@
         type="error"
         show-icon
         :closable="false"
-        title="该故障建议由专业人员处理，请勿自行拆机"
+        :title="$t('fault.proAlert')"
         class="pro-alert"
       />
 
       <el-descriptions :column="1" border size="small" class="desc">
-        <el-descriptions-item label="现象描述">
-          {{ fault.symptom || '暂无' }}
+        <el-descriptions-item :label="$t('fault.symptom')">
+          {{ fault.symptom || $t('fault.none') }}
         </el-descriptions-item>
-        <el-descriptions-item label="可能原因">
-          {{ fault.root_cause || '暂无' }}
+        <el-descriptions-item :label="$t('fault.rootCause')">
+          {{ fault.root_cause || $t('fault.none') }}
         </el-descriptions-item>
-        <el-descriptions-item v-if="fault.required_tools" label="所需工具">
+        <el-descriptions-item v-if="fault.required_tools" :label="$t('fault.requiredTools')">
           {{ fault.required_tools }}
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
 
     <el-card shadow="never" class="block">
-      <template #header>排查步骤</template>
+      <template #header>{{ $t('fault.steps') }}</template>
       <ol class="steps">
         <li v-for="step in steps" :key="step.step">
           <div class="step-text">{{ step.text }}</div>
@@ -58,11 +62,11 @@
           />
         </li>
       </ol>
-      <p v-if="!steps.length" class="muted">暂无分步说明</p>
+      <p v-if="!steps.length" class="muted">{{ $t('fault.noSteps') }}</p>
     </el-card>
 
     <el-card v-if="attachments.length" shadow="never" class="block">
-      <template #header>相关附件</template>
+      <template #header>{{ $t('fault.attachments') }}</template>
       <div v-for="file in attachments" :key="file.url" class="attachment">
         <a :href="file.url" target="_blank" rel="noopener">{{ file.name }}</a>
         <span class="muted">{{ formatSize(file.size) }}</span>

@@ -3,11 +3,11 @@
     <el-card shadow="never">
       <template #header>
         <div class="head">
-          <span>零件管理</span>
+          <span>{{ $t('admin.page.parts') }}</span>
           <div class="head-actions">
             <el-select
               v-model="productId"
-              placeholder="请选择产品"
+              :placeholder="$t('admin.part.selectProduct')"
               filterable
               class="product"
               :loading="loadingProducts"
@@ -20,7 +20,7 @@
                 :value="item.id"
               />
             </el-select>
-            <el-button v-if="canWrite" type="primary" :disabled="!productId" @click="openCreate">新增零件</el-button>
+            <el-button v-if="canWrite" type="primary" :disabled="!productId" @click="openCreate">{{ $t('admin.part.newPart') }}</el-button>
           </div>
         </div>
       </template>
@@ -30,7 +30,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="还没有产品，请先到「产品管理」新增产品，再录入零件。"
+        :title="$t('admin.part.noProductsAlert')"
       />
 
       <ErrorState v-if="loadError" :error="loadError" @retry="loadParts" />
@@ -42,28 +42,28 @@
         border
         @row-click="onRowClick"
       >
-        <el-table-column prop="part_no" label="编号" width="150">
+        <el-table-column prop="part_no" :label="$t('admin.part.colPartNo')" width="150">
           <template #default="{ row }">
             <span :class="{ muted: !row.part_no }">{{ row.part_no || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="160" />
-        <el-table-column label="分组" width="140">
+        <el-table-column prop="name" :label="$t('admin.part.colName')" min-width="160" />
+        <el-table-column :label="$t('admin.part.colGroup')" width="140">
           <template #default="{ row }">
             <el-tag v-if="row.group_name" size="small" type="info">{{ row.group_name }}</el-tag>
-            <span v-else class="muted">未分组</span>
+            <span v-else class="muted">{{ $t('admin.part.ungrouped') }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="sort_order" label="排序" width="80" align="center" />
-        <el-table-column prop="fault_count" label="故障数" width="90" align="center" />
-        <el-table-column v-if="canWrite" label="操作" width="130" align="center">
+        <el-table-column prop="sort_order" :label="$t('admin.part.colSort')" width="80" align="center" />
+        <el-table-column prop="fault_count" :label="$t('admin.part.colFaultCount')" width="90" align="center" />
+        <el-table-column v-if="canWrite" :label="$t('admin.part.colActions')" width="130" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" @click.stop="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click.stop="onDelete(row)">删除</el-button>
+            <el-button link type="primary" @click.stop="openEdit(row)">{{ $t('common.action.edit') }}</el-button>
+            <el-button link type="danger" @click.stop="onDelete(row)">{{ $t('common.action.delete') }}</el-button>
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty :description="productId ? '该产品下暂无零件' : '请先选择产品'" />
+          <el-empty :description="productId ? $t('admin.part.emptyWithProduct') : $t('admin.part.emptyNoProduct')" />
         </template>
       </el-table>
 
@@ -82,32 +82,32 @@
 
     <el-dialog
       v-model="dialogVisible"
-      :title="editingId ? '编辑零件' : '新增零件'"
+      :title="editingId ? $t('admin.part.dialogEdit') : $t('admin.part.dialogCreate')"
       width="480px"
       @closed="resetForm"
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
-        <el-form-item label="所属产品">
+      <el-form ref="formRef" :model="form" :rules="rules" :label-width="labelWidth">
+        <el-form-item :label="$t('admin.part.product')">
           <!-- 零件不可跨产品：产品由页面带入，弹窗内只读展示 -->
           <span class="readonly">{{ currentProductLabel }}</span>
         </el-form-item>
-        <el-form-item label="零件编号" prop="part_no">
-          <el-input v-model="form.part_no" maxlength="50" placeholder="如：P-X1-001" />
+        <el-form-item :label="$t('admin.part.partNo')" prop="part_no">
+          <el-input v-model="form.part_no" maxlength="50" :placeholder="$t('admin.part.partNoPlaceholder')" />
         </el-form-item>
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="form.name" maxlength="100" placeholder="如：主刷模组" />
+        <el-form-item :label="$t('admin.part.name')" prop="name">
+          <el-input v-model="form.name" maxlength="100" :placeholder="$t('admin.part.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="分组" prop="group_name">
-          <el-input v-model="form.group_name" maxlength="50" placeholder="如：动力系统（可自由输入）" />
+        <el-form-item :label="$t('admin.part.group')" prop="group_name">
+          <el-input v-model="form.group_name" maxlength="50" :placeholder="$t('admin.part.groupPlaceholder')" />
         </el-form-item>
-        <el-form-item label="排序" prop="sort_order">
+        <el-form-item :label="$t('admin.part.sortOrder')" prop="sort_order">
           <el-input-number v-model="form.sort_order" :min="0" :max="9999" controls-position="right" />
-          <span class="hint">数字越小越靠前</span>
+          <span class="hint">{{ $t('admin.part.sortHint') }}</span>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="onSubmit">保存</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('common.action.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="onSubmit">{{ $t('common.action.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -115,6 +115,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   adminCreatePart,
@@ -124,10 +125,13 @@ import {
   adminUpdatePart
 } from '../../../api/admin'
 import ErrorState from '../../../components/ErrorState.vue'
-import { errorText } from '../../../utils/admin'
+import { errorMessage } from '../../../utils/error'
 import { hasPermission } from '../../../utils/permissions'
+import { useFormLabelWidth } from '../../../utils/formLabel'
 
+const { t } = useI18n()
 const canWrite = computed(() => hasPermission('part:write'))
+const labelWidth = useFormLabelWidth('88px', '120px')
 
 const products = ref([])
 const loadingProducts = ref(false)
@@ -145,9 +149,10 @@ const formRef = ref()
 
 const form = reactive({ part_no: '', name: '', group_name: '', sort_order: 0 })
 
-const rules = {
-  name: [{ required: true, message: '请输入零件名称', trigger: 'blur' }]
-}
+// computed：语言切换后校验文案跟着变
+const rules = computed(() => ({
+  name: [{ required: true, message: t('admin.part.ruleName'), trigger: 'blur' }]
+}))
 
 const currentProductLabel = computed(() => {
   const item = products.value.find((p) => p.id === productId.value)
@@ -165,7 +170,7 @@ async function loadProducts() {
       await loadParts()
     }
   } catch (e) {
-    ElMessage.error(errorText(e, '产品列表加载失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.part.productLoadFailed' }))
   } finally {
     loadingProducts.value = false
   }
@@ -196,7 +201,7 @@ async function loadParts() {
     if (my !== partsSeq) return
     rows.value = []
     pagination.total = 0
-    loadError.value = errorText(e, '零件列表加载失败')
+    loadError.value = errorMessage(e, { fallbackKey: 'admin.part.loadFailed' })
   } finally {
     if (my === partsSeq) loading.value = false
   }
@@ -221,7 +226,7 @@ function resetForm() {
 
 function openCreate() {
   if (!productId.value) {
-    ElMessage.warning('请先选择产品')
+    ElMessage.warning(t('admin.part.selectProductFirst'))
     return
   }
   resetForm()
@@ -254,15 +259,15 @@ async function onSubmit() {
   try {
     if (editingId.value) {
       await adminUpdatePart(editingId.value, payload)
-      ElMessage.success('已保存')
+      ElMessage.success(t('admin.part.saved'))
     } else {
       await adminCreatePart({ ...payload, product_id: productId.value })
-      ElMessage.success('已新增')
+      ElMessage.success(t('admin.part.created'))
     }
     dialogVisible.value = false
     await loadParts()
   } catch (e) {
-    ElMessage.error(errorText(e))
+    ElMessage.error(errorMessage(e))
   } finally {
     submitting.value = false
   }
@@ -275,9 +280,9 @@ async function onDelete(row) {
   if (row.fault_count > 0) {
     try {
       await ElMessageBox.confirm(
-        `零件「${row.name}」下有 ${row.fault_count} 条故障，需先迁移或删除故障后才能删除本零件。`,
-        '无法删除',
-        { type: 'warning', confirmButtonText: '知道了', showCancelButton: false }
+        t('admin.part.deleteBlocked', row.fault_count, { name: row.name }),
+        t('admin.part.cannotDelete'),
+        { type: 'warning', confirmButtonText: t('admin.part.gotIt'), showCancelButton: false }
       )
     } catch {
       // 关闭弹窗，无需处理
@@ -287,9 +292,9 @@ async function onDelete(row) {
 
   try {
     await ElMessageBox.confirm(
-      `确认删除零件「${row.name}」？删除后不可恢复。`,
-      '删除确认',
-      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+      t('admin.part.deleteConfirm', { name: row.name }),
+      t('common.confirm.deleteTitle'),
+      { type: 'warning', confirmButtonText: t('common.confirm.delete'), cancelButtonText: t('common.action.cancel') }
     )
   } catch {
     return
@@ -297,11 +302,11 @@ async function onDelete(row) {
 
   try {
     await adminDeletePart(row.id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('admin.part.deleted'))
     await loadParts()
   } catch (e) {
     // DELETE_BLOCKED 的 detail 带故障条数，原文展示
-    ElMessage.error(errorText(e, '删除失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.part.deleteFailed' }))
   }
 }
 

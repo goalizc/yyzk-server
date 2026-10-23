@@ -27,6 +27,8 @@ frontend/test-results/
 frontend/playwright-report/
 frontend/.playwright/
 frontend/.e2e-output/
+# E2E 换输出目录时用的临时目录（绕开 .e2e-output 累积触发的批量删除拦截）
+frontend/.e2e-run/
 # 注：auto-imports.d.ts 不忽略——eslint.config.js 读它来识别自动注入的全局符号，
 #     入库后新 clone 不必先跑一次 dev/build 才能 lint
 

@@ -1,12 +1,12 @@
 <template>
   <div class="login-page">
     <el-card class="login-card" shadow="always">
-      <h1 class="title">售后故障诊断系统</h1>
-      <p class="subtitle">后台管理登录</p>
+      <h1 class="title">{{ $t('common.appName') }}</h1>
+      <p class="subtitle">{{ $t('admin.login.subtitle') }}</p>
 
       <el-alert
-        v-if="errorText"
-        :title="errorText"
+        v-if="formError"
+        :title="formError"
         type="error"
         :closable="false"
         show-icon
@@ -14,21 +14,25 @@
       />
 
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent>
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" placeholder="请输入用户名" autocomplete="username" />
+        <el-form-item :label="$t('admin.login.username')" prop="username">
+          <el-input
+            v-model="form.username"
+            :placeholder="$t('admin.login.usernamePlaceholder')"
+            autocomplete="username"
+          />
         </el-form-item>
-        <el-form-item label="密码" prop="password">
+        <el-form-item :label="$t('admin.login.password')" prop="password">
           <el-input
             v-model="form.password"
             type="password"
             show-password
-            placeholder="请输入密码"
+            :placeholder="$t('admin.login.passwordPlaceholder')"
             autocomplete="current-password"
             @keyup.enter="onSubmit"
           />
         </el-form-item>
         <el-button type="primary" class="submit" :loading="loading" @click="onSubmit">
-          登录
+          {{ $t('admin.login.submit') }}
         </el-button>
       </el-form>
     </el-card>
@@ -36,25 +40,30 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { login } from '../../api/auth'
 import { setPermissions } from '../../utils/permissions'
+import { errorMessage } from '../../utils/error'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 const formRef = ref()
 const loading = ref(false)
-const errorText = ref('')
+// 原名 errorText，与 utils/error 导出的 errorText 概念撞车，改为 formError
+const formError = ref('')
 
 const form = reactive({ username: '', password: '' })
-const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
-}
+// computed：语言切换后校验文案跟着变
+const rules = computed(() => ({
+  username: [{ required: true, message: t('admin.login.usernameRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: t('admin.login.passwordRequired'), trigger: 'blur' }]
+}))
 
 async function onSubmit() {
-  errorText.value = ''
+  formError.value = ''
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
 
@@ -64,11 +73,11 @@ async function onSubmit() {
     localStorage.setItem('token', data.access_token)
     localStorage.setItem('user', JSON.stringify(data.user))
     setPermissions(data.permissions)
-    ElMessage.success('登录成功')
+    ElMessage.success(t('admin.login.success'))
     router.replace(typeof route.query.redirect === 'string' ? route.query.redirect : '/admin')
   } catch (error) {
     // 契约 §0.3：登录失败在表单内提示，不跳转
-    errorText.value = error.response?.data?.detail || '登录失败，请稍后重试'
+    formError.value = errorMessage(error, { fallbackKey: 'admin.login.failed' })
   } finally {
     loading.value = false
   }

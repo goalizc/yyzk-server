@@ -1,17 +1,59 @@
 <template>
   <div class="public-layout">
     <header class="header">
-      <router-link to="/" class="brand">售后自助故障诊断</router-link>
-      <router-link to="/admin/login" class="admin-link">后台入口</router-link>
+      <router-link :to="homePath" class="brand">{{ $t('public.brand') }}</router-link>
+      <div class="header-right">
+        <!-- 切换语言 = 换一个 URL 前缀，页面位置和查询参数都保留 -->
+        <button type="button" class="lang-switch" :aria-label="$t('common.language.label')" @click="toggleLocale">
+          {{ otherLocaleLabel }}
+        </button>
+        <router-link to="/admin/login" class="admin-link">{{ $t('public.adminEntry') }}</router-link>
+      </div>
     </header>
 
     <main class="main">
       <router-view />
     </main>
 
-    <footer class="footer">遇到问题请先按方案排查；仍无法解决可提交工单，我们会尽快联系您。</footer>
+    <footer class="footer">{{ $t('public.footer') }}</footer>
   </div>
 </template>
+
+<script setup>
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { currentLocale, setLocale } from '../../locales'
+
+const route = useRoute()
+const router = useRouter()
+const { t } = useI18n()
+
+const homePath = computed(() => (currentLocale() === 'en-US' ? '/en' : '/'))
+// 按钮上显示"另一种语言"，点它就切过去——比显示当前语言更符合用户的预期
+const otherLocaleLabel = computed(() =>
+  currentLocale() === 'en-US' ? t('common.language.zhCN') : t('common.language.enUS')
+)
+
+function toggleLocale() {
+  const isEn = currentLocale() === 'en-US'
+  // 显式切换要记住：用户选了英文，进后台也该是英文。
+  // 路由守卫里的 setLocale 传 persist:false（URL 才是客户侧的权威），
+  // 但"用户主动点过"这件事本身是明确的偏好，值得持久化。
+  setLocale(isEn ? 'zh-CN' : 'en-US', { persist: true })
+
+  // 用 fullPath 而不是 path：查询参数要保留（如方案页的 q、工单页的上下文 id）
+  const rest = isEn ? route.fullPath.replace(/^\/en/, '') : route.fullPath
+  const target = isEn
+    ? rest.startsWith('/')
+      ? rest
+      : `/${rest}`
+    : rest === '/'
+      ? '/en'
+      : `/en${rest}`
+  router.replace(target || '/')
+}
+</script>
 
 <style scoped>
 .public-layout {
@@ -39,6 +81,28 @@
   font-weight: 600;
   color: #303133;
   text-decoration: none;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 用原生 button 而不是 el-button：这里只需要一个轻量文字入口，
+   并且要能在窄屏上撑到 44px 命中区 */
+.lang-switch {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: #909399;
+  cursor: pointer;
+}
+
+.lang-switch:hover {
+  color: #409eff;
 }
 
 .admin-link {
@@ -87,6 +151,18 @@
     min-height: var(--tap-min);
     padding-left: 8px;
     margin-right: -8px;
+  }
+
+  /* 语言切换同样要够 44px，否则手机上很难点中 */
+  .header-right {
+    gap: 10px;
+  }
+
+  .lang-switch {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap-min);
+    padding-right: 6px;
   }
 
   .main {

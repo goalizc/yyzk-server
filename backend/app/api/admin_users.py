@@ -108,7 +108,12 @@ def _ensure_lines_exist(
     found = {line.id: line for line in rows}
     missing = unique_ids - found.keys()
     if missing:
-        raise BusinessError("NOT_FOUND", f"产品线不存在：{sorted(missing)}", 404)
+        raise BusinessError(
+            "NOT_FOUND",
+            f"产品线不存在：{sorted(missing)}",
+            404,
+            {"missing": sorted(missing)},
+        )
     return found
 
 

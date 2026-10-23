@@ -1,7 +1,7 @@
 <template>
   <el-container class="layout">
     <el-aside v-if="!isNarrow" width="200px" class="aside">
-      <div class="brand">售后故障诊断</div>
+      <div class="brand">{{ $t('admin.brand') }}</div>
       <el-menu :default-active="activeMenu" router class="menu">
         <el-menu-item v-for="item in navItems" :key="item.path" :index="item.path">
           {{ item.label }}
@@ -29,6 +29,14 @@
               >
                 {{ item.label }}
               </el-dropdown-item>
+              <!-- 窄屏顶栏放不下独立的语言下拉，挂在这里：
+                   否则手机上没有任何切换语言的入口 -->
+              <el-dropdown-item divided command="lang:zh-CN">
+                {{ $t('common.language.zhCN') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="lang:en-US">
+                {{ $t('common.language.enUS') }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -36,8 +44,20 @@
         <div class="actions">
           <span v-if="!isNarrow" class="user">{{ displayName }}</span>
           <el-tag v-if="!isNarrow && roleLabel" size="small" type="info">{{ roleLabel }}</el-tag>
-          <el-button link type="primary" @click="passwordVisible = true">修改密码</el-button>
-          <el-button link type="danger" @click="onLogout">退出登录</el-button>
+          <!-- 后台没有 URL 前缀，语言只能从这里切；选择结果写入 localStorage -->
+          <el-dropdown v-if="!isNarrow" trigger="click" @command="onLocaleChange">
+            <el-button link type="primary">
+              {{ localeLabel }}<span class="caret">▾</span>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="zh-CN">{{ $t('common.language.zhCN') }}</el-dropdown-item>
+                <el-dropdown-item command="en-US">{{ $t('common.language.enUS') }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button link type="primary" @click="passwordVisible = true">{{ $t('admin.topbar.changePassword') }}</el-button>
+          <el-button link type="danger" @click="onLogout">{{ $t('admin.topbar.logout') }}</el-button>
         </div>
       </el-header>
 
@@ -46,21 +66,21 @@
       </el-main>
     </el-container>
 
-    <el-dialog v-model="passwordVisible" title="修改密码" :width="dialogWidth" @closed="resetForm">
-      <el-form ref="formRef" :model="form" :rules="rules" :label-width="isNarrow ? 'auto' : '96px'" :label-position="isNarrow ? 'top' : 'right'">
-        <el-form-item label="原密码" prop="oldPassword" :error="oldPasswordError">
+    <el-dialog v-model="passwordVisible" :title="$t('admin.password.title')" :width="dialogWidth" @closed="resetForm">
+      <el-form ref="formRef" :model="form" :rules="rules" :label-width="isNarrow ? 'auto' : labelWidth" :label-position="isNarrow ? 'top' : 'right'">
+        <el-form-item :label="$t('admin.password.old')" prop="oldPassword" :error="oldPasswordError">
           <el-input v-model="form.oldPassword" type="password" show-password />
         </el-form-item>
-        <el-form-item label="新密码" prop="newPassword" :error="newPasswordError">
+        <el-form-item :label="$t('admin.password.new')" prop="newPassword" :error="newPasswordError">
           <el-input v-model="form.newPassword" type="password" show-password />
         </el-form-item>
-        <el-form-item label="确认新密码" prop="confirmPassword">
+        <el-form-item :label="$t('admin.password.confirm')" prop="confirmPassword">
           <el-input v-model="form.confirmPassword" type="password" show-password />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="passwordVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="onSubmit">保存</el-button>
+        <el-button @click="passwordVisible = false">{{ $t('common.action.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="onSubmit">{{ $t('common.action.save') }}</el-button>
       </template>
     </el-dialog>
   </el-container>
@@ -69,13 +89,19 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { changePassword, fetchMe } from '../../api/auth'
 import { clearPermissions, hasPermission, setPermissions } from '../../utils/permissions'
-import { errorCode, errorText } from '../../utils/admin'
+import { errorCode } from '../../utils/admin'
+import { errorMessage } from '../../utils/error'
+import { applyPageTitle } from '../../utils/pageTitle'
+import { currentLocale, normalizeLocale, setLocale } from '../../locales'
+import { useFormLabelWidth } from '../../utils/formLabel'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 
 const passwordVisible = ref(false)
 const submitting = ref(false)
@@ -93,18 +119,28 @@ const user = computed(() => {
   }
 })
 
-const displayName = computed(() => user.value.real_name || user.value.username || '已登录')
-const roleLabel = computed(() => {
-  const map = {
-    super_admin: '超级管理员',
-    supervisor: '售后主管',
-    agent: '一线客服',
-    auditor: '只读审计'
-  }
-  return map[user.value.role] || ''
-})
+const displayName = computed(
+  () => user.value.real_name || user.value.username || t('admin.topbar.loggedIn')
+)
+const roleLabel = computed(() => (user.value.role ? t(`common.role.${user.value.role}`) : ''))
 
-const pageTitle = computed(() => route.meta?.title || '后台管理')
+// 后台没有 URL 前缀，语言完全靠 localStorage 记住，所以需要显式切换入口
+const localeLabel = computed(() =>
+  currentLocale() === 'en-US' ? t('common.language.enUS') : t('common.language.zhCN')
+)
+
+function onLocaleChange(value) {
+  setLocale(normalizeLocale(value) || 'zh-CN', { persist: true })
+  // 切语言不换路由，afterEach 不会触发，标签页标题要手动补一次
+  applyPageTitle(route.meta)
+}
+
+const pageTitle = computed(() => {
+  // titleKey 是 i18n 化的页面名；title 是历史中文原值，作为未加 key 时的回退
+  const key = route.meta?.titleKey
+  // 没有 titleKey 时用品名兜底（历史上 meta.title 存中文，已删除，避免两套文案漂移）
+  return key ? t(key) : t('admin.brand')
+})
 
 // /admin/faults/edit/:id? 也要让侧边栏"故障知识库"保持高亮
 const activeMenu = computed(() => {
@@ -117,23 +153,39 @@ const activeMenu = computed(() => {
 // 侧栏固定 200px，在 390px 屏上会占掉一半宽度，剩下的表格被挤成一列并撑出
 // 横向滚动（实测 scrollWidth 473 > clientWidth 390）。窄屏改为顶栏下拉导航。
 const NARROW_QUERY = '(max-width: 768px)'
+// 英文最长标签 "Confirm password"（改密弹窗）
+const labelWidth = useFormLabelWidth('96px', '150px')
 const isNarrow = ref(false)
 const dialogWidth = computed(() => (isNarrow.value ? '92%' : '420px'))
 
+// 菜单顺序 = 使用频率分区：日常作业 → 数据分析 → 基础配置 → 系统管理。
+// 不要按"功能上线先后"往数组尾部追加：产品线/产品/零件必须连续，且从粗到细
+// （线 → 产品 → 零件），否则层级会被打断。顺序由 Layout.spec.js 锁定。
+// label 由 labelKey 翻译得到，不要在模板里拼 `admin.nav.` + 变量（扫描脚本抓不到）。
 const NAV_ITEMS = [
-  { path: '/admin/tickets', label: '工单管理', permission: 'ticket:read' },
-  { path: '/admin/products', label: '产品管理', permission: 'product:read' },
-  { path: '/admin/product-lines', label: '产品线', permission: 'product_line:read' },
-  { path: '/admin/parts', label: '零件管理', permission: 'part:read' },
-  { path: '/admin/faults', label: '故障知识库', permission: 'fault:read' },
-  { path: '/admin/stats', label: '数据看板', permission: 'stats:read' },
-  { path: '/admin/users', label: '用户管理', permission: 'user:read' }
+  { path: '/admin/tickets', labelKey: 'admin.nav.tickets', permission: 'ticket:read' },
+  { path: '/admin/faults', labelKey: 'admin.nav.faults', permission: 'fault:read' },
+  { path: '/admin/stats', labelKey: 'admin.nav.stats', permission: 'stats:read' },
+  { path: '/admin/product-lines', labelKey: 'admin.nav.productLines', permission: 'product_line:read' },
+  { path: '/admin/products', labelKey: 'admin.nav.products', permission: 'product:read' },
+  { path: '/admin/parts', labelKey: 'admin.nav.parts', permission: 'part:read' },
+  { path: '/admin/users', labelKey: 'admin.nav.users', permission: 'user:read' }
 ]
 
-const navItems = computed(() => NAV_ITEMS.filter((item) => hasPermission(item.permission)))
+const navItems = computed(() =>
+  NAV_ITEMS.filter((item) => hasPermission(item.permission)).map((item) => ({
+    path: item.path,
+    label: t(item.labelKey)
+  }))
+)
 
-function onNav(path) {
-  router.push(path)
+function onNav(command) {
+  // 窄屏下拉同时承载导航与语言切换，用前缀区分，避免给语言单独做一个入口
+  if (typeof command === 'string' && command.startsWith('lang:')) {
+    onLocaleChange(command.slice('lang:'.length))
+    return
+  }
+  router.push(command)
 }
 
 let narrowMql = null
@@ -163,11 +215,12 @@ onBeforeUnmount(() => narrowMql?.removeEventListener?.('change', syncNarrow))
 
 watch(() => route.fullPath, refreshPermissions)
 
-const rules = {
-  oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
+// computed 而不是常量：语言切换后校验文案要跟着变
+const rules = computed(() => ({
+  oldPassword: [{ required: true, message: t('admin.password.oldRequired'), trigger: 'blur' }],
   newPassword: [
-    { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 8, message: '新密码至少 8 位', trigger: 'blur' },
+    { required: true, message: t('admin.password.newRequired'), trigger: 'blur' },
+    { min: 8, message: t('admin.password.newTooShort'), trigger: 'blur' },
     {
       // P-11 规则 1：新旧密码不能相同，前端先拦，后端用哈希比对兜底（PASSWORD_SAME）。
       // newPasswordError 优先：服务端回文案后再次校验也要保持报错，不能被"本轮通过"清掉。
@@ -175,23 +228,23 @@ const rules = {
       // Element Plus 读不到 .message 就不渲染。
       validator: (_rule, value, callback) => {
         if (newPasswordError.value) callback(newPasswordError.value)
-        else if (value && value === form.oldPassword) callback('新密码不能与原密码相同')
+        else if (value && value === form.oldPassword) callback(t('admin.password.newSameAsOld'))
         else callback()
       }
     }
   ],
   confirmPassword: [
-    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    { required: true, message: t('admin.password.confirmRequired'), trigger: 'blur' },
     {
       // 契约 §1：两次一致由前端校验，后端只信任 new_password
       validator: (_rule, value, callback) => {
-        if (value !== form.newPassword) callback(new Error('两次输入的密码不一致'))
+        if (value !== form.newPassword) callback(new Error(t('admin.password.confirmMismatch')))
         else callback()
       },
       trigger: 'blur'
     }
   ]
-}
+}))
 
 function resetForm() {
   form.oldPassword = ''
@@ -211,21 +264,21 @@ async function onSubmit() {
   submitting.value = true
   try {
     await changePassword({ old_password: form.oldPassword, new_password: form.newPassword })
-    ElMessage.success('密码已修改')
+    ElMessage.success(t('admin.password.changed'))
     passwordVisible.value = false
   } catch (e) {
     // P-11 规则 3：错误内联在对应字段下，不关闭弹窗
     const code = errorCode(e)
     if (code === 'PASSWORD_INVALID') {
-      oldPasswordError.value = errorText(e, '原密码不正确')
+      oldPasswordError.value = errorMessage(e, { fallbackKey: 'admin.password.oldInvalid' })
     } else if (code === 'PASSWORD_SAME') {
       // 前端已拦过一次；能到这里说明字符不同但哈希等价（极罕见），或前端校验被绕过。
       // 校验器的第一优先级就是 newPasswordError，所以这次 validateField 会稳定报错，
       // 不会像"校验通过则清空"那样把服务端文案吞掉
-      newPasswordError.value = errorText(e, '新密码不能与原密码相同')
+      newPasswordError.value = errorMessage(e, { fallbackKey: 'admin.password.newSameAsOld' })
       await formRef.value?.validateField('newPassword').catch(() => {})
     } else {
-      ElMessage.error(errorText(e, '修改失败，请稍后重试'))
+      ElMessage.error(errorMessage(e, { fallbackKey: 'admin.password.changeFailed' }))
     }
   } finally {
     submitting.value = false

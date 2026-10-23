@@ -2,77 +2,77 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="label">时间范围</span>
+        <span class="label">{{ $t('admin.stats.period') }}</span>
         <el-radio-group v-model="days" @change="loadAll">
-          <el-radio-button :value="7">近 7 天</el-radio-button>
-          <el-radio-button :value="30">近 30 天</el-radio-button>
-          <el-radio-button :value="0">全部</el-radio-button>
+          <el-radio-button :value="7">{{ $t('admin.stats.last7Days') }}</el-radio-button>
+          <el-radio-button :value="30">{{ $t('admin.stats.last30Days') }}</el-radio-button>
+          <el-radio-button :value="0">{{ $t('admin.stats.allTime') }}</el-radio-button>
         </el-radio-group>
-        <span class="tip">切换后除"当前积压"外全部联动</span>
+        <span class="tip">{{ $t('admin.stats.periodHint') }}</span>
       </div>
     </el-card>
 
     <el-row :gutter="16" class="cards">
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="metric" v-loading="loading.overview">
-          <div class="metric-label">查询次数</div>
+          <div class="metric-label">{{ $t('admin.stats.totalQueries') }}</div>
           <div class="metric-value">{{ formatNumber(overview.total_queries) }}</div>
-          <div class="metric-sub">含未命中 {{ formatNumber(overview.missed_queries) }} 次</div>
+          <div class="metric-sub">{{ $t('admin.stats.missedSub', { count: formatNumber(overview.missed_queries) }) }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="metric" v-loading="loading.overview">
           <div class="metric-label">
-            自助解决率
+            {{ $t('admin.stats.resolveRate') }}
             <!-- 悬停展示分子分母，分母必须是 view_queries（不是 total_queries） -->
             <el-tooltip
-              :content="`${formatNumber(overview.resolved_queries)} / ${formatNumber(overview.view_queries)}（已解决 / 查看方案）`"
+              :content="$t('admin.stats.resolveRateTip', { resolved: formatNumber(overview.resolved_queries), viewed: formatNumber(overview.view_queries) })"
               placement="top"
             >
               <span class="q">?</span>
             </el-tooltip>
           </div>
           <div class="metric-value">{{ formatPercent(overview.resolve_rate) }}</div>
-          <div class="metric-sub">查看方案 {{ formatNumber(overview.view_queries) }} 次</div>
+          <div class="metric-sub">{{ $t('admin.stats.viewedSub', { count: formatNumber(overview.view_queries) }) }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="metric" v-loading="loading.overview">
-          <div class="metric-label">工单总数</div>
+          <div class="metric-label">{{ $t('admin.stats.totalTickets') }}</div>
           <div class="metric-value">{{ formatNumber(overview.total_tickets) }}</div>
-          <div class="metric-sub">窗口内新建</div>
+          <div class="metric-sub">{{ $t('admin.stats.totalTicketsSub') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="metric" v-loading="loading.overview">
           <div class="metric-label">
-            当前积压
-            <el-tooltip content="待处理 + 处理中的工单数，不随时间范围变化" placement="top">
+            {{ $t('admin.stats.backlog') }}
+            <el-tooltip :content="$t('admin.stats.backlogTip')" placement="top">
               <span class="q">?</span>
             </el-tooltip>
           </div>
           <div class="metric-value warn">{{ formatNumber(overview.open_tickets) }}</div>
-          <div class="metric-sub">不随筛选变化</div>
+          <div class="metric-sub">{{ $t('admin.stats.backlogSub') }}</div>
         </el-card>
       </el-col>
     </el-row>
 
     <el-card shadow="never" v-loading="loading.topFaults">
-      <template #header>TOP 10 故障（按所选时间窗内查看次数）</template>
+      <template #header>{{ $t('admin.stats.topFaultsTitle') }}</template>
       <div v-if="topFaults.length" ref="chartRef" class="chart" />
-      <el-empty v-else description="该时间范围内还没有查看记录" :image-size="70" />
+      <el-empty v-else :description="$t('admin.stats.topFaultsEmpty')" :image-size="70" />
     </el-card>
 
     <el-card shadow="never" v-loading="loading.missed">
-      <template #header>未命中检索（用户查了但没结果）</template>
+      <template #header>{{ $t('admin.stats.missedTitle') }}</template>
       <el-table v-if="missedRows.length" :data="missedRows" border size="small">
-        <el-table-column label="检索词" min-width="200">
+        <el-table-column :label="$t('admin.stats.colQuery')" min-width="200">
           <template #default="{ row }">
-            <span :class="{ weak: row.isBlank }">{{ row.isBlank ? row.raw_query : `「${row.raw_query}」` }}</span>
+            <span :class="{ weak: row.isBlank }">{{ row.isBlank ? $t('admin.stats.blankQuery') : `「${row.raw_query}」` }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="count" label="次数" width="90" align="center" />
-        <el-table-column label="出现在" min-width="220">
+        <el-table-column prop="count" :label="$t('admin.stats.colCount')" width="90" align="center" />
+        <el-table-column :label="$t('admin.stats.colAppearedIn')" min-width="220">
           <template #default="{ row }">
             <span v-if="row.sample_product_name || row.sample_part_name">
               {{ row.sample_product_name || '-' }} / {{ row.sample_part_name || '-' }}
@@ -80,11 +80,11 @@
             <span v-else class="weak">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="最近出现" width="110">
+        <el-table-column :label="$t('admin.stats.colLastSeen')" width="110">
           <template #default="{ row }">{{ formatMonthDay(row.last_seen_at) }}</template>
         </el-table-column>
       </el-table>
-      <el-empty v-else description="暂无未命中记录 —— 说明知识库覆盖良好" :image-size="70" />
+      <el-empty v-else :description="$t('admin.stats.missedEmpty')" :image-size="70" />
     </el-card>
   </div>
 </template>
@@ -98,13 +98,15 @@ import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { adminStatsMissed, adminStatsOverview, adminStatsTopFaults } from '../../../api/admin'
-import { errorText } from '../../../utils/admin'
+import { useI18n } from 'vue-i18n'
+import { errorMessage } from '../../../utils/error'
 import { formatNumber, formatPercent } from '../../../utils/format'
 
 // 按需注册，避免把整个 echarts（~1MB）打进看板 chunk
 echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const router = useRouter()
+const { t } = useI18n()
 
 // 契约 §6：days=0 表示全部
 const days = ref(30)
@@ -131,7 +133,8 @@ let reqSeq = 0
  * (未输入关键词) 行置底并弱化样式 —— 契约 §6 的归一化结果，
  * 不能让空关键词和真实关键词混排，否则看到"最高频检索词是一次都没输入"会误判。
  */
-const BLANK_QUERY = '(未输入关键词)'
+// 与后端约定的归一化值，用于比较而不是展示，翻译会导致匹配失效 —— 不能改
+const BLANK_QUERY = '(未输入关键词)'  // i18n-ignore: 契约值，非展示文案
 
 function splitMissed(items) {
   const normal = []
@@ -163,7 +166,7 @@ async function loadOverview(my) {
     overview.value = data
   } catch (e) {
     if (my !== reqSeq) return
-    ElMessage.error(errorText(e, '指标加载失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.stats.overviewLoadFailed' }))
   } finally {
     if (my === reqSeq) loading.overview = false
   }
@@ -180,7 +183,7 @@ async function loadTopFaults(my) {
   } catch (e) {
     if (my !== reqSeq) return
     topFaults.value = []
-    ElMessage.error(errorText(e, 'TOP 故障加载失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.stats.topFaultsLoadFailed' }))
   } finally {
     if (my === reqSeq) loading.topFaults = false
   }
@@ -195,7 +198,7 @@ async function loadMissed(my) {
   } catch (e) {
     if (my !== reqSeq) return
     missedRows.value = []
-    ElMessage.error(errorText(e, '未命中记录加载失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.stats.missedLoadFailed' }))
   } finally {
     if (my === reqSeq) loading.missed = false
   }
@@ -224,7 +227,7 @@ function renderChart() {
           const item = params[0]
           const source = data[item.dataIndex]
           if (!source) return ''
-          return `${source.title}<br/>${source.product_name} / ${source.part_name}<br/>窗口内查看 ${source.period_views} 次（累计 ${source.view_count}）`
+          return `${source.title}<br/>${source.product_name} / ${source.part_name}<br/>${t('admin.stats.chartTooltip', { views: source.period_views, total: source.view_count })}`
         }
       },
       xAxis: { type: 'value', splitLine: { lineStyle: { color: '#f0f2f5' } } },

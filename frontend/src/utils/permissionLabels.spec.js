@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PERMISSION_LABELS, permissionLabel } from './permissionLabels'
+import { PERMISSION_LABEL_KEYS, permissionLabel } from './permissionLabels'
 
 // 与后端 ALL_PERMISSIONS 对齐的 15 个权限码
 const CODES = [
@@ -13,11 +13,15 @@ const CODES = [
 ]
 
 describe('permissionLabels', () => {
-  it('15 个权限码都有中文名', () => {
-    expect(Object.keys(PERMISSION_LABELS)).toHaveLength(15)
+  it('15 个权限码都有文案 key，且都翻译得出中文名', () => {
+    expect(Object.keys(PERMISSION_LABEL_KEYS)).toHaveLength(15)
     for (const code of CODES) {
-      expect(PERMISSION_LABELS[code]).toBeTruthy()
-      expect(PERMISSION_LABELS[code]).not.toBe(code)
+      expect(PERMISSION_LABEL_KEYS[code], `缺少 key: ${code}`).toBeTruthy()
+      // key 存在但语言包里没有，t() 会原样返回 key —— 这里同时验证了两层
+      const label = permissionLabel(code)
+      expect(label).toBeTruthy()
+      expect(label).not.toBe(code)
+      expect(label).not.toMatch(/^permission\./)
     }
   })
 

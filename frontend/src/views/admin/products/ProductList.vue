@@ -3,11 +3,11 @@
     <el-card shadow="never">
       <template #header>
         <div class="head">
-          <span>产品管理</span>
+          <span>{{ $t('admin.page.products') }}</span>
           <div class="head-actions">
             <el-input
               v-model="filters.keyword"
-              placeholder="搜索名称或型号"
+              :placeholder="$t('admin.product.searchPlaceholder')"
               clearable
               class="kw"
               @input="onKeywordInput"
@@ -15,15 +15,15 @@
             />
             <el-select
               v-model="filters.isActive"
-              placeholder="全部状态"
+              :placeholder="$t('admin.product.allStatus')"
               clearable
               class="status"
               @change="reload"
             >
-              <el-option label="已上架" :value="true" />
-              <el-option label="已下架" :value="false" />
+              <el-option :label="$t('admin.product.onShelf')" :value="true" />
+              <el-option :label="$t('admin.product.offShelf')" :value="false" />
             </el-select>
-            <el-button v-if="canWrite" type="primary" @click="openCreate">新增产品</el-button>
+            <el-button v-if="canWrite" type="primary" @click="openCreate">{{ $t('admin.product.newProduct') }}</el-button>
           </div>
         </div>
       </template>
@@ -37,17 +37,17 @@
         border
         @row-click="onRowClick"
       >
-        <el-table-column label="名称 / 型号" min-width="200">
+        <el-table-column :label="$t('admin.product.colNameModel')" min-width="200">
           <template #default="{ row }">
             <div class="name">{{ row.name }}</div>
             <div class="model">{{ row.model }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="line_name" label="产品线" width="120">
+        <el-table-column prop="line_name" :label="$t('admin.product.colLine')" width="120">
           <template #default="{ row }">{{ row.line_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="fault_count" label="故障数" width="90" align="center" />
-        <el-table-column label="状态" width="110" align="center">
+        <el-table-column prop="fault_count" :label="$t('admin.product.colFaultCount')" width="90" align="center" />
+        <el-table-column :label="$t('admin.product.colStatus')" width="110" align="center">
           <template #default="{ row }">
             <!-- 切换即保存；接口失败要把开关拨回去，否则页面状态与库不一致 -->
             <el-switch
@@ -55,24 +55,24 @@
               :disabled="!canWrite"
               :loading="togglingId === row.id"
               inline-prompt
-              active-text="上架"
-              inactive-text="下架"
+              :active-text="$t('admin.product.switchOn')"
+              :inactive-text="$t('admin.product.switchOff')"
               @click.stop
               @change="(value) => onToggleActive(row, value)"
             />
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="120">
+        <el-table-column :label="$t('admin.product.colCreatedAt')" width="120">
           <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="canWrite" label="操作" width="130" align="center">
+        <el-table-column v-if="canWrite" :label="$t('admin.product.colActions')" width="130" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" @click.stop="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click.stop="onDelete(row)">删除</el-button>
+            <el-button link type="primary" @click.stop="openEdit(row)">{{ $t('common.action.edit') }}</el-button>
+            <el-button link type="danger" @click.stop="onDelete(row)">{{ $t('common.action.delete') }}</el-button>
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty description="暂无产品，点击右上角「新增产品」录入第一个" />
+          <el-empty :description="$t('admin.product.empty')" />
         </template>
       </el-table>
 
@@ -91,46 +91,51 @@
 
     <el-dialog
       v-model="dialogVisible"
-      :title="editingId ? '编辑产品' : '新增产品'"
+      :title="editingId ? $t('admin.product.dialogEdit') : $t('admin.product.dialogCreate')"
       width="520px"
       @closed="resetForm"
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="form.name" maxlength="100" placeholder="如：智能扫地机器人" />
+      <el-form ref="formRef" :model="form" :rules="rules" :label-width="labelWidth">
+        <el-form-item :label="$t('admin.product.name')" prop="name">
+          <el-input v-model="form.name" maxlength="100" :placeholder="$t('admin.product.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="型号" prop="model" :error="modelError">
+        <el-form-item :label="$t('admin.product.model')" prop="model" :error="modelError">
           <!-- 409 MODEL_DUPLICATED 只在这个字段下内联提示，不整页报错 -->
-          <el-input v-model="form.model" maxlength="50" placeholder="如：X1" @input="onModelInput" />
+          <el-input v-model="form.model" maxlength="50" :placeholder="$t('admin.product.modelPlaceholder')" @input="onModelInput" />
         </el-form-item>
-        <el-form-item label="产品线" prop="line_id">
-          <el-select v-model="form.line_id" placeholder="请选择产品线" class="line-select">
+        <el-form-item :label="$t('admin.product.line')" prop="line_id">
+          <el-select v-model="form.line_id" :placeholder="$t('admin.product.linePlaceholder')" class="line-select">
             <el-option
               v-for="line in lines"
               :key="line.id"
-              :label="line.is_active ? line.name : `${line.name}（已停用）`"
+              :label="line.is_active ? line.name : $t('admin.product.lineInactive', { name: line.name })"
               :value="line.id"
               :disabled="!line.is_active && line.id !== form.line_id"
             />
           </el-select>
           <el-button v-if="canManageLines" link type="primary" class="manage" @click="$router.push('/admin/product-lines')">
-            管理产品线
+            {{ $t('admin.product.manageLines') }}
           </el-button>
         </el-form-item>
-        <el-form-item label="描述" prop="description">
+        <el-form-item :label="$t('admin.product.description')" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="3" maxlength="500" show-word-limit />
         </el-form-item>
-        <el-form-item label="排序" prop="sort_order">
+        <el-form-item :label="$t('admin.product.sortOrder')" prop="sort_order">
           <el-input-number v-model="form.sort_order" :min="0" :max="9999" controls-position="right" />
-          <span class="hint">数字越小越靠前</span>
+          <span class="hint">{{ $t('admin.product.sortHint') }}</span>
         </el-form-item>
-        <el-form-item label="是否上架" prop="is_active">
-          <el-switch v-model="form.is_active" inline-prompt active-text="上架" inactive-text="下架" />
+        <el-form-item :label="$t('admin.product.isActive')" prop="is_active">
+          <el-switch
+            v-model="form.is_active"
+            inline-prompt
+            :active-text="$t('admin.product.switchOn')"
+            :inactive-text="$t('admin.product.switchOff')"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="onSubmit">保存</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('common.action.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="onSubmit">{{ $t('common.action.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -138,6 +143,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   adminCreateProduct,
@@ -147,11 +153,15 @@ import {
   adminUpdateProduct
 } from '../../../api/admin'
 import ErrorState from '../../../components/ErrorState.vue'
-import { errorCode, errorText } from '../../../utils/admin'
+import { errorCode } from '../../../utils/admin'
+import { errorMessage } from '../../../utils/error'
 import { formatDate } from '../../../utils/format'
 import { hasPermission } from '../../../utils/permissions'
+import { useFormLabelWidth } from '../../../utils/formLabel'
 
+const { t } = useI18n()
 const canWrite = computed(() => hasPermission('product:write'))
+const labelWidth = useFormLabelWidth('88px', '120px')
 const canManageLines = hasPermission('product_line:read')
 const lines = ref([])
 
@@ -178,11 +188,12 @@ const form = reactive({
   sort_order: 0
 })
 
-const rules = {
-  name: [{ required: true, message: '请输入产品名称', trigger: 'blur' }],
-  model: [{ required: true, message: '请输入型号', trigger: 'blur' }],
-  line_id: [{ required: true, message: '请选择产品线', trigger: 'change' }]
-}
+// computed：语言切换后校验文案跟着变
+const rules = computed(() => ({
+  name: [{ required: true, message: t('admin.product.ruleName'), trigger: 'blur' }],
+  model: [{ required: true, message: t('admin.product.ruleModel'), trigger: 'blur' }],
+  line_id: [{ required: true, message: t('admin.product.ruleLine'), trigger: 'change' }]
+}))
 
 let keywordTimer = null
 
@@ -219,7 +230,7 @@ async function load() {
     rows.value = []
     pagination.total = 0
     // 首屏/刷新失败给出可重试的错误态，不再只弹一条转瞬即逝的提示
-    loadError.value = errorText(e, '产品列表加载失败')
+    loadError.value = errorMessage(e, { fallbackKey: 'admin.product.loadFailed' })
   } finally {
     loading.value = false
   }
@@ -296,20 +307,20 @@ async function onSubmit() {
   try {
     if (editingId.value) {
       await adminUpdateProduct(editingId.value, payload)
-      ElMessage.success('已保存')
+      ElMessage.success(t('admin.product.saved'))
     } else {
       await adminCreateProduct(payload)
-      ElMessage.success('已新增')
+      ElMessage.success(t('admin.product.created'))
     }
     dialogVisible.value = false
     // 局部刷新当前页，不整页重载（P-13 规则 5）
     await load()
   } catch (e) {
     if (errorCode(e) === 'MODEL_DUPLICATED') {
-      modelError.value = errorText(e, '型号已存在')
+      modelError.value = errorMessage(e)
       return
     }
-    ElMessage.error(errorText(e))
+    ElMessage.error(errorMessage(e))
   } finally {
     submitting.value = false
   }
@@ -320,9 +331,9 @@ async function onToggleActive(row, value) {
   try {
     await adminUpdateProduct(row.id, { is_active: value })
     row.is_active = value
-    ElMessage.success(value ? '已上架' : '已下架')
+    ElMessage.success(value ? t('admin.product.shelfOn') : t('admin.product.shelfOff'))
   } catch (e) {
-    ElMessage.error(errorText(e, '状态更新失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.product.statusFailed' }))
     // 失败回滚：重新拉一次列表，保证开关与库一致（不算整页重载）
     await load()
   } finally {
@@ -336,9 +347,9 @@ async function onDelete(row) {
   if (row.fault_count > 0) {
     try {
       await ElMessageBox.confirm(
-        `该产品下有 ${row.fault_count} 条故障，需先迁移或删除故障后才能删除本产品。`,
-        '无法删除',
-        { type: 'warning', confirmButtonText: '知道了', showCancelButton: false }
+        t('admin.product.deleteBlocked', row.fault_count),
+        t('admin.product.cannotDelete'),
+        { type: 'warning', confirmButtonText: t('admin.product.gotIt'), showCancelButton: false }
       )
     } catch {
       // 关闭弹窗，无需处理
@@ -348,9 +359,9 @@ async function onDelete(row) {
 
   try {
     await ElMessageBox.confirm(
-      `确认删除产品「${row.name}（${row.model}）」？删除后不可恢复。`,
-      '删除确认',
-      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+      t('admin.product.deleteConfirm', { name: `${row.name}（${row.model}）` }),
+      t('common.confirm.deleteTitle'),
+      { type: 'warning', confirmButtonText: t('common.confirm.delete'), cancelButtonText: t('common.action.cancel') }
     )
   } catch {
     return
@@ -358,11 +369,11 @@ async function onDelete(row) {
 
   try {
     await adminDeleteProduct(row.id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('admin.product.deleted'))
     await load()
   } catch (e) {
     // DELETE_BLOCKED：后端复算的引用统计可能比列表里的 fault_count 更新，原文展示
-    ElMessage.error(errorText(e, '删除失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.product.deleteFailed' }))
   }
 }
 

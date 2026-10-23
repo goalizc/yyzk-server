@@ -1,17 +1,27 @@
 <template>
   <div class="ticket-success">
     <el-card shadow="never">
-      <el-result icon="success" title="工单已提交" sub-title="我们会尽快与您联系，请保持电话畅通">
+      <el-result
+        icon="success"
+        :title="$t('public.ticketSuccess.title')"
+        :sub-title="$t('public.ticketSuccess.subtitle')"
+      >
         <template #extra>
           <div class="ticket-no">
-            <span class="label">工单号</span>
+            <span class="label">{{ $t('public.ticketSuccess.ticketNo') }}</span>
             <span class="value">{{ ticketNo || '-' }}</span>
-            <el-button v-if="ticketNo" link type="primary" @click="copy">复制</el-button>
+            <el-button v-if="ticketNo" link type="primary" @click="copy">
+              {{ $t('public.ticketSuccess.copy') }}
+            </el-button>
           </div>
-          <p v-if="createdAt" class="time">提交时间：{{ formatDateTime(createdAt) }}</p>
+          <p v-if="createdAt" class="time">
+            {{ $t('public.ticketSuccess.createdAt', { time: formatDateTime(createdAt) }) }}
+          </p>
 
           <div class="actions">
-            <el-button type="primary" @click="router.push('/')">返回首页</el-button>
+            <el-button type="primary" @click="goHome">
+              {{ $t('public.ticketSuccess.backHome') }}
+            </el-button>
           </div>
         </template>
       </el-result>
@@ -22,20 +32,27 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { formatDateTime } from '../../utils/format'
+import { currentLocale } from '../../locales'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 
 const ticketNo = computed(() => String(route.query.ticket_no || ''))
 const createdAt = computed(() => String(route.query.created_at || ''))
 
+function goHome() {
+  router.push(currentLocale() === 'en-US' ? '/en' : '/')
+}
+
 async function copy() {
   try {
     await navigator.clipboard.writeText(ticketNo.value)
-    ElMessage.success('已复制工单号')
+    ElMessage.success(t('public.ticketSuccess.copied'))
   } catch {
-    ElMessage.warning('复制失败，请手动记录工单号')
+    ElMessage.warning(t('public.ticketSuccess.copyFailed'))
   }
 }
 </script>

@@ -83,14 +83,15 @@ test('@smoke 客户排查到后台处理的主链路', async ({ page }) => {
 
   // ---------- 6. 打开详情，改状态（强制备注） ----------
   await row.click()
-  const drawer = page.locator('.el-drawer')
-  await expect(drawer).toBeVisible()
-  await expect(drawer).toContainText(ticketNo)
+  // 详情已改为居中弹窗（components/DetailPanel.vue），不再是右侧抽屉
+  const panel = page.locator('.detail-panel')
+  await expect(panel).toBeVisible()
+  await expect(panel).toContainText(ticketNo)
   // 未认领时提示"由你认领"
-  await expect(drawer).toContainText('本单暂无处理人')
+  await expect(panel).toContainText('本单暂无处理人')
 
   // 状态下拉只应列出合法目标：open → processing / closed
-  await drawer.locator('.el-select').first().click()
+  await panel.locator('.el-select').first().click()
   const options = page.locator('.el-select-dropdown:visible .el-select-dropdown__item')
   await expect(options).toHaveCount(2)
   await options.filter({ hasText: '处理中' }).click()
@@ -98,18 +99,18 @@ test('@smoke 客户排查到后台处理的主链路', async ({ page }) => {
   // 备注框按 role 定位，不绑 placeholder 文案——placeholder 随状态变化（选定状态后
   // 换成"如：已电话指导……"），而报错文案只在校验失败时出现。两者刻意不同：
   // placeholder 说"该写什么"，报错说"为什么不行"，用文案互相定位是脆的。
-  const remark = drawer.getByRole('textbox', { name: '备注' })
-  const saveBtn = drawer.getByRole('button', { name: '保存' })
+  const remark = panel.getByRole('textbox', { name: '备注' })
+  const saveBtn = panel.getByRole('button', { name: '保存' })
 
   // 备注为空时点保存：必须被拦下，不能发请求
   await saveBtn.click()
-  await expect(drawer).toContainText('变更状态必须填写备注')
+  await expect(panel).toContainText('变更状态必须填写备注')
 
   await remark.fill('E2E：已远程指导更换主刷电机')
   await saveBtn.click()
   await expect(page.locator('.el-message--success')).toBeVisible()
   // 保存后作为当前用户认领，提示文案随之变化
-  await expect(drawer).toContainText('系统管理员')
+  await expect(panel).toContainText('系统管理员')
 
   // ---------- 7. 看板：解决率与工单数应为合理数值 ----------
   await page.goto('/admin/stats')

@@ -1,8 +1,12 @@
 <template>
   <div class="not-found">
-    <el-result icon="warning" title="页面不存在" sub-title="链接可能已失效，或该功能尚未开放">
+    <el-result
+      icon="warning"
+      :title="$t('common.notFound.title')"
+      :sub-title="$t('common.notFound.subtitle')"
+    >
       <template #extra>
-        <el-button type="primary" @click="goHome">返回首页</el-button>
+        <el-button type="primary" @click="goHome">{{ $t('common.notFound.backHome') }}</el-button>
       </template>
     </el-result>
   </div>
@@ -10,11 +14,13 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
+import { currentLocale } from '../locales'
 
 const router = useRouter()
 
 function goHome() {
-  router.replace('/admin')
+  // 404 页在客户侧也会命中：英文用户点"返回首页"不该被丢回中文首页
+  router.replace(currentLocale() === 'en-US' ? '/en' : '/')
 }
 </script>
 

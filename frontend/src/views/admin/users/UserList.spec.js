@@ -56,7 +56,7 @@ describe('UserList', () => {
     expect(wrapper.text()).toContain('扫地机')
   })
 
-  it('生效临时授权数量显示在角色下方，点标签打开授权抽屉', async () => {
+  it('生效临时授权数量显示在角色下方，点标签打开授权面板', async () => {
     adminListUsers.mockResolvedValue({
       total: 1, page: 1, page_size: 20,
       items: [makeUser({ active_grant_count: 2 })]

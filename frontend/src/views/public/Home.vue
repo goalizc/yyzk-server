@@ -1,18 +1,18 @@
 <template>
   <div class="home">
     <section class="hero">
-      <h1>售后自助故障诊断</h1>
-      <p>按产品 → 零件 → 故障现象逐级选择，快速找到解决办法</p>
+      <h1>{{ $t('public.home.title') }}</h1>
+      <p>{{ $t('public.home.subtitle') }}</p>
     </section>
 
     <el-card shadow="never" class="panel">
       <el-row :gutter="16">
         <el-col :xs="24" :sm="8">
           <div class="field">
-            <label>1. 选择产品</label>
+            <label>{{ $t('public.home.step1') }}</label>
             <el-select
               v-model="productId"
-              placeholder="请选择产品"
+              :placeholder="$t('public.home.selectProduct')"
               filterable
               clearable
               :loading="loading.products"
@@ -22,7 +22,7 @@
               <el-option
                 v-for="item in products"
                 :key="item.id"
-                :label="`${item.name}（${item.model}）`"
+                :label="$t('public.home.productOption', { name: item.name, model: item.model })"
                 :value="item.id"
               />
             </el-select>
@@ -31,10 +31,10 @@
 
         <el-col :xs="24" :sm="8">
           <div class="field">
-            <label>2. 选择零件</label>
+            <label>{{ $t('public.home.step2') }}</label>
             <el-select
               v-model="partId"
-              placeholder="请先选择产品"
+              :placeholder="$t('public.home.selectPart')"
               filterable
               clearable
               :disabled="!productId"
@@ -45,7 +45,9 @@
               <el-option
                 v-for="item in parts"
                 :key="item.id"
-                :label="item.group_name ? `${item.group_name} / ${item.name}` : item.name"
+                :label="item.group_name
+                  ? $t('public.home.partOption', { group: item.group_name, name: item.name })
+                  : item.name"
                 :value="item.id"
               />
             </el-select>
@@ -54,10 +56,10 @@
 
         <el-col :xs="24" :sm="8">
           <div class="field">
-            <label>3. 选择故障现象</label>
+            <label>{{ $t('public.home.step3') }}</label>
             <el-select
               v-model="faultId"
-              placeholder="请先选择零件"
+              :placeholder="$t('public.home.selectFault')"
               filterable
               clearable
               :disabled="!partId"
@@ -78,7 +80,7 @@
       <el-input
         v-model="keyword"
         class="search"
-        placeholder="还可以输入关键词过滤，例如：漏水、不充电"
+        :placeholder="$t('public.home.keywordPlaceholder')"
         clearable
         :disabled="!partId"
         @input="onKeywordInput"
@@ -92,9 +94,9 @@
 
     <!-- 错误态：可重试 -->
     <el-card v-else-if="error" shadow="never" class="panel">
-      <el-result icon="error" title="加载失败" :sub-title="error">
+      <el-result icon="error" :title="$t('public.home.loadFailed')" :sub-title="error">
         <template #extra>
-          <el-button type="primary" @click="retry">重试</el-button>
+          <el-button type="primary" @click="retry">{{ $t('common.action.retry') }}</el-button>
         </template>
       </el-result>
     </el-card>
@@ -103,15 +105,21 @@
     <el-card v-else-if="selectedFault" shadow="never" class="panel">
       <div class="fault-head">
         <h2>{{ selectedFault.title }}</h2>
-        <el-tag size="small" type="info">{{ selectedFault.view_count }} 人看过</el-tag>
+        <el-tag size="small" type="info">
+          {{ $t('common.count.viewed', selectedFault.view_count) }}
+        </el-tag>
       </div>
-      <p class="symptom">{{ selectedFault.symptom || '暂无现象描述' }}</p>
-      <el-button type="primary" @click="openDetail(selectedFault.id)">查看解决方案</el-button>
+      <p class="symptom">{{ selectedFault.symptom || $t('public.home.symptomEmpty') }}</p>
+      <el-button type="primary" @click="openDetail(selectedFault.id)">
+        {{ $t('public.home.viewSolution') }}
+      </el-button>
     </el-card>
 
     <!-- 结果列表 -->
     <el-card v-else-if="filteredFaults.length" shadow="never" class="panel">
-      <template #header>找到 {{ filteredFaults.length }} 条可能的故障，点击查看方案</template>
+      <template #header>
+        {{ $t('public.home.foundCount', filteredFaults.length) }}
+      </template>
       <div
         v-for="item in filteredFaults"
         :key="item.id"
@@ -119,22 +127,22 @@
         @click="openDetail(item.id)"
       >
         <div class="fault-title">{{ item.title }}</div>
-        <div class="fault-symptom">{{ item.symptom || '暂无现象描述' }}</div>
-        <div class="fault-meta">{{ item.view_count }} 人看过</div>
+        <div class="fault-symptom">{{ item.symptom || $t('public.home.symptomEmpty') }}</div>
+        <div class="fault-meta">{{ $t('common.count.viewed', item.view_count) }}</div>
       </div>
     </el-card>
 
     <!-- 空态：引导转工单 -->
     <el-card v-else-if="partId" shadow="never" class="panel">
-      <el-empty description="没有找到匹配的解决方案">
-        <p class="empty-tip">可以换个关键词，或直接把问题提交给我们</p>
-        <el-button type="primary" @click="goTicket">提交工单</el-button>
+      <el-empty :description="$t('public.home.noResult')">
+        <p class="empty-tip">{{ $t('public.home.emptyTip') }}</p>
+        <el-button type="primary" @click="goTicket">{{ $t('public.home.submitTicket') }}</el-button>
       </el-empty>
     </el-card>
 
     <!-- 初始引导 -->
     <el-card v-else shadow="never" class="panel">
-      <el-empty description="请先选择产品和零件" />
+      <el-empty :description="$t('public.home.initialTip')" />
     </el-card>
   </div>
 </template>
@@ -142,10 +150,14 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { listParts, listProducts } from '../../api/product'
 import { listFaults, reportMiss } from '../../api/fault'
+import { errorMessage } from '../../utils/error'
+import { localeRoute } from '../../locales'
 
 const router = useRouter()
+const { t } = useI18n()
 
 const products = ref([])
 const parts = ref([])
@@ -185,7 +197,7 @@ async function loadProducts() {
   try {
     products.value = await listProducts()
   } catch (e) {
-    error.value = e.response?.data?.detail || '产品列表加载失败'
+    error.value = errorMessage(e, { fallbackKey: 'public.home.productLoadFailed' })
   } finally {
     loading.products = false
   }
@@ -204,7 +216,7 @@ async function onProductChange(value) {
   try {
     parts.value = await listParts(value)
   } catch (e) {
-    error.value = e.response?.data?.detail || '零件列表加载失败'
+    error.value = errorMessage(e, { fallbackKey: 'public.home.partLoadFailed' })
   } finally {
     loading.parts = false
   }
@@ -225,7 +237,7 @@ async function loadFaults() {
   try {
     faults.value = await listFaults(productId.value, partId.value)
   } catch (e) {
-    error.value = e.response?.data?.detail || '故障列表加载失败'
+    error.value = errorMessage(e, { fallbackKey: 'public.home.faultLoadFailed' })
   } finally {
     loading.faults = false
   }
@@ -254,22 +266,19 @@ function onKeywordInput() {
 }
 
 function openDetail(id) {
-  router.push({
-    name: 'fault-detail',
-    params: { id },
-    query: keyword.value.trim() ? { q: keyword.value.trim() } : {}
-  })
+  router.push(
+    localeRoute('fault-detail', { id }, keyword.value.trim() ? { q: keyword.value.trim() } : {})
+  )
 }
 
 function goTicket() {
-  router.push({
-    name: 'ticket-new',
-    query: {
+  router.push(
+    localeRoute('ticket-new', {}, {
       product_id: productId.value,
       part_id: partId.value,
       ...(faultId.value ? { fault_id: faultId.value } : {})
-    }
-  })
+    })
+  )
 }
 
 function retry() {
@@ -280,7 +289,7 @@ function retry() {
   } else {
     loadFaults()
   }
-  if (error.value) ElMessage.warning('正在重试…')
+  if (error.value) ElMessage.warning(t('public.home.retrying'))
 }
 
 onMounted(loadProducts)

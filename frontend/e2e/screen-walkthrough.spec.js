@@ -2,7 +2,7 @@
 //
 // 目的：补组件测试的两个环境盲区——
 //   1. happy-dom 下 el-form-item 的报错节点不渲染
-//   2. el-dialog / el-drawer 懒渲染
+//   2. el-dialog 懒渲染
 // 这两类只有真实浏览器能看出来，走查时重点盯。
 //
 // 截图产出在 .e2e-output/screens/，供人工复核。
@@ -135,22 +135,23 @@ test('@walkthrough 逐屏验证：后台各页', async ({ page }) => {
   await page.getByRole('button', { name: '重置' }).click()
   await page.waitForTimeout(600)
 
-  // ---------- 工单详情抽屉 ----------
+  // ---------- 工单详情面板 ----------
   await page.locator('.el-table__row').first().click()
-  const drawer = page.locator('.el-drawer')
-  await expect(drawer).toBeVisible()
-  await shot(page, '09-后台-工单详情抽屉')
+  // 详情已改为居中弹窗（components/DetailPanel.vue），不再是右侧抽屉
+  const panel = page.locator('.detail-panel')
+  await expect(panel).toBeVisible()
+  await shot(page, '09-后台-工单详情面板')
 
   // 状态变更但不填备注 → 必须看到字段级报错（组件测试的盲区）
-  const opts = await openDropdown(drawer.locator('.el-select').first())
+  const opts = await openDropdown(panel.locator('.el-select').first())
   const optTexts = await opts.locator('.el-select-dropdown__item').allTextContents()
   console.log(`[工单详情] 状态可选项 = ${JSON.stringify(optTexts)}`)
   expect(optTexts.length).toBeGreaterThan(0)
   await opts.locator('.el-select-dropdown__item').last().click()
 
-  await drawer.getByRole('button', { name: '保存' }).click()
+  await panel.getByRole('button', { name: '保存' }).click()
   await page.waitForTimeout(500)
-  const remarkErr = await drawer.locator('.el-form-item.is-error').count()
+  const remarkErr = await panel.locator('.el-form-item.is-error').count()
   console.log(`[工单详情] 备注为空时 is-error 字段数 = ${remarkErr}`)
   await shot(page, '10-后台-工单详情-备注必填报错')
   expect(remarkErr).toBeGreaterThan(0)
@@ -164,7 +165,9 @@ test('@walkthrough 逐屏验证：后台各页', async ({ page }) => {
   await shot(page, '11-后台-产品管理')
 
   await page.getByRole('button', { name: '新增产品' }).click()
-  const dialog = page.locator('.el-dialog')
+  // 加 :visible：详情面板现在也是 .el-dialog，关闭后 DOM 仍留在页面里，
+  // 不加限定会同时命中两个节点，strict mode 直接报错
+  const dialog = page.locator('.el-dialog:visible')
   await expect(dialog).toBeVisible()
   await shot(page, '12-后台-产品管理-新增弹窗')
 

@@ -3,27 +3,27 @@
     <el-card shadow="never">
       <template #header>
         <div class="head">
-          <span>产品线管理</span>
-          <el-button v-if="canWrite" type="primary" @click="openCreate">新增产品线</el-button>
+          <span>{{ $t('admin.page.productLines') }}</span>
+          <el-button v-if="canWrite" type="primary" @click="openCreate">{{ $t('admin.line.newLine') }}</el-button>
         </div>
       </template>
 
       <ErrorState v-if="loadError" :error="loadError" @retry="load" />
       <el-table v-else v-loading="loading" :data="rows" row-key="id" border>
-        <el-table-column prop="name" label="名称" min-width="200" />
-        <el-table-column prop="product_count" label="产品数" width="100" align="center" />
-        <el-table-column prop="sort_order" label="排序" width="100" align="center" />
-        <el-table-column label="状态" width="110" align="center">
+        <el-table-column prop="name" :label="$t('admin.line.colName')" min-width="200" />
+        <el-table-column prop="product_count" :label="$t('admin.line.colProductCount')" width="100" align="center" />
+        <el-table-column prop="sort_order" :label="$t('admin.line.colSort')" width="100" align="center" />
+        <el-table-column :label="$t('admin.line.colStatus')" width="110" align="center">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'info'" size="small">
-              {{ row.is_active ? '启用' : '停用' }}
+              {{ row.is_active ? $t('admin.line.enabled') : $t('admin.line.disabled') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column v-if="canWrite" label="操作" width="160" align="center">
+        <el-table-column v-if="canWrite" :label="$t('admin.line.colActions')" width="160" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+            <el-button link type="primary" @click="openEdit(row)">{{ $t('common.action.edit') }}</el-button>
+            <el-button link type="danger" @click="onDelete(row)">{{ $t('common.action.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -31,24 +31,24 @@
 
     <el-dialog
       v-model="dialogVisible"
-      :title="editingId ? '编辑产品线' : '新增产品线'"
+      :title="editingId ? $t('admin.line.dialogEdit') : $t('admin.line.dialogCreate')"
       :width="isNarrow ? '92%' : '420px'"
       @closed="resetForm"
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
-        <el-form-item label="名称" prop="name">
+      <el-form ref="formRef" :model="form" :rules="rules" :label-width="labelWidth">
+        <el-form-item :label="$t('admin.line.name')" prop="name">
           <el-input v-model="form.name" maxlength="50" />
         </el-form-item>
-        <el-form-item label="排序" prop="sort_order">
+        <el-form-item :label="$t('admin.line.sortOrder')" prop="sort_order">
           <el-input-number v-model="form.sort_order" :min="0" :max="9999" controls-position="right" />
         </el-form-item>
-        <el-form-item label="启用" prop="is_active">
+        <el-form-item :label="$t('admin.line.isActive')" prop="is_active">
           <el-switch v-model="form.is_active" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="onSubmit">保存</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('common.action.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="onSubmit">{{ $t('common.action.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -56,16 +56,20 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   adminCreateProductLine, adminDeleteProductLine, adminListProductLines, adminUpdateProductLine
 } from '../../../api/admin'
 import ErrorState from '../../../components/ErrorState.vue'
-import { errorText } from '../../../utils/admin'
+import { errorMessage } from '../../../utils/error'
 import { hasPermission } from '../../../utils/permissions'
 import { useNarrow } from '../../../utils/viewport'
+import { useFormLabelWidth } from '../../../utils/formLabel'
 
+const { t } = useI18n()
 const canWrite = computed(() => hasPermission('product_line:write'))
+const labelWidth = useFormLabelWidth('80px', '110px')
 const isNarrow = useNarrow()
 const rows = ref([])
 const loading = ref(false)
@@ -75,7 +79,8 @@ const editingId = ref(null)
 const submitting = ref(false)
 const formRef = ref()
 const form = reactive({ name: '', sort_order: 0, is_active: true })
-const rules = { name: [{ required: true, message: '请输入名称', trigger: 'blur' }] }
+// computed：语言切换后校验文案跟着变
+const rules = computed(() => ({ name: [{ required: true, message: t('admin.line.ruleName'), trigger: 'blur' }] }))
 
 async function load() {
   loading.value = true
@@ -84,7 +89,7 @@ async function load() {
     rows.value = (await adminListProductLines()).items
   } catch (e) {
     rows.value = []
-    loadError.value = errorText(e, '产品线加载失败')
+    loadError.value = errorMessage(e, { fallbackKey: 'admin.line.loadFailed' })
   } finally {
     loading.value = false
   }
@@ -118,11 +123,11 @@ async function onSubmit() {
     } else {
       await adminCreateProductLine({ ...form, name: form.name.trim() })
     }
-    ElMessage.success('已保存')
+    ElMessage.success(t('admin.line.saved'))
     dialogVisible.value = false
     await load()
   } catch (e) {
-    ElMessage.error(errorText(e))
+    ElMessage.error(errorMessage(e))
   } finally {
     submitting.value = false
   }
@@ -130,16 +135,16 @@ async function onSubmit() {
 
 async function onDelete(row) {
   try {
-    await ElMessageBox.confirm(`确认删除产品线「${row.name}」？`, '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(t('admin.line.deleteConfirm', { name: row.name }), t('common.confirm.deleteTitle'), { type: 'warning' })
   } catch {
     return
   }
   try {
     await adminDeleteProductLine(row.id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('admin.line.deleted'))
     await load()
   } catch (e) {
-    ElMessage.error(errorText(e, '删除失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.line.deleteFailed' }))
   }
 }
 

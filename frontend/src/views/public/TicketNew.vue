@@ -1,9 +1,9 @@
 <template>
   <div class="ticket-new">
-    <el-page-header content="提交工单" @back="router.back()" class="page-header" />
+    <el-page-header :content="$t('public.ticketNew.pageTitle')" @back="router.back()" class="page-header" />
 
     <el-card v-if="contextTitle" shadow="never" class="block">
-      <template #header>已关联的问题</template>
+      <template #header>{{ $t('public.ticketNew.related') }}</template>
       <p class="context">
         {{ contextTitle }}
       </p>
@@ -19,32 +19,42 @@
         :label-position="labelPosition"
         @submit.prevent="onSubmit"
       >
-        <el-form-item label="联系方式" prop="contact">
-          <el-input v-model="form.contact" placeholder="手机号或邮箱，便于工程师联系您" maxlength="100" />
+        <el-form-item :label="$t('public.ticketNew.contact')" prop="contact">
+          <el-input
+            v-model="form.contact"
+            :placeholder="$t('public.ticketNew.contactPlaceholder')"
+            maxlength="100"
+          />
         </el-form-item>
 
-        <el-form-item label="称呼" prop="contact_name">
-          <el-input v-model="form.contact_name" placeholder="选填，如：张先生" maxlength="50" />
+        <el-form-item :label="$t('public.ticketNew.name')" prop="contact_name">
+          <el-input
+            v-model="form.contact_name"
+            :placeholder="$t('public.ticketNew.namePlaceholder')"
+            maxlength="50"
+          />
         </el-form-item>
 
-        <el-form-item label="问题描述" prop="description">
+        <el-form-item :label="$t('public.ticketNew.description')" prop="description">
           <el-input
             v-model="form.description"
             type="textarea"
             :rows="descriptionRows"
             maxlength="2000"
             show-word-limit
-            placeholder="请描述故障现象、已尝试的步骤、机器型号等信息（至少 5 个字）"
+            :placeholder="$t('public.ticketNew.descriptionPlaceholder')"
           />
         </el-form-item>
 
-        <el-form-item label="需要上门">
-          <el-switch v-model="form.need_on_site" active-text="需要工程师上门" />
+        <el-form-item :label="$t('public.ticketNew.needOnSite')">
+          <el-switch v-model="form.need_on_site" :active-text="$t('public.ticketNew.needOnSiteText')" />
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" :loading="submitting" @click="onSubmit">提交工单</el-button>
-          <el-button @click="router.back()">返回</el-button>
+          <el-button type="primary" :loading="submitting" @click="onSubmit">
+            {{ $t('public.ticketNew.submit') }}
+          </el-button>
+          <el-button @click="router.back()">{{ $t('public.ticketNew.back') }}</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -54,10 +64,15 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { submitTicket } from '../../api/ticket'
+import { errorMessage } from '../../utils/error'
+import { localeRoute } from '../../locales'
+import { useFormLabelWidth } from '../../utils/formLabel'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 
 const formRef = ref()
 const submitting = ref(false)
@@ -66,7 +81,10 @@ const submitting = ref(false)
 // 联系方式这种长占位符直接被截断。手机上改为标签在上、输入框在下，撑满整行。
 const NARROW_QUERY = '(max-width: 640px)'
 const isNarrow = ref(false)
-const labelWidth = computed(() => (isNarrow.value ? 'auto' : '96px'))
+// 英文 "On-site service" 比中文「需要上门」长一倍，96px 会折行。
+// 窄屏是 label-position="top"（标签独占一行），此时宽度无意义，保持 auto。
+const fullLabelWidth = useFormLabelWidth('96px', '130px')
+const labelWidth = computed(() => (isNarrow.value ? 'auto' : fullLabelWidth.value))
 const labelPosition = computed(() => (isNarrow.value ? 'top' : 'right'))
 // 手机屏幕矮，5 行文本框会把"提交工单"按钮顶到首屏之外，先给 4 行
 const descriptionRows = computed(() => (isNarrow.value ? 4 : 5))
@@ -93,16 +111,17 @@ const form = reactive({
   need_on_site: false
 })
 
-const rules = {
+// computed：语言切换后校验文案跟着变
+const rules = computed(() => ({
   contact: [
-    { required: true, message: '请填写联系方式', trigger: 'blur' },
-    { min: 5, max: 100, message: '联系方式长度需在 5–100 之间', trigger: 'blur' }
+    { required: true, message: t('public.ticketNew.contactRequired'), trigger: 'blur' },
+    { min: 5, max: 100, message: t('public.ticketNew.contactLength'), trigger: 'blur' }
   ],
   description: [
-    { required: true, message: '请描述故障情况', trigger: 'blur' },
-    { min: 5, max: 2000, message: '问题描述需在 5–2000 字之间', trigger: 'blur' }
+    { required: true, message: t('public.ticketNew.descriptionRequired'), trigger: 'blur' },
+    { min: 5, max: 2000, message: t('public.ticketNew.descriptionLength'), trigger: 'blur' }
   ]
-}
+}))
 
 const contextTitle = computed(() => route.query.fault_title || '')
 const contextParts = computed(() => {
@@ -132,16 +151,17 @@ async function onSubmit() {
   submitting.value = true
   try {
     const data = await submitTicket(payload())
-    router.replace({
-      name: 'ticket-success',
-      query: { ticket_no: data.ticket_no, created_at: data.created_at }
-    })
+    router.replace(
+      localeRoute('ticket-success', {}, {
+        ticket_no: data.ticket_no,
+        created_at: data.created_at
+      })
+    )
   } catch (e) {
-    const body = e.response?.data
     if (e.response?.status === 429) {
-      ElMessage.warning('提交太频繁，请稍后再试')
+      ElMessage.warning(t('public.ticketNew.tooFrequent'))
     } else {
-      ElMessage.error(body?.detail || '提交失败，请稍后重试')
+      ElMessage.error(errorMessage(e, { fallbackKey: 'public.ticketNew.submitFailed' }))
     }
   } finally {
     submitting.value = false

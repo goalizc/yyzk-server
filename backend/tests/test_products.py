@@ -175,7 +175,12 @@ def test_create_product_duplicated_model(client: TestClient, db) -> None:
     )
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "型号 X1 已存在", "code": "MODEL_DUPLICATED"}
+    body = response.json()
+    assert body["detail"] == "型号 X1 已存在"
+    assert body["code"] == "MODEL_DUPLICATED"
+    # v1.6：动态片段结构化返回，供非中文界面按自己的句子结构插值；
+    # detail 仍是完整中文句子（中文界面直接用它，不受影响）
+    assert body["params"] == {"model": "X1"}
 
 
 def test_update_product_partial(client: TestClient, db) -> None:

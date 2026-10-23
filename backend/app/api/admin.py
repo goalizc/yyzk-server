@@ -141,7 +141,7 @@ def _ensure_model_available(db: Session, model: str, exclude_id: int | None = No
     if exclude_id is not None:
         stmt = stmt.where(Product.id != exclude_id)
     if db.scalar(stmt) is not None:
-        raise BusinessError("MODEL_DUPLICATED", f"型号 {model} 已存在", 409)
+        raise BusinessError("MODEL_DUPLICATED", f"型号 {model} 已存在", 409, {"model": model})
 
 
 # ---------------------------------------------------------------- 产品
@@ -208,7 +208,9 @@ def create_product(
         db.commit()
     except IntegrityError as exc:  # 并发下靠唯一约束兜底
         db.rollback()
-        raise BusinessError("MODEL_DUPLICATED", f"型号 {payload.model} 已存在", 409) from exc
+        raise BusinessError(
+            "MODEL_DUPLICATED", f"型号 {payload.model} 已存在", 409, {"model": payload.model}
+        ) from exc
     db.refresh(product)
     return _to_product_admin(product, 0)
 
@@ -250,7 +252,12 @@ def update_product(
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise BusinessError("MODEL_DUPLICATED", f"型号 {data.get('model', '')} 已存在", 409) from exc
+        raise BusinessError(
+            "MODEL_DUPLICATED",
+            f"型号 {data.get('model', '')} 已存在",
+            409,
+            {"model": data.get("model", "")},
+        ) from exc
     db.refresh(product)
     return _to_product_admin(product, _product_fault_count(db, product_id))
 

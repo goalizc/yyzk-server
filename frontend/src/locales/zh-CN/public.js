@@ -1,0 +1,81 @@
+export default {
+  brand: '售后自助故障诊断',
+  adminEntry: '后台入口',
+  footer: '遇到问题请先按方案排查；仍无法解决可提交工单，我们会尽快联系您。',
+
+  home: {
+    title: '售后自助故障诊断',
+    subtitle: '按产品 → 零件 → 故障现象逐级选择，快速找到解决办法',
+    step1: '1. 选择产品',
+    step2: '2. 选择零件',
+    step3: '3. 选择故障现象',
+    selectProduct: '请选择产品',
+    selectPart: '请先选择产品',
+    selectFault: '请先选择零件',
+    keywordPlaceholder: '还可以输入关键词过滤，例如：漏水、不充电',
+    productOption: '{name}（{model}）',
+    partOption: '{group} / {name}',
+    viewSolution: '查看解决方案',
+    foundCount: '找到 {count} 条可能的故障，点击查看方案',
+    symptomEmpty: '暂无现象描述',
+    noResult: '没有找到匹配的解决方案',
+    emptyTip: '可以换个关键词，或直接把问题提交给我们',
+    submitTicket: '提交工单',
+    initialTip: '请先选择产品和零件',
+    loadFailed: '加载失败',
+    productLoadFailed: '产品列表加载失败',
+    partLoadFailed: '零件列表加载失败',
+    faultLoadFailed: '故障列表加载失败',
+    retrying: '正在重试…'
+  },
+
+  faultDetail: {
+    pageTitle: '解决方案',
+    backHome: '返回首页',
+    retry: '重试',
+    feedbackTitle: '这个方案解决您的问题了吗？',
+    solved: '已解决',
+    unsolved: '未解决',
+    stillNotWorking: '仍然不行，提交工单',
+    thanksResolved: '感谢反馈，很高兴帮到您',
+    thanksUnresolved: '已记录，建议提交工单由工程师跟进',
+    notFound: '方案不存在或已下架',
+    loadFailed: '加载失败',
+    retryLater: '请稍后重试',
+    feedbackMissing: '反馈信息缺失，请刷新页面重试',
+    feedbackExpired: '页面数据已过期，正在刷新',
+    feedbackFailed: '反馈失败，请稍后重试'
+  },
+
+  ticketNew: {
+    pageTitle: '提交工单',
+    related: '已关联的问题',
+    contact: '联系方式',
+    contactPlaceholder: '手机号或邮箱，便于工程师联系您',
+    name: '称呼',
+    namePlaceholder: '选填，如：张先生',
+    description: '问题描述',
+    descriptionPlaceholder: '请描述故障现象、已尝试的步骤、机器型号等信息（至少 5 个字）',
+    needOnSite: '需要上门',
+    needOnSiteText: '需要工程师上门',
+    submit: '提交工单',
+    back: '返回',
+    contactRequired: '请填写联系方式',
+    contactLength: '联系方式长度需在 5–100 之间',
+    descriptionRequired: '请描述故障情况',
+    descriptionLength: '问题描述需在 5–2000 字之间',
+    tooFrequent: '提交太频繁，请稍后再试',
+    submitFailed: '提交失败，请稍后重试'
+  },
+
+  ticketSuccess: {
+    title: '工单已提交',
+    subtitle: '我们会尽快与您联系，请保持电话畅通',
+    ticketNo: '工单号',
+    copy: '复制',
+    copied: '已复制工单号',
+    copyFailed: '复制失败，请手动记录工单号',
+    createdAt: '提交时间：{time}',
+    backHome: '返回首页'
+  }
+}

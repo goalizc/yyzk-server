@@ -1,4 +1,4 @@
-// TicketList.vue：筛选参数拼装（日期区间透传）、脱敏列渲染、抽屉局部刷新
+// TicketList.vue：筛选参数拼装（日期区间透传）、脱敏列渲染、详情面板局部刷新
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
@@ -107,21 +107,21 @@ describe('TicketList', () => {
     expect(adminListTickets).toHaveBeenLastCalledWith({ page: 1, page_size: 20 })
   })
 
-  it('点击行打开抽屉并带上 id', async () => {
+  it('点击行打开详情面板并带上 id', async () => {
     const wrapper = await mountList()
     await wrapper.findAll('.el-table__row')[0].trigger('click')
 
     expect(wrapper.vm.$.setupState.currentId).toBe(1)
-    expect(wrapper.vm.$.setupState.drawerVisible).toBe(true)
+    expect(wrapper.vm.$.setupState.panelVisible).toBe(true)
   })
 
-  it('抽屉保存后局部刷新该行状态，不重拉列表', async () => {
+  it('详情面板保存后局部刷新该行状态，不重拉列表', async () => {
     const wrapper = await mountList()
     adminListTickets.mockClear()
     const state = wrapper.vm.$.setupState
     state.rows = ROWS.map((row) => ({ ...row }))
 
-    state.onDrawerUpdated({ id: 1, status: 'processing', assignee_name: '李工' })
+    state.onPanelUpdated({ id: 1, status: 'processing', assignee_name: '李工' })
 
     expect(state.rows[0].status).toBe('processing')
     expect(state.rows[0].assignee_name).toBe('李工')

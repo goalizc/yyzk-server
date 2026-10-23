@@ -23,7 +23,7 @@ async function mountLayout(path = '/admin/tickets') {
         children: [
           { path: 'tickets', name: 'admin-tickets', component: { template: '<div>工单页</div>' }, meta: { title: '工单管理' } },
           { path: 'faults', name: 'admin-faults', component: { template: '<div>故障页</div>' }, meta: { title: '故障知识库' } },
-          { path: 'faults/edit/:id?', name: 'admin-fault-edit', component: { template: '<div>编辑页</div>' }, meta: { title: '编辑故障' } }
+          { path: 'faults/edit/:id?', name: 'admin-fault-edit', component: { template: '<div>编辑页</div>' }, meta: { titleKey: 'admin.page.faultEdit' } }
         ]
       },
       { path: '/admin/login', name: 'admin-login', component: { template: '<div>登录</div>' } }
@@ -57,11 +57,35 @@ beforeEach(() => {
 })
 
 describe('Layout', () => {
+  it('侧栏菜单按「作业 → 分析 → 配置 → 管理」排序，基础数据三项连续', async () => {
+    // 全权限账号：顺序断言必须看到 7 项，缺一项就说明被权限过滤干扰了
+    const ALL = ['ticket:read', 'fault:read', 'stats:read', 'product_line:read', 'product:read', 'part:read', 'user:read']
+    setPermissions(ALL)
+    fetchMe.mockResolvedValue({ permissions: ALL })
+
+    const { wrapper } = await mountLayout()
+    const labels = wrapper.vm.$.setupState.navItems.map((item) => item.label)
+
+    // 顺序被锁死是故意的：新增菜单要落到正确的分区，而不是往数组尾部追加
+    expect(labels).toEqual([
+      '工单管理',
+      '故障知识库',
+      '数据看板',
+      '产品线',
+      '产品管理',
+      '零件管理',
+      '用户管理'
+    ])
+    // 产品线 → 产品 → 零件 是数据层级（从粗到细），中间不许插别的项
+    const start = labels.indexOf('产品线')
+    expect(labels.slice(start, start + 3)).toEqual(['产品线', '产品管理', '零件管理'])
+  })
+
   it('编辑故障页仍高亮侧边栏"故障知识库"', async () => {
     const { wrapper } = await mountLayout('/admin/faults/edit/21')
     expect(wrapper.vm.$.setupState.activeMenu).toBe('/admin/faults')
     // 顶栏标题取当前路由 meta.title
-    expect(wrapper.text()).toContain('编辑故障')
+    expect(wrapper.text()).toContain('故障编辑')
   })
 
   it('进入后台立即刷新权限，不必等路由切换', async () => {

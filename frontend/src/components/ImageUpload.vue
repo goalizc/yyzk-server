@@ -9,7 +9,7 @@
         :preview-src-list="[modelValue]"
         preview-teleported
       />
-      <div v-else class="placeholder">无图</div>
+      <div v-else class="placeholder">{{ $t('common.upload.noImage') }}</div>
     </div>
     <div v-if="!readonly" class="ops">
       <!-- http-request 里上传成功才写回 url，失败可直接提示，
@@ -21,7 +21,7 @@
         :accept="IMAGE_EXTS.join(',')"
       >
         <el-button size="small" :loading="uploading">
-          {{ modelValue ? '重新上传' : '上传图片' }}
+          {{ modelValue ? $t('common.upload.reupload') : $t('common.upload.pickImage') }}
         </el-button>
       </el-upload>
       <el-button
@@ -31,7 +31,7 @@
         type="danger"
         @click="onRemove"
       >
-        移除
+        {{ $t('common.action.remove') }}
       </el-button>
     </div>
   </div>
@@ -39,9 +39,11 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { adminDeleteUpload, adminUpload } from '../api/admin'
-import { errorCode, errorText } from '../utils/admin'
+import { errorCode } from '../utils/admin'
+import { errorMessage } from '../utils/error'
 import { extHint, IMAGE_EXTS, isAllowedExt, UPLOAD_MAX_SIZE } from '../utils/upload'
 
 const props = defineProps({
@@ -50,6 +52,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 
+const { t } = useI18n()
 const uploading = ref(false)
 
 function beforeUpload(file) {
@@ -59,7 +62,7 @@ function beforeUpload(file) {
     return false
   }
   if (file.size > UPLOAD_MAX_SIZE) {
-    ElMessage.error('文件超过 20MB 限制')
+    ElMessage.error(t('common.upload.tooLarge'))
     return false
   }
   return true
@@ -68,14 +71,14 @@ function beforeUpload(file) {
 /** 上传失败的统一文案：区分"超时"与"服务端拒绝"，否则弱网下会误导成文件问题 */
 function uploadErrorText(e) {
   const code = errorCode(e)
-  if (code === 'UPLOAD_TOO_LARGE') return '文件超过 20MB 限制'
-  if (e?.code === 'ECONNABORTED') return '上传超时，请检查网络后重试'
+  if (code === 'UPLOAD_TOO_LARGE') return t('common.upload.tooLarge')
+  if (e?.code === 'ECONNABORTED') return t('common.upload.timeout')
   // 503 是服务端存储不可写（多为上传目录权限问题），重试没用，得找运维。
   // 后端已给中文 detail，但用户不知道"下一步做什么"，这里补一句动作指引。
   if (code === 'SERVICE_UNAVAILABLE' || e?.response?.status === 503) {
-    return '服务器暂时无法保存文件，请稍后重试；持续失败请联系管理员'
+    return t('common.upload.storageUnavailable')
   }
-  return errorText(e, '上传失败')
+  return errorMessage(e, { fallbackKey: 'common.upload.failed' })
 }
 
 async function doUpload({ file }) {
@@ -107,7 +110,8 @@ async function onRemove() {
   try {
     await adminDeleteUpload(oldUrl)
   } catch (e) {
-    console.warn('[ImageUpload] 删除上传文件失败，留给孤儿清理任务回收：', oldUrl, e)
+    // 开发日志，不面向用户；保留中文便于运维排查
+    console.warn('[ImageUpload] 删除上传文件失败，留给孤儿清理任务回收：', oldUrl, e)  // i18n-ignore
   }
 }
 </script>

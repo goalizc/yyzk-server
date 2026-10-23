@@ -43,11 +43,11 @@ async function mountDrawer(ticketId = 1) {
     global: { plugins: [ElementPlus] },
     attachTo: document.body
   })
-  // el-drawer 的内容是 teleport 到 body 的，wrapper 自己卸不掉这段 DOM，
+  // DetailPanel 内部是 el-dialog，遮罩挂在 body 上，wrapper 自己卸不掉这部分 DOM，
   // 必须在 afterEach 里显式 unmount，否则残留节点会跨用例互相踩，报
   // "Cannot read properties of null (reading 'nextSibling')" 的 unhandled rejection。
   mounted.push(wrapper)
-  // el-drawer 的 @open 在 happy-dom 下不一定触发，直接调一次 load 等价
+  // el-dialog 的 @open 在 happy-dom 下不一定触发，直接调一次 load 等价
   await wrapper.vm.refresh()
   await flushPromises()
   return wrapper
@@ -202,7 +202,7 @@ describe('TicketDrawer', () => {
     expect(state.form.status).toBe(null)
   })
 
-  it('刷新详情期间不把 detail 清空（否则抽屉内容闪一下、滚动跳回顶部）', async () => {
+  it('刷新详情期间不把 detail 清空（否则面板内容闪一下、滚动跳回顶部）', async () => {
     const wrapper = await mountDrawer()
     const state = wrapper.vm.$.setupState
     expect(state.detail).not.toBeNull()

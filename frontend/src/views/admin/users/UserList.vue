@@ -3,30 +3,30 @@
     <el-card shadow="never">
       <template #header>
         <div class="head">
-          <span>用户管理</span>
+          <span>{{ $t('admin.page.users') }}</span>
           <div class="head-actions">
-            <el-input v-model="filters.keyword" placeholder="搜索账号或姓名" clearable class="kw" @input="onKeywordInput" @clear="reload" />
-            <el-select v-model="filters.role" placeholder="全部角色" clearable class="role" @change="reload">
-              <el-option v-for="item in ROLE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
+            <el-input v-model="filters.keyword" :placeholder="$t('admin.user.list.searchPlaceholder')" clearable class="kw" @input="onKeywordInput" @clear="reload" />
+            <el-select v-model="filters.role" :placeholder="$t('admin.user.list.allRoles')" clearable class="role" @change="reload">
+              <el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
-            <el-select v-model="filters.isActive" placeholder="全部状态" clearable class="status" @change="reload">
-              <el-option label="启用" :value="true" />
-              <el-option label="停用" :value="false" />
+            <el-select v-model="filters.isActive" :placeholder="$t('admin.user.list.allStatuses')" clearable class="status" @change="reload">
+              <el-option :label="$t('admin.user.list.enabled')" :value="true" />
+              <el-option :label="$t('admin.user.list.disabled')" :value="false" />
             </el-select>
-            <el-button v-if="canWrite" type="primary" @click="openCreate">新建用户</el-button>
+            <el-button v-if="canWrite" type="primary" @click="openCreate">{{ $t('admin.user.list.newUser') }}</el-button>
           </div>
         </div>
       </template>
 
       <ErrorState v-if="loadError" :error="loadError" @retry="load" />
       <el-table v-else v-loading="loading" :data="rows" row-key="id" border>
-        <el-table-column label="账号 / 姓名" min-width="180">
+        <el-table-column :label="$t('admin.user.list.colUser')" min-width="180">
           <template #default="{ row }">
             <div class="name">{{ row.username }}</div>
             <div class="sub">{{ row.real_name }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="角色" width="140">
+        <el-table-column :label="$t('admin.user.list.colRole')" width="140">
           <template #default="{ row }">
             <div>{{ roleLabel(row.role) }}</div>
             <el-tag
@@ -36,40 +36,40 @@
               class="grant-tag"
               @click="openGrants(row)"
             >
-              临时授权 {{ row.active_grant_count }}
+              {{ $t('admin.user.list.activeGrants', { count: row.active_grant_count }) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="产品线" min-width="180">
+        <el-table-column :label="$t('admin.user.list.colLines')" min-width="180">
           <template #default="{ row }">
             <el-tag v-for="line in row.product_lines" :key="line.id" size="small" class="tag">
-              {{ line.name }}{{ line.expires_at ? '（临时）' : '' }}
+              {{ line.name }}{{ line.expires_at ? $t('admin.user.list.temporary') : '' }}
             </el-tag>
-            <span v-if="!row.product_lines.length" class="sub">未分配</span>
+            <span v-if="!row.product_lines.length" class="sub">{{ $t('admin.user.list.noLines') }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="110" align="center">
+        <el-table-column :label="$t('admin.user.list.colStatus')" width="110" align="center">
           <template #default="{ row }">
             <el-switch
               v-if="canWrite && row.id !== currentUserId"
               :model-value="row.is_active"
               :loading="togglingId === row.id"
               inline-prompt
-              active-text="启用"
-              inactive-text="停用"
+              :active-text="$t('admin.user.list.enabled')"
+              :inactive-text="$t('admin.user.list.disabled')"
               @change="(value) => onToggleActive(row, value)"
             />
-            <span v-else>{{ row.is_active ? '启用' : '停用' }}</span>
+            <span v-else>{{ row.is_active ? $t('admin.user.list.enabled') : $t('admin.user.list.disabled') }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="最近登录" width="140">
-          <template #default="{ row }">{{ row.last_login_at ? formatDateTime(row.last_login_at) : '从未登录' }}</template>
+        <el-table-column :label="$t('admin.user.list.colLastLogin')" width="140">
+          <template #default="{ row }">{{ row.last_login_at ? formatDateTime(row.last_login_at) : $t('admin.user.list.neverLoggedIn') }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="220" align="center">
+        <el-table-column :label="$t('admin.user.list.colActions')" width="270" align="center">
           <template #default="{ row }">
-            <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button v-if="canWrite" link type="warning" @click="onResetPassword(row)">重置密码</el-button>
-            <el-button link type="info" @click="openGrants(row)">临时授权</el-button>
+            <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">{{ $t('common.action.edit') }}</el-button>
+            <el-button v-if="canWrite" link type="warning" @click="onResetPassword(row)">{{ $t('admin.user.list.resetPassword') }}</el-button>
+            <el-button link type="info" @click="openGrants(row)">{{ $t('admin.user.list.grant') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -89,135 +89,141 @@
 
     <el-dialog
       v-model="dialogVisible"
-      :title="editingId ? '编辑用户' : '新建用户'"
+      :title="editingId ? $t('admin.user.form.editTitle') : $t('admin.user.form.createTitle')"
       :width="isNarrow ? '92%' : '620px'"
       @closed="resetForm"
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
-        <el-form-item label="账号" prop="username">
+      <el-form ref="formRef" :model="form" :rules="rules" :label-width="formLabelWidth">
+        <el-form-item :label="$t('admin.user.form.username')" prop="username">
           <el-input v-model="form.username" maxlength="50" />
-          <div v-if="editingId" class="hint">改名后请使用新账号登录</div>
+          <div v-if="editingId" class="hint">{{ $t('admin.user.form.renameHint') }}</div>
         </el-form-item>
-        <el-form-item label="姓名" prop="real_name">
+        <el-form-item :label="$t('admin.user.form.realName')" prop="real_name">
           <el-input v-model="form.real_name" maxlength="50" />
         </el-form-item>
-        <el-form-item v-if="!editingId" label="初始密码" prop="password">
+        <el-form-item v-if="!editingId" :label="$t('admin.user.form.password')" prop="password">
           <el-input v-model="form.password" type="password" show-password />
         </el-form-item>
-        <el-form-item v-if="!editingId" label="确认密码" prop="confirm_password">
+        <el-form-item v-if="!editingId" :label="$t('admin.user.form.confirmPassword')" prop="confirm_password">
           <el-input v-model="form.confirm_password" type="password" show-password />
         </el-form-item>
-        <el-form-item label="角色" prop="role">
+        <el-form-item :label="$t('admin.user.form.role')" prop="role">
           <el-select v-model="form.role">
             <el-option v-for="item in ROLE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="产品线">
+        <el-form-item :label="$t('admin.user.form.productLines')">
           <div class="assignments">
             <div v-for="(item, index) in form.product_lines" :key="index" class="assignment-row">
-              <el-select v-model="item.line_id" placeholder="选择产品线" class="line-select">
+              <el-select v-model="item.line_id" :placeholder="$t('admin.user.form.selectLine')" class="line-select">
                 <el-option
                   v-for="line in lines"
                   :key="line.id"
-                  :label="line.is_active ? line.name : `${line.name}（已停用）`"
+                  :label="line.is_active ? line.name : $t('admin.user.form.lineInactive', { name: line.name })"
                   :value="line.id"
                   :disabled="!line.is_active && line.id !== item.line_id"
                 />
               </el-select>
-              <el-date-picker v-model="item.expires_at" type="date" placeholder="长期（留空）" class="date" value-format="YYYY-MM-DD" />
-              <el-button link type="danger" @click="form.product_lines.splice(index, 1)">删除</el-button>
+              <el-date-picker v-model="item.expires_at" type="date" :placeholder="$t('admin.user.form.longTerm')" class="date" value-format="YYYY-MM-DD" />
+              <el-button link type="danger" @click="form.product_lines.splice(index, 1)">{{ $t('common.action.delete') }}</el-button>
             </div>
-            <el-button link type="primary" @click="addAssignment">添加产品线</el-button>
+            <el-button link type="primary" @click="addAssignment">{{ $t('admin.user.form.addLine') }}</el-button>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="onSubmit">保存</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('common.action.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="onSubmit">{{ $t('common.action.save') }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="passwordVisible" title="密码已重置" :width="isNarrow ? '92%' : '420px'">
-      <el-alert type="success" :closable="false" title="请立即复制并通过安全渠道交给本人，关闭后无法再次查看" />
+    <el-dialog v-model="passwordVisible" :title="$t('admin.user.reset.doneTitle')" :width="isNarrow ? '92%' : '420px'">
+      <el-alert type="success" :closable="false" :title="$t('admin.user.reset.alert')" />
       <div class="password-row">
         <span class="password">{{ resetPassword }}</span>
-        <el-button size="small" @click="copyPassword">复制</el-button>
+        <el-button size="small" @click="copyPassword">{{ $t('common.action.copy') }}</el-button>
       </div>
       <template #footer>
-        <el-button @click="passwordVisible = false">关闭</el-button>
+        <el-button @click="passwordVisible = false">{{ $t('common.action.close') }}</el-button>
       </template>
     </el-dialog>
 
-    <el-drawer v-model="grantsVisible" :title="`临时授权 — ${grantUser?.real_name || ''}`" :size="isNarrow ? '100%' : '560px'" @open="loadGrants">
+    <DetailPanel v-model="grantsVisible" :title="$t('admin.user.grant.title', { name: grantUser?.real_name || '' })" :size="820" @open="loadGrants">
       <el-table :data="grants" size="small" border>
-        <el-table-column label="权限" width="150">
+        <el-table-column :label="$t('admin.user.grant.colPermission')" width="150">
           <template #default="{ row }">
             <el-tooltip :content="row.permission" placement="top">
               <span>{{ permissionLabel(row.permission) }}</span>
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column prop="reason" label="事由" min-width="120" />
-        <el-table-column label="授予人" width="110">
-          <template #default="{ row }">{{ row.granted_by_name || '系统' }}</template>
+        <el-table-column prop="reason" :label="$t('admin.user.grant.colReason')" min-width="120" />
+        <el-table-column :label="$t('admin.user.grant.colGrantedBy')" width="110">
+          <template #default="{ row }">{{ row.granted_by_name || $t('admin.user.grant.grantedBySystem') }}</template>
         </el-table-column>
-        <el-table-column label="到期" width="130">
+        <el-table-column :label="$t('admin.user.grant.colExpiresAt')" width="130">
           <template #default="{ row }">{{ formatDateTime(row.expires_at) }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="80">
+        <el-table-column :label="$t('admin.user.grant.colStatus')" width="80">
           <template #default="{ row }">
-            <el-tag :type="row.is_active ? 'success' : 'info'" size="small">{{ row.is_active ? '生效' : '失效' }}</el-tag>
+            <el-tag :type="row.is_active ? 'success' : 'info'" size="small">{{ row.is_active ? $t('admin.user.grant.active') : $t('admin.user.grant.inactive') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column v-if="canWrite" label="操作" width="80">
+        <el-table-column v-if="canWrite" :label="$t('admin.user.grant.colActions')" width="80">
           <template #default="{ row }">
-            <el-button v-if="row.is_active" link type="danger" @click="onRevoke(row)">收回</el-button>
+            <el-button v-if="row.is_active" link type="danger" @click="onRevoke(row)">{{ $t('admin.user.grant.revoke') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
 
       <template v-if="canWrite">
-        <el-divider>发放新授权</el-divider>
-        <el-form ref="grantFormRef" :model="grantForm" :rules="grantRules" label-width="80px">
-          <el-form-item label="权限" prop="permission">
+        <el-divider>{{ $t('admin.user.grant.issueTitle') }}</el-divider>
+        <el-form ref="grantFormRef" :model="grantForm" :rules="grantRules" :label-width="grantLabelWidth">
+          <el-form-item :label="$t('admin.user.grant.permission')" prop="permission">
             <el-select v-model="grantForm.permission">
               <el-option v-for="item in grantableOptions" :key="item" :label="permissionLabel(item)" :value="item" />
             </el-select>
           </el-form-item>
-          <el-form-item label="到期" prop="expires_at">
+          <el-form-item :label="$t('admin.user.grant.expiresAt')" prop="expires_at">
             <el-date-picker v-model="grantForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" />
           </el-form-item>
-          <el-form-item label="事由" prop="reason">
+          <el-form-item :label="$t('admin.user.grant.reason')" prop="reason">
             <el-input v-model="grantForm.reason" maxlength="200" />
           </el-form-item>
-          <el-button type="primary" :loading="grantSubmitting" @click="onCreateGrant">发放</el-button>
+          <el-button type="primary" :loading="grantSubmitting" @click="onCreateGrant">{{ $t('admin.user.grant.issue') }}</el-button>
         </el-form>
       </template>
-    </el-drawer>
+    </DetailPanel>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   adminCreateGrant, adminCreateUser, adminListGrants, adminListProductLines,
   adminListUsers, adminReplaceUserLines, adminResetPassword, adminRevokeGrant, adminUpdateUser
 } from '../../../api/admin'
+import DetailPanel from '../../../components/DetailPanel.vue'
 import ErrorState from '../../../components/ErrorState.vue'
-import { errorCode, errorText } from '../../../utils/admin'
+import { errorCode } from '../../../utils/admin'
+import { errorMessage } from '../../../utils/error'
 import { copyText } from '../../../utils/clipboard'
 import { formatDateTime } from '../../../utils/format'
 import { permissionLabel } from '../../../utils/permissionLabels'
 import { hasPermission } from '../../../utils/permissions'
 import { useNarrow } from '../../../utils/viewport'
+import { useFormLabelWidth } from '../../../utils/formLabel'
 
-const ROLE_OPTIONS = [
-  { value: 'super_admin', label: '超级管理员' },
-  { value: 'supervisor', label: '售后主管' },
-  { value: 'agent', label: '一线客服' },
-  { value: 'auditor', label: '只读审计' }
-]
+// key 用字面量而不是 `common.role.${value}` 拼接：扫描脚本与键完整性检查都依赖字面量
+const ROLE_KEYS = {
+  super_admin: 'common.role.super_admin',
+  supervisor: 'common.role.supervisor',
+  agent: 'common.role.agent',
+  auditor: 'common.role.auditor'
+}
+const ROLE_VALUES = Object.keys(ROLE_KEYS)
 // 可临时发放的权限码：不包含 user:write，避免通过临时授权绕过用户管理
 const GRANTABLE = [
   'ticket:read', 'ticket:write', 'ticket:assign',
@@ -225,6 +231,15 @@ const GRANTABLE = [
   'fault:read', 'fault:write', 'upload:write', 'stats:read',
   'user:read', 'product_line:read', 'product_line:write'
 ]
+
+const { t } = useI18n()
+const roleOptions = computed(() =>
+  ROLE_VALUES.map((value) => ({ value, label: t(ROLE_KEYS[value]) }))
+)
+
+// 英文最长标签 "Confirm password"，130px 实测折行
+const formLabelWidth = useFormLabelWidth('90px', '150px')
+const grantLabelWidth = useFormLabelWidth('80px', '110px')
 
 const canWrite = computed(() => hasPermission('user:write'))
 const isNarrow = useNarrow()
@@ -269,35 +284,37 @@ const grantSubmitting = ref(false)
 const grantFormRef = ref()
 const grantForm = reactive({ permission: '', expires_at: '', reason: '' })
 
-const rules = {
-  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
-  real_name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+// computed：语言切换后校验文案跟着变
+const rules = computed(() => ({
+  username: [{ required: true, message: t('admin.user.form.ruleUsername'), trigger: 'blur' }],
+  real_name: [{ required: true, message: t('admin.user.form.ruleRealName'), trigger: 'blur' }],
   password: [
-    { required: true, message: '请输入初始密码', trigger: 'blur' },
-    { min: 8, message: '密码至少 8 位', trigger: 'blur' }
+    { required: true, message: t('admin.user.form.rulePassword'), trigger: 'blur' },
+    { min: 8, message: t('admin.user.form.rulePasswordMin'), trigger: 'blur' }
   ],
   confirm_password: [
-    { required: true, message: '请再次输入初始密码', trigger: 'blur' },
+    { required: true, message: t('admin.user.form.ruleConfirmRequired'), trigger: 'blur' },
     {
       validator: (_rule, value, callback) => {
-        if (value !== form.password) callback(new Error('两次输入的密码不一致'))
+        if (value !== form.password) callback(new Error(t('admin.user.form.ruleConfirmMismatch')))
         else callback()
       },
       trigger: 'blur'
     }
   ],
-  role: [{ required: true, message: '请选择角色', trigger: 'change' }]
-}
-const grantRules = {
-  permission: [{ required: true, message: '请选择权限', trigger: 'change' }],
-  expires_at: [{ required: true, message: '请选择到期时间', trigger: 'change' }],
-  reason: [{ required: true, message: '请填写事由', trigger: 'blur' }]
-}
+  role: [{ required: true, message: t('admin.user.form.ruleRole'), trigger: 'change' }]
+}))
+const grantRules = computed(() => ({
+  permission: [{ required: true, message: t('admin.user.grant.rulePermission'), trigger: 'change' }],
+  expires_at: [{ required: true, message: t('admin.user.grant.ruleExpiresAt'), trigger: 'change' }],
+  reason: [{ required: true, message: t('admin.user.grant.ruleReason'), trigger: 'blur' }]
+}))
 
 const grantableOptions = computed(() => GRANTABLE)
 
 function roleLabel(value) {
-  return ROLE_OPTIONS.find((item) => item.value === value)?.label || value
+  const key = ROLE_KEYS[value]
+  return key ? t(key) : value
 }
 
 let keywordTimer = null
@@ -319,7 +336,7 @@ async function load() {
   } catch (e) {
     rows.value = []
     pagination.total = 0
-    loadError.value = errorText(e, '用户列表加载失败')
+    loadError.value = errorMessage(e, { fallbackKey: 'admin.user.list.loadFailed' })
   } finally {
     loading.value = false
   }
@@ -401,9 +418,13 @@ async function onSubmit() {
   if (editingId.value && form.role !== originalRole.value) {
     try {
       await ElMessageBox.confirm(
-        `将「${form.real_name}」的角色从「${roleLabel(originalRole.value)}」改为「${roleLabel(form.role)}」？其权限会立即变化。`,
-        '角色变更确认',
-        { type: 'warning', confirmButtonText: '确认变更', cancelButtonText: '取消' }
+        t('admin.user.role.changeConfirm', {
+          name: form.real_name,
+          from: roleLabel(originalRole.value),
+          to: roleLabel(form.role)
+        }),
+        t('admin.user.role.changeTitle'),
+        { type: 'warning', confirmButtonText: t('admin.user.role.confirmChange'), cancelButtonText: t('common.action.cancel') }
       )
     } catch {
       return
@@ -432,15 +453,15 @@ async function onSubmit() {
         product_lines: assignments
       })
     }
-    ElMessage.success('已保存')
+    ElMessage.success(t('admin.user.form.saved'))
     dialogVisible.value = false
     await load()
   } catch (e) {
     if (errorCode(e) === 'USERNAME_DUPLICATED') {
-      ElMessage.error('账号已存在')
+      ElMessage.error(t('admin.user.form.usernameDuplicated'))
       return
     }
-    ElMessage.error(errorText(e))
+    ElMessage.error(errorMessage(e))
   } finally {
     submitting.value = false
   }
@@ -451,9 +472,9 @@ async function onToggleActive(row, value) {
   if (value === false) {
     try {
       await ElMessageBox.confirm(
-        `停用后该账号将立即无法登录，确认停用「${row.real_name}」？`,
-        '停用确认',
-        { type: 'warning', confirmButtonText: '确认停用', cancelButtonText: '取消' }
+        t('admin.user.toggle.disableConfirm', { name: row.real_name }),
+        t('admin.user.toggle.disableTitle'),
+        { type: 'warning', confirmButtonText: t('admin.user.toggle.confirmDisable'), cancelButtonText: t('common.action.cancel') }
       )
     } catch {
       return
@@ -463,9 +484,9 @@ async function onToggleActive(row, value) {
   try {
     await adminUpdateUser(row.id, { is_active: value })
     row.is_active = value
-    ElMessage.success(value ? '已启用' : '已停用')
+    ElMessage.success(value ? t('admin.user.toggle.enabled') : t('admin.user.toggle.disabled'))
   } catch (e) {
-    ElMessage.error(errorText(e, '状态更新失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.user.toggle.failed' }))
     await load()
   } finally {
     togglingId.value = null
@@ -474,7 +495,7 @@ async function onToggleActive(row, value) {
 
 async function onResetPassword(row) {
   try {
-    await ElMessageBox.confirm(`确认重置「${row.real_name}」的密码？`, '重置密码', { type: 'warning' })
+    await ElMessageBox.confirm(t('admin.user.reset.confirm', { name: row.real_name }), t('admin.user.reset.title'), { type: 'warning' })
   } catch {
     return
   }
@@ -483,14 +504,14 @@ async function onResetPassword(row) {
     resetPassword.value = data.password
     passwordVisible.value = true
   } catch (e) {
-    ElMessage.error(errorText(e, '重置失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.user.reset.failed' }))
   }
 }
 
 async function copyPassword() {
   const ok = await copyText(resetPassword.value)
-  if (ok) ElMessage.success('已复制')
-  else ElMessage.warning('复制失败，请手动选中密码复制')
+  if (ok) ElMessage.success(t('admin.user.grant.copied'))
+  else ElMessage.warning(t('admin.user.reset.copyFailedLong'))
 }
 
 function openGrants(row) {
@@ -503,7 +524,7 @@ async function loadGrants() {
   try {
     grants.value = await adminListGrants(grantUser.value.id)
   } catch (e) {
-    ElMessage.error(errorText(e, '授权记录加载失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.user.grant.loadFailed' }))
   }
 }
 
@@ -513,11 +534,11 @@ async function onCreateGrant() {
   grantSubmitting.value = true
   try {
     await adminCreateGrant(grantUser.value.id, { ...grantForm })
-    ElMessage.success('已发放')
+    ElMessage.success(t('admin.user.grant.issued'))
     Object.assign(grantForm, { permission: '', expires_at: '', reason: '' })
     await loadGrants()
   } catch (e) {
-    ElMessage.error(errorText(e))
+    ElMessage.error(errorMessage(e))
   } finally {
     grantSubmitting.value = false
   }
@@ -526,10 +547,10 @@ async function onCreateGrant() {
 async function onRevoke(row) {
   try {
     await adminRevokeGrant(grantUser.value.id, row.id)
-    ElMessage.success('已收回')
+    ElMessage.success(t('admin.user.grant.revoked'))
     await loadGrants()
   } catch (e) {
-    ElMessage.error(errorText(e, '收回失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.user.grant.revokeFailed' }))
   }
 }
 
@@ -543,7 +564,7 @@ onBeforeUnmount(() => clearTimeout(keywordTimer))
 .page { display: flex; flex-direction: column; gap: 16px; }
 .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.kw { width: 200px; }
+.kw { width: 250px; }
 .role { width: 140px; }
 .status { width: 120px; }
 .name { font-weight: 600; }

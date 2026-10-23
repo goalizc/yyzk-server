@@ -69,7 +69,12 @@ def create_line(
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise BusinessError("LINE_NAME_DUPLICATED", f"产品线 {payload.name} 已存在", 409) from exc
+        raise BusinessError(
+            "LINE_NAME_DUPLICATED",
+            f"产品线 {payload.name} 已存在",
+            409,
+            {"name": payload.name},
+        ) from exc
     db.refresh(line)
     return _to_out(line, {})
 
@@ -100,7 +105,10 @@ def update_line(
     except IntegrityError as exc:
         db.rollback()
         raise BusinessError(
-            "LINE_NAME_DUPLICATED", f"产品线 {data.get('name', '')} 已存在", 409
+            "LINE_NAME_DUPLICATED",
+            f"产品线 {data.get('name', '')} 已存在",
+            409,
+            {"name": data.get("name", "")},
         ) from exc
     db.refresh(line)
     return _to_out(line, _counts(db))

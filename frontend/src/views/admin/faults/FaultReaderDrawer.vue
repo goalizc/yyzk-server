@@ -1,8 +1,8 @@
 <template>
-  <el-drawer
+  <DetailPanel
     v-model="visible"
-    title="方案详情"
-    :size="isNarrow ? '100%' : '720px'"
+    :title="$t('admin.fault.reader.title')"
+    :size="880"
     destroy-on-close
   >
     <el-skeleton v-if="loading" :rows="8" animated />
@@ -13,26 +13,32 @@
 
     <template #footer>
       <div class="footer">
-        <el-button v-if="canWrite" @click="onEdit">编辑</el-button>
-        <el-button type="primary" :disabled="!detail" @click="onCopy">复制方案文本</el-button>
-        <el-button v-if="detail?.is_published" @click="openCustomerPage">打开客户页</el-button>
-        <el-button @click="visible = false">关闭</el-button>
+        <el-button v-if="canWrite" @click="onEdit">{{ $t('admin.fault.reader.edit') }}</el-button>
+        <el-button type="primary" :disabled="!detail" @click="onCopy">
+          {{ $t('admin.fault.reader.copyText') }}
+        </el-button>
+        <el-button v-if="detail?.is_published" @click="openCustomerPage">
+          {{ $t('admin.fault.reader.openCustomerPage') }}
+        </el-button>
+        <el-button @click="visible = false">{{ $t('common.action.close') }}</el-button>
       </div>
     </template>
-  </el-drawer>
+  </DetailPanel>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { adminGetFault } from '../../../api/admin'
+import DetailPanel from '../../../components/DetailPanel.vue'
 import ErrorState from '../../../components/ErrorState.vue'
 import FaultSolutionView from '../../../components/FaultSolutionView.vue'
-import { errorText } from '../../../utils/admin'
+import { errorMessage } from '../../../utils/error'
+import { localeHref } from '../../../locales'
 import { copyText } from '../../../utils/clipboard'
 import { buildFaultCopyText } from '../../../utils/faultCopy'
 import { hasPermission } from '../../../utils/permissions'
-import { useNarrow } from '../../../utils/viewport'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -45,7 +51,9 @@ const visible = computed({
   set: (value) => emit('update:modelValue', value)
 })
 
-const isNarrow = useNarrow()
+const { t } = useI18n()
+
+// 宽度由 DetailPanel 的 min(880px, 92vw) 自适应，不再需要断点判断
 const canWrite = computed(() => hasPermission('fault:write'))
 
 const detail = ref(null)
@@ -60,7 +68,7 @@ async function load() {
   try {
     detail.value = await adminGetFault(props.faultId)
   } catch (e) {
-    error.value = errorText(e, '方案加载失败')
+    error.value = errorMessage(e, { fallbackKey: 'admin.fault.reader.loadFailed' })
   } finally {
     loading.value = false
   }
@@ -81,12 +89,13 @@ function onEdit() {
 
 async function onCopy() {
   const ok = await copyText(buildFaultCopyText(detail.value))
-  if (ok) ElMessage.success('已复制，可直接粘贴给客户')
-  else ElMessage.error('复制失败，请手动选择文本')
+  if (ok) ElMessage.success(t('admin.fault.reader.copied'))
+  else ElMessage.error(t('admin.fault.reader.copyFailed'))
 }
 
 function openCustomerPage() {
-  window.open(`/faults/${detail.value.id}`, '_blank', 'noopener,noreferrer')
+  // 带语言前缀：英文后台点开客户页应仍是英文（同一处缺陷，审查发现）
+  window.open(localeHref(`/faults/${detail.value.id}`), '_blank', 'noopener,noreferrer')
 }
 </script>
 

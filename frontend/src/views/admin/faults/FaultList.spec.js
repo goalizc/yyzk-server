@@ -67,7 +67,7 @@ async function mountList() {
   return { wrapper, router }
 }
 
-// 抽屉会 teleport 到 body，不卸载会残留 DOM 拖慢后续用例
+// 详情面板会挂到 body，不卸载会残留 DOM 拖慢后续用例
 afterEach(() => {
   for (const wrapper of mountedWrappers) wrapper.unmount()
   mountedWrappers.length = 0
@@ -212,7 +212,7 @@ describe('FaultList', () => {
     expect(wrapper.text()).toContain('主刷不转')
   })
 
-  it('仅有 fault:read 时行点击打开阅读抽屉（客服场景）', async () => {
+  it('仅有 fault:read 时行点击打开阅读面板（客服场景）', async () => {
     setPermissions(['fault:read'])
     const { wrapper, router } = await mountList()
 
@@ -220,7 +220,7 @@ describe('FaultList', () => {
     await flushPromises()
 
     expect(adminGetFault).toHaveBeenCalledWith(21)
-    // el-drawer 会 teleport 到 body，不能只看 wrapper.text()
+    // 用 document.body 断言：不依赖面板内容挂在 wrapper 内还是 body 上（换容器组件时不会碎）
     expect(document.body.textContent).toContain('主刷不转')
     expect(router.currentRoute.value.name).toBe('admin-faults')
   })

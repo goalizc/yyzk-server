@@ -3,21 +3,23 @@
     <el-card v-loading="loading" shadow="never">
       <template #header>
         <div class="head">
-          <span>{{ isEdit ? '编辑故障' : '新增故障' }}</span>
+          <span>{{ isEdit ? $t('admin.fault.edit.titleEdit') : $t('admin.fault.edit.titleNew') }}</span>
           <div class="head-actions">
-            <el-button @click="goBack">取消</el-button>
-            <el-button type="primary" v-if="canWrite" :loading="submitting" @click="onSubmit">保存</el-button>
+            <el-button @click="goBack">{{ $t('common.action.cancel') }}</el-button>
+            <el-button type="primary" v-if="canWrite" :loading="submitting" @click="onSubmit">
+              {{ $t('common.action.save') }}
+            </el-button>
           </div>
         </div>
       </template>
 
-      <el-form ref="formRef" :model="form" :rules="rules" :disabled="!canWrite" label-width="110px" class="form">
-        <h3 class="section">基本信息</h3>
-        <el-form-item label="所属产品" prop="product_id">
+      <el-form ref="formRef" :model="form" :rules="rules" :disabled="!canWrite" :label-width="labelWidth" class="form">
+        <h3 class="section">{{ $t('admin.fault.edit.sectionBasic') }}</h3>
+        <el-form-item :label="$t('admin.fault.edit.product')" prop="product_id">
           <el-select
             v-if="canWrite"
             v-model="form.product_id"
-            placeholder="请选择产品"
+            :placeholder="$t('admin.fault.edit.selectProduct')"
             filterable
             class="wd"
             :loading="loadingProducts"
@@ -32,11 +34,13 @@
           </el-select>
           <span v-else class="readonly">{{ productSummary }}</span>
         </el-form-item>
-        <el-form-item label="所属零件" prop="part_id">
+        <el-form-item :label="$t('admin.fault.edit.part')" prop="part_id">
           <el-select
             v-if="canWrite"
             v-model="form.part_id"
-            :placeholder="form.product_id ? '请选择零件' : '请先选择产品'"
+            :placeholder="form.product_id
+              ? $t('admin.fault.edit.selectPart')
+              : $t('admin.fault.edit.selectProductFirst')"
             filterable
             class="wd"
             :disabled="!form.product_id"
@@ -51,42 +55,72 @@
           </el-select>
           <span v-else class="readonly">{{ partSummary }}</span>
           <span v-if="canWrite && !parts.length && form.product_id && !loadingParts" class="hint">
-            该产品下还没有零件，请先到「零件管理」录入
+            {{ $t('admin.fault.edit.noPartsHint') }}
           </span>
         </el-form-item>
-        <el-form-item label="故障标题" prop="title">
-          <el-input v-model="form.title" maxlength="200" show-word-limit placeholder="如：开机无反应" />
+        <el-form-item :label="$t('admin.fault.edit.title')" prop="title">
+          <el-input
+            v-model="form.title"
+            maxlength="200"
+            show-word-limit
+            :placeholder="$t('admin.fault.edit.titlePlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="现象描述" prop="symptom">
-          <el-input v-model="form.symptom" type="textarea" :rows="3" placeholder="客户能观察到的现象" />
+        <el-form-item :label="$t('admin.fault.edit.symptom')" prop="symptom">
+          <el-input
+            v-model="form.symptom"
+            type="textarea"
+            :rows="3"
+            :placeholder="$t('admin.fault.edit.symptomPlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="可能原因" prop="root_cause">
-          <el-input v-model="form.root_cause" type="textarea" :rows="2" placeholder="多个原因用 / 分隔" />
+        <el-form-item :label="$t('admin.fault.edit.rootCause')" prop="root_cause">
+          <el-input
+            v-model="form.root_cause"
+            type="textarea"
+            :rows="2"
+            :placeholder="$t('admin.fault.edit.rootCausePlaceholder')"
+          />
         </el-form-item>
 
-        <h3 class="section">解决步骤</h3>
+        <h3 class="section">{{ $t('admin.fault.edit.sectionSteps') }}</h3>
         <div v-for="(item, index) in form.solution_steps" :key="item.uid" class="step">
           <span class="step-no">{{ index + 1 }}</span>
-          <el-input v-model="item.text" type="textarea" :rows="2" placeholder="这一步要做什么" />
+          <el-input
+            v-model="item.text"
+            type="textarea"
+            :rows="2"
+            :placeholder="$t('admin.fault.edit.stepPlaceholder')"
+          />
           <ImageUpload v-model="item.image_url" :readonly="!canWrite" />
-          <el-button v-if="canWrite" link type="danger" @click="removeStep(index)">删除</el-button>
+          <el-button v-if="canWrite" link type="danger" @click="removeStep(index)">
+            {{ $t('common.action.delete') }}
+          </el-button>
         </div>
-        <el-button v-if="canWrite" class="add-step" @click="addStep">+ 添加步骤</el-button>
+        <el-button v-if="canWrite" class="add-step" @click="addStep">
+          {{ $t('admin.fault.edit.addStep') }}
+        </el-button>
 
-        <h3 class="section">其他</h3>
-        <el-form-item label="所需工具" prop="required_tools">
-          <el-input v-model="form.required_tools" maxlength="200" placeholder="如：十字螺丝刀；无则留空" />
+        <h3 class="section">{{ $t('admin.fault.edit.sectionOther') }}</h3>
+        <el-form-item :label="$t('admin.fault.edit.requiredTools')" prop="required_tools">
+          <el-input
+            v-model="form.required_tools"
+            maxlength="200"
+            :placeholder="$t('admin.fault.edit.requiredToolsPlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="需专业人员" prop="needs_professional">
+        <el-form-item :label="$t('admin.fault.edit.needsProfessional')" prop="needs_professional">
           <el-switch v-model="form.needs_professional" :disabled="!canWrite" />
-          <span class="hint">开启后客户侧详情页顶部会出现"请勿自行拆机"提示</span>
+          <span class="hint">{{ $t('admin.fault.edit.needsProfessionalHint') }}</span>
         </el-form-item>
-        <el-form-item label="附件">
+        <el-form-item :label="$t('admin.fault.edit.attachments')">
           <div class="attachments">
             <div v-for="(item, index) in form.attachment_urls" :key="item.url" class="attachment">
               <span class="att-name">{{ item.name }}</span>
               <span class="att-size">{{ formatSize(item.size) }}</span>
-              <el-button v-if="canWrite" link type="danger" @click="removeAttachment(index)">移除</el-button>
+              <el-button v-if="canWrite" link type="danger" @click="removeAttachment(index)">
+                {{ $t('common.action.remove') }}
+              </el-button>
             </div>
             <el-upload
               v-if="canWrite"
@@ -96,13 +130,21 @@
               :accept="ATTACHMENT_EXTS.join(',')"
 
             >
-              <el-button size="small" :loading="uploadingAttachment">上传附件</el-button>
+              <el-button size="small" :loading="uploadingAttachment">
+                {{ $t('admin.fault.edit.uploadAttachment') }}
+              </el-button>
             </el-upload>
-            <span class="hint">支持 jpg/png/pdf/mp4，单文件 ≤ 20MB</span>
+            <span class="hint">{{ $t('admin.fault.edit.attachmentHint') }}</span>
           </div>
         </el-form-item>
-        <el-form-item label="是否发布" prop="is_published">
-          <el-switch v-model="form.is_published" :disabled="!canWrite" inline-prompt active-text="发布" inactive-text="草稿" />
+        <el-form-item :label="$t('admin.fault.edit.published')" prop="is_published">
+          <el-switch
+            v-model="form.is_published"
+            :disabled="!canWrite"
+            inline-prompt
+            :active-text="$t('admin.fault.edit.publish')"
+            :inactive-text="$t('admin.fault.edit.draft')"
+          />
         </el-form-item>
       </el-form>
     </el-card>
@@ -112,6 +154,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import ImageUpload from '../../../components/ImageUpload.vue'
 import {
@@ -122,11 +165,15 @@ import {
   adminUpdateFault,
   adminUpload
 } from '../../../api/admin'
-import { errorCode, errorText } from '../../../utils/admin'
+import { errorCode } from '../../../utils/admin'
+import { errorMessage } from '../../../utils/error'
 import { hasPermission } from '../../../utils/permissions'
 import { ATTACHMENT_EXTS, extHint, isAllowedExt, UPLOAD_MAX_SIZE } from '../../../utils/upload'
+import { useFormLabelWidth } from '../../../utils/formLabel'
 
+const { t } = useI18n()
 const canWrite = computed(() => hasPermission('fault:write'))
+const labelWidth = useFormLabelWidth('110px', '180px')
 
 const route = useRoute()
 const router = useRouter()
@@ -166,20 +213,27 @@ const isEdit = computed(() => Boolean(route.params.id))
 const productSummary = computed(() => {
   const found = products.value.find((item) => item.id === form.product_id)
   if (found) return `${found.name}（${found.model}）`
-  return detail.value?.product_name || (form.product_id ? `产品 #${form.product_id}` : '-')
+  return (
+    detail.value?.product_name ||
+    (form.product_id ? t('admin.fault.edit.productRef', { id: form.product_id }) : '-')
+  )
 })
 
 const partSummary = computed(() => {
   const found = parts.value.find((item) => item.id === form.part_id)
   if (found) return found.group_name ? `${found.group_name} / ${found.name}` : found.name
-  return detail.value?.part_name || (form.part_id ? `零件 #${form.part_id}` : '-')
+  return (
+    detail.value?.part_name ||
+    (form.part_id ? t('admin.fault.edit.partRef', { id: form.part_id }) : '-')
+  )
 })
 
-const rules = {
-  product_id: [{ required: true, message: '请选择产品', trigger: 'change' }],
-  part_id: [{ required: true, message: '请选择零件', trigger: 'change' }],
-  title: [{ required: true, message: '请填写故障标题', trigger: 'blur' }]
-}
+// computed：语言切换后校验文案跟着变
+const rules = computed(() => ({
+  product_id: [{ required: true, message: t('admin.fault.edit.ruleProduct'), trigger: 'change' }],
+  part_id: [{ required: true, message: t('admin.fault.edit.rulePart'), trigger: 'change' }],
+  title: [{ required: true, message: t('admin.fault.edit.ruleTitle'), trigger: 'blur' }]
+}))
 
 function addStep() {
   form.solution_steps.push({ uid: nextUid(), text: '', image_url: null })
@@ -216,7 +270,7 @@ async function loadProducts() {
     const data = await adminListProducts({ page: 1, page_size: 100 })
     products.value = data.items
   } catch (e) {
-    ElMessage.error(errorText(e, '产品列表加载失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.fault.edit.productLoadFailed' }))
   } finally {
     loadingProducts.value = false
   }
@@ -234,7 +288,7 @@ async function loadParts(productId) {
     parts.value = data.items
   } catch (e) {
     parts.value = []
-    ElMessage.error(errorText(e, '零件列表加载失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.fault.edit.partLoadFailed' }))
   } finally {
     loadingParts.value = false
   }
@@ -275,7 +329,7 @@ async function loadFault(id) {
     if (canWrite.value) await loadParts(data.product_id)
     form.part_id = data.part_id
   } catch (e) {
-    ElMessage.error(errorText(e, '故障详情加载失败'))
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.fault.edit.detailLoadFailed' }))
   } finally {
     loading.value = false
   }
@@ -287,7 +341,7 @@ function beforeUploadAttachment(file) {
     return false
   }
   if (file.size > UPLOAD_MAX_SIZE) {
-    ElMessage.error('文件超过 20MB 限制')
+    ElMessage.error(t('admin.fault.edit.uploadTooLarge'))
     return false
   }
   return true
@@ -300,9 +354,9 @@ async function doUploadAttachment({ file }) {
     // 契约 §4：附件元数据随故障一起存进 attachment_urls，服务端不单独建表
     form.attachment_urls.push({ name: result.filename, url: result.url, size: result.size })
   } catch (e) {
-    if (errorCode(e) === 'UPLOAD_TOO_LARGE') ElMessage.error('文件超过 20MB 限制')
-    else if (e?.code === 'ECONNABORTED') ElMessage.error('上传超时，请检查网络后重试')
-    else ElMessage.error(errorText(e, '上传失败'))
+    if (errorCode(e) === 'UPLOAD_TOO_LARGE') ElMessage.error(t('admin.fault.edit.uploadTooLarge'))
+    else if (e?.code === 'ECONNABORTED') ElMessage.error(t('admin.fault.edit.uploadTimeout'))
+    else ElMessage.error(errorMessage(e, { fallbackKey: 'admin.fault.edit.uploadFailed' }))
   } finally {
     uploadingAttachment.value = false
   }
@@ -344,16 +398,16 @@ async function onSubmit() {
     } else {
       await adminCreateFault(payload)
     }
-    ElMessage.success('保存成功')
+    ElMessage.success(t('admin.fault.edit.saved'))
     router.push({ name: 'admin-faults' })
   } catch (e) {
     if (errorCode(e) === 'PART_PRODUCT_MISMATCH') {
       // 选完零件后产品被改过：定位到零件字段，别让用户自己猜
       form.part_id = null
-      ElMessage.error('零件不属于所选产品，请重新选择零件')
+      ElMessage.error(t('admin.fault.edit.partMismatch'))
       return
     }
-    ElMessage.error(errorText(e))
+    ElMessage.error(errorMessage(e))
   } finally {
     submitting.value = false
   }

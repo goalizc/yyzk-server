@@ -45,17 +45,26 @@ _DEFAULT_DETAIL = {
 
 
 class BusinessError(Exception):
-    """业务异常。由全局处理器转成 {detail, code}。"""
+    """业务异常。由全局处理器转成 {detail, code, params?}。
 
-    def __init__(self, code: str, detail: str, status_code: int = 400) -> None:
+    params 承载动态片段（型号、名称、缺失列表），供前端按错误码插值成对应语言。
+    不传时响应体里不出现该字段，老客户端行为完全不变。
+    """
+
+    def __init__(self, code: str, detail: str, status_code: int = 400, params: dict | None = None) -> None:
         super().__init__(detail)
         self.code = code
         self.detail = detail
         self.status_code = status_code
+        self.params = params or {}
 
 
-def error_response(status_code: int, code: str, detail: str) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"detail": detail, "code": code})
+def error_response(status_code: int, code: str, detail: str, params: dict | None = None) -> JSONResponse:
+    content: dict = {"detail": detail, "code": code}
+    # 只在有内容时才带 params：保持既有响应的形状，避免契约漂移
+    if params:
+        content["params"] = params
+    return JSONResponse(status_code=status_code, content=content)
 
 
 def _validation_detail(exc: RequestValidationError) -> str:
@@ -76,7 +85,7 @@ def _validation_detail(exc: RequestValidationError) -> str:
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(BusinessError)
     async def _business_error(_: Request, exc: BusinessError) -> JSONResponse:
-        return error_response(exc.status_code, exc.code, exc.detail)
+        return error_response(exc.status_code, exc.code, exc.detail, exc.params)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
