@@ -110,7 +110,7 @@
         </el-form-item>
         <el-form-item :label="$t('admin.user.form.role')" prop="role">
           <el-select v-model="form.role">
-            <el-option v-for="item in ROLE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
+            <el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
         <el-form-item :label="$t('admin.user.form.productLines')">
@@ -580,9 +580,13 @@ onBeforeUnmount(() => clearTimeout(keywordTimer))
 .tag { margin-right: 4px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .assignments { display: flex; flex-direction: column; gap: 8px; }
-.assignment-row { display: flex; gap: 8px; align-items: center; }
-.line-select { width: 180px; }
-.date { width: 160px; }
+/* 英文「Delete」比中文「删除」宽，三件套写死宽度会把按钮挤出弹窗；
+   下拉改为可伸缩、日期固定、允许换行，任何语言都不溢出。
+   日期必须带 .assignment-row 前缀：Element 的 .el-date-editor.el-input{width:220px}
+   与单独 .date 同权重，靠多一级选择器压过它（实测原先被撑到 220px） */
+.assignment-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.line-select { flex: 1 1 140px; min-width: 0; }
+.assignment-row .date { flex: 0 0 150px; width: 150px; }
 .password-row { margin-top: 16px; display: flex; align-items: center; gap: 12px; }
 .password { font-family: monospace; font-size: 18px; letter-spacing: 1px; word-break: break-all; }
 .grant-tag { margin-top: 4px; cursor: pointer; }

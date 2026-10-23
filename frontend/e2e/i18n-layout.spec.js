@@ -139,3 +139,88 @@ test('@smoke 英文界面表单标签不折行（含各新建弹窗与详情面�
     `以下英文表单标签折行（宽度不够，请调大该页 useFormLabelWidth 的英文宽度）：\n${failures.join('\n')}`
   ).toEqual([])
 })
+
+// 英文界面下弹窗不得横向溢出。
+//
+// 典型事故：中文「删除」只有 2 个字，英文 "Delete" 更宽，固定宽度的行内控件
+// 会被挤出弹窗边界（用户报过：新建/编辑用户里"删除产品线"按钮越界）。
+// 中文下量不出来，只有切到英文才暴露。
+test('@smoke 英文界面弹窗内容不横向溢出', async ({ page }) => {
+  await loginEnglish(page)
+
+  const scenes = [
+    {
+      name: '新建用户（含产品线分配行）',
+      path: '/admin/users',
+      open: async () => {
+        await page.getByRole('button', { name: 'New user' }).click()
+        // 分配行是溢出的高发区，必须有一行才量得到
+        await page.getByRole('button', { name: 'Add product line' }).click()
+      }
+    },
+    {
+      name: '新建产品',
+      path: '/admin/products',
+      open: async () => {
+        await page.getByRole('button', { name: 'New product' }).click()
+      }
+    },
+    {
+      name: '新建零件',
+      path: '/admin/parts',
+      open: async () => {
+        await page.getByRole('button', { name: 'New part' }).click()
+      }
+    },
+    {
+      name: '新建产品线',
+      path: '/admin/product-lines',
+      open: async () => {
+        await page.getByRole('button', { name: 'New product line' }).click()
+      }
+    },
+    {
+      name: '工单详情面板',
+      path: '/admin/tickets',
+      open: async () => {
+        await page.locator('.el-table__row').first().click()
+      }
+    },
+    {
+      name: '方案阅读面板',
+      path: '/admin/faults',
+      open: async () => {
+        await page.locator('.el-table__row').first().click()
+      }
+    }
+  ]
+
+  const problems = []
+  for (const scene of scenes) {
+    await page.goto(scene.path)
+    await page.waitForTimeout(1000)
+    await scene.open()
+    await page.waitForTimeout(600)
+
+    const over = await page.evaluate(() => {
+      // 注意：':visible' 是 Playwright 专有伪类，浏览器端 querySelector 不认
+      const dialog = [...document.querySelectorAll('.el-dialog')].find(
+        (el) => el.offsetParent !== null
+      )
+      if (!dialog) return null
+      const body = dialog.querySelector('.el-dialog__body')
+      if (!body) return 0
+      return body.scrollWidth - body.clientWidth
+    })
+
+    if (over === null) problems.push(`${scene.name}: 没找到弹窗`)
+    else if (over > 0) problems.push(`${scene.name}: 横向溢出 ${over}px`)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(300)
+  }
+
+  expect(
+    problems,
+    `英文弹窗内容横向溢出（元素宽度写死，没给英文留余量）：\n${problems.join('\n')}`
+  ).toEqual([])
+})

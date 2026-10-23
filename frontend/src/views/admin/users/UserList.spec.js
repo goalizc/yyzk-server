@@ -236,6 +236,23 @@ describe('UserList 行点击', () => {
     expect(state.dialogVisible).toBe(false)
   })
 
+  it('新建用户弹窗的角色下拉有 4 个选项（曾因模板引用已删除的常量而变成空列表）', async () => {
+    const wrapper = mountList()
+    await flushPromises()
+
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('新建用户'))
+    await btn.trigger('click')
+    await flushPromises()
+
+    const roles = ['超级管理员', '售后主管', '一线客服', '只读审计']
+    const labels = wrapper
+      .findAllComponents({ name: 'ElOption' })
+      .map((c) => c.props('label'))
+      .filter((l) => roles.includes(l))
+    // 顶部筛选 + 弹窗各 4 个；弹窗为空列表时这里只有 4 → 立刻红
+    expect(labels.length).toBe(8)
+  })
+
   it('只读角色点行不打开弹窗', async () => {
     setPermissions(['user:read'])
     const wrapper = mountList()
