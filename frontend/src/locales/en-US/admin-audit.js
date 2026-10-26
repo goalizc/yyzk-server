@@ -93,6 +93,8 @@ export default {
 
   field: {
     reason: 'Reason',
+    titleFrom: 'Previous title',
+    titleTo: 'New title',
     fromStatus: 'From status',
     toStatus: 'To status',
     assigneeFrom: 'Previous assignee',

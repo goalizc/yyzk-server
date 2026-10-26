@@ -93,6 +93,8 @@ export default {
 
   field: {
     reason: '原因',
+    titleFrom: '原标题',
+    titleTo: '新标题',
     fromStatus: '原状态',
     toStatus: '新状态',
     assigneeFrom: '原处理人',

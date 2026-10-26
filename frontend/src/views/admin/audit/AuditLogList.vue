@@ -273,6 +273,8 @@ const ACTION_KEYS = {
 
 const FIELD_KEYS = {
   reason: 'admin.audit.field.reason',
+  title_from: 'admin.audit.field.titleFrom',
+  title_to: 'admin.audit.field.titleTo',
   from_status: 'admin.audit.field.fromStatus',
   to_status: 'admin.audit.field.toStatus',
   assignee_from: 'admin.audit.field.assigneeFrom',
@@ -346,13 +348,29 @@ function fieldValue(key, value) {
   return String(value)
 }
 
+// JSONB 存储会重排键（PG 按长度+字节序），直接遍历会得到「新标题 / 原标题」这种倒序，
+// 所以按业务阅读顺序固定排列；未登记的键排在最后，原样展示便于排查。
+const FIELD_ORDER = [
+  'reason', 'title_from', 'title_to',
+  'from_status', 'to_status', 'assignee_from', 'assignee_to', 'remark_updated',
+  'role', 'role_from', 'role_to', 'is_active_from', 'is_active_to', 'username_changed',
+  'permission', 'expires_at', 'grant_id',
+  'line_id', 'product_id', 'line_count', 'query', 'error_code'
+]
+
 const extraFields = computed(() => {
   const payload = detail.value?.detail || {}
-  return Object.entries(payload).map(([key, value]) => ({
-    key,
-    label: fieldLabel(key),
-    value: fieldValue(key, value)
-  }))
+  return Object.keys(payload)
+    .sort((a, b) => {
+      const left = FIELD_ORDER.indexOf(a)
+      const right = FIELD_ORDER.indexOf(b)
+      return (left === -1 ? FIELD_ORDER.length : left) - (right === -1 ? FIELD_ORDER.length : right)
+    })
+    .map((key) => ({
+      key,
+      label: fieldLabel(key),
+      value: fieldValue(key, payload[key])
+    }))
 })
 
 function buildParams() {

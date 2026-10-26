@@ -210,6 +210,24 @@ describe('AuditLogList', () => {
     })
   })
 
+  it('后端可能写入的 detail 字段都有文案映射', async () => {
+    // 来源：grep 后端 request.state.audit / detail[...] 里出现的字段名。
+    // 漏一个的症状是详情里直接显示 title_from 这种原始字段名，中英文界面都一样。
+    const BACKEND_DETAIL_KEYS = [
+      'reason', 'title_from', 'title_to',
+      'from_status', 'to_status', 'assignee_from', 'assignee_to',
+      'remark_updated', 'role', 'role_from', 'role_to',
+      'is_active_from', 'is_active_to', 'username_changed',
+      'permission', 'expires_at', 'grant_id',
+      'line_id', 'product_id', 'line_count', 'query', 'error_code'
+    ]
+    const wrapper = await mountPage()
+    const mapped = Object.keys(wrapper.vm.$.setupState.FIELD_KEYS)
+    for (const key of BACKEND_DETAIL_KEYS) {
+      expect(mapped, `缺少字段映射：${key}`).toContain(key)
+    }
+  })
+
   it('未登录的动作显示「匿名」，不能把 i18n key 直接泄给用户', async () => {
     adminListAuditLogs.mockResolvedValue({
       total: 1,
