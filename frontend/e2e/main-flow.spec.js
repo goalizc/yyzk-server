@@ -35,10 +35,9 @@ test('@smoke 客户排查到后台处理的主链路', async ({ page }) => {
 
   await pickSelect(page, '1. 选择产品', '植保无人机 16L')
   await pickSelect(page, '2. 选择零件', '隔膜泵')
-  await pickSelect(page, '3. 选择故障现象', '喷洒不出水')
 
-  // 选中故障后出现"查看解决方案"
-  await page.getByRole('button', { name: '查看解决方案' }).click()
+  // 选完零件直接是故障现象列表（下拉已删除，列表即选择器），点条目进方案
+  await page.locator('.fault-item', { hasText: '喷洒不出水' }).first().click()
 
   // ---------- 2. 方案详情：反馈未解决 ----------
   await expect(page).toHaveURL(/\/faults\/\d+/)

@@ -131,8 +131,12 @@ describe('英文单复数', () => {
     expect(t('common.count.viewed', 2)).toBe('2 people viewed')
     expect(t('common.count.viewed', 0)).toBe('0 people viewed')
 
-    expect(t('public.home.foundCount', 1)).toContain('1 possible fault found')
-    expect(t('public.home.foundCount', 3)).toContain('3 possible faults found')
+    expect(t('public.home.foundCount', 1)).toContain('1 fault found')
+    expect(t('public.home.foundCount', 3)).toContain('3 faults found')
+
+    // 「展开更多」的剩余条数同样要分单复数（1 条时写成 more faults 会被一眼看出）
+    expect(t('public.home.expandMore', 1)).toBe('Show 1 more fault')
+    expect(t('public.home.expandMore', 3)).toBe('Show 3 more faults')
 
     // 带命名参数 + 复数：t(key, 数量, { 其它变量 })
     expect(t('admin.product.deleteBlocked', 1)).toContain('has 1 fault.')

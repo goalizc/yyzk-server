@@ -7,7 +7,7 @@
 
     <el-card shadow="never" class="panel">
       <el-row :gutter="16">
-        <el-col :xs="24" :sm="8">
+        <el-col :xs="24" :sm="12">
           <div class="field">
             <label>{{ $t('public.home.step1') }}</label>
             <el-select
@@ -29,7 +29,7 @@
           </div>
         </el-col>
 
-        <el-col :xs="24" :sm="8">
+        <el-col :xs="24" :sm="12">
           <div class="field">
             <label>{{ $t('public.home.step2') }}</label>
             <el-select
@@ -53,30 +53,9 @@
             </el-select>
           </div>
         </el-col>
-
-        <el-col :xs="24" :sm="8">
-          <div class="field">
-            <label>{{ $t('public.home.step3') }}</label>
-            <el-select
-              v-model="faultId"
-              :placeholder="$t('public.home.selectFault')"
-              filterable
-              clearable
-              :disabled="!partId"
-              :loading="loading.faults"
-              style="width: 100%"
-            >
-              <el-option
-                v-for="item in filteredFaults"
-                :key="item.id"
-                :label="item.title"
-                :value="item.id"
-              />
-            </el-select>
-          </div>
-        </el-col>
       </el-row>
 
+      <!-- 关键词只过滤下面这份列表，不再承担"再选一次"的职责 -->
       <el-input
         v-model="keyword"
         class="search"
@@ -101,27 +80,17 @@
       </el-result>
     </el-card>
 
-    <!-- 选中故障 -->
-    <el-card v-else-if="selectedFault" shadow="never" class="panel">
-      <div class="fault-head">
-        <h2>{{ selectedFault.title }}</h2>
-        <el-tag size="small" type="info">
-          {{ $t('common.count.viewed', selectedFault.view_count) }}
-        </el-tag>
-      </div>
-      <p class="symptom">{{ selectedFault.symptom || $t('public.home.symptomEmpty') }}</p>
-      <el-button type="primary" @click="openDetail(selectedFault.id)">
-        {{ $t('public.home.viewSolution') }}
-      </el-button>
-    </el-card>
-
-    <!-- 结果列表 -->
-    <el-card v-else-if="filteredFaults.length" shadow="never" class="panel">
+    <!--
+      结果列表 = 故障现象选择器。
+      以前这里还有一级"3. 选择故障现象"下拉，选项和下面的列表是同一批数据，
+      下拉里又只有标题（维修术语）、没有现象描述，反而比列表更难选，已删除。
+    -->
+    <el-card v-else-if="partId && filteredFaults.length" shadow="never" class="panel">
       <template #header>
         {{ $t('public.home.foundCount', filteredFaults.length) }}
       </template>
       <div
-        v-for="item in filteredFaults"
+        v-for="item in visibleFaults"
         :key="item.id"
         class="fault-item"
         @click="openDetail(item.id)"
@@ -130,13 +99,36 @@
         <div class="fault-symptom">{{ item.symptom || $t('public.home.symptomEmpty') }}</div>
         <div class="fault-meta">{{ $t('common.count.viewed', item.view_count) }}</div>
       </div>
+
+      <div v-if="hasMore" class="more">
+        <el-button text type="primary" @click="showMore">
+          {{ $t('public.home.expandMore', remaining) }}
+        </el-button>
+      </div>
+
+      <!-- 列表里都不像自己的情况时，别逼用户挨个点开找"提交工单" -->
+      <div class="list-footer">
+        <span>{{ $t('public.home.notListed') }}</span>
+        <el-button link type="primary" @click="goTicket">
+          {{ $t('public.home.submitTicket') }}
+        </el-button>
+      </div>
     </el-card>
 
-    <!-- 空态：引导转工单 -->
+    <!-- 空态：搜不到 / 该零件还没有故障记录，两种情况都要能直接报障 -->
     <el-card v-else-if="partId" shadow="never" class="panel">
-      <el-empty :description="$t('public.home.noResult')">
-        <p class="empty-tip">{{ $t('public.home.emptyTip') }}</p>
-        <el-button type="primary" @click="goTicket">{{ $t('public.home.submitTicket') }}</el-button>
+      <el-empty :description="hasKeyword ? $t('public.home.noResult') : $t('public.home.noFaultData')">
+        <p class="empty-tip">
+          {{ hasKeyword ? $t('public.home.emptyTip') : $t('public.home.noDataTip') }}
+        </p>
+        <div class="empty-actions">
+          <el-button v-if="hasKeyword" @click="clearKeyword">
+            {{ $t('public.home.clearKeyword') }}
+          </el-button>
+          <el-button type="primary" @click="goTicket">
+            {{ $t('public.home.submitTicket') }}
+          </el-button>
+        </div>
       </el-empty>
     </el-card>
 
@@ -148,7 +140,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { listParts, listProducts } from '../../api/product'
@@ -159,14 +151,18 @@ import { localeRoute } from '../../locales'
 const router = useRouter()
 const { t } = useI18n()
 
+// 一次展开多少条。故障数通常 1~3 条（78% 的零件只有 1 条），
+// 但真实客户环境一个零件可能有十几条，超过就先折叠
+const PAGE_SIZE = 5
+
 const products = ref([])
 const parts = ref([])
 const faults = ref([])
 
 const productId = ref(null)
 const partId = ref(null)
-const faultId = ref(null)
 const keyword = ref('')
+const visibleCount = ref(PAGE_SIZE)
 
 const loading = reactive({ products: false, parts: false, faults: false })
 const error = ref('')
@@ -175,6 +171,8 @@ const error = ref('')
 const REPORT_INTERVAL = 30 * 1000
 const reported = new Map()
 let missTimer = null
+
+const hasKeyword = computed(() => keyword.value.trim().length > 0)
 
 const filteredFaults = computed(() => {
   const key = keyword.value.trim().toLowerCase()
@@ -186,10 +184,22 @@ const filteredFaults = computed(() => {
   )
 })
 
-const selectedFault = computed(() => {
-  if (!faultId.value) return null
-  return filteredFaults.value.find((item) => item.id === faultId.value) || null
+const visibleFaults = computed(() => filteredFaults.value.slice(0, visibleCount.value))
+const remaining = computed(() => filteredFaults.value.length - visibleCount.value)
+const hasMore = computed(() => remaining.value > 0)
+
+// 关键词一变就缩回第一屏，否则搜完一个词再搜另一个会停在"展开很多条"的状态
+watch(keyword, () => {
+  visibleCount.value = PAGE_SIZE
 })
+
+function showMore() {
+  visibleCount.value += PAGE_SIZE
+}
+
+function clearKeyword() {
+  keyword.value = ''
+}
 
 async function loadProducts() {
   loading.products = true
@@ -205,10 +215,10 @@ async function loadProducts() {
 
 async function onProductChange(value) {
   partId.value = null
-  faultId.value = null
   parts.value = []
   faults.value = []
   keyword.value = ''
+  visibleCount.value = PAGE_SIZE
   if (!value) return
 
   loading.parts = true
@@ -223,9 +233,9 @@ async function onProductChange(value) {
 }
 
 async function onPartChange(value) {
-  faultId.value = null
   keyword.value = ''
   faults.value = []
+  visibleCount.value = PAGE_SIZE
   if (!value) return
 
   await loadFaults()
@@ -271,12 +281,12 @@ function openDetail(id) {
   )
 }
 
+// 没有选中故障这回事了，工单只带产品与零件上下文
 function goTicket() {
   router.push(
     localeRoute('ticket-new', {}, {
       product_id: productId.value,
-      part_id: partId.value,
-      ...(faultId.value ? { fault_id: faultId.value } : {})
+      part_id: partId.value
     })
   )
 }
@@ -327,24 +337,8 @@ onBeforeUnmount(() => clearTimeout(missTimer))
 }
 
 .search {
-  margin-top: 4px;
-}
-
-.fault-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.fault-head h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.symptom {
-  margin: 0 0 16px;
-  color: #606266;
+  /* 与上一行下拉拉开距离：两列并排时 4px 会贴着，像同一条表单 */
+  margin-top: 12px;
 }
 
 .fault-item {
@@ -369,6 +363,12 @@ onBeforeUnmount(() => clearTimeout(missTimer))
 .fault-symptom {
   color: #606266;
   font-size: 13px;
+  /* 文档 P-01 规则 4：摘要最多 2 行、超出省略。
+     列表现在是唯一的故障入口，一条症状写满三四行会把整屏占掉 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .fault-meta {
@@ -377,16 +377,41 @@ onBeforeUnmount(() => clearTimeout(missTimer))
   font-size: 12px;
 }
 
+.more {
+  text-align: center;
+  padding-top: 8px;
+}
+
+.list-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #f0f2f5;
+  color: #909399;
+  font-size: 13px;
+}
+
 .empty-tip {
   margin: 0 0 12px;
   color: #909399;
   font-size: 13px;
 }
 
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 /* ---------- 手机 ----------
  *
- * 三级级联在窄屏本来是 el-col :xs="24" 自动换行，但每列之间只有 16px gutter
- * 的横向间距、没有纵向间距，三个 select 会挤成一片看不出步骤先后。
+ * 两级联动在窄屏靠 el-col :xs="24" 自动换行，但每列之间只有 16px gutter
+ * 的横向间距、没有纵向间距，两个 select 会挤成一片看不出步骤先后。
  * 这里补成单列堆叠 + 纵向间距，并让控件撑满宽度。
  */
 @media (max-width: 640px) {
@@ -438,28 +463,6 @@ onBeforeUnmount(() => clearTimeout(missTimer))
     margin-top: 0;
   }
 
-  .fault-head {
-    gap: 8px;
-  }
-
-  .fault-head h2 {
-    font-size: 17px;
-    line-height: 1.4;
-    /* 长标题允许换行，不要挤成一条把"人看过"推出去 */
-    word-break: break-word;
-  }
-
-  .symptom {
-    line-height: 1.6;
-    margin-bottom: 14px;
-  }
-
-  /* 按钮在窄屏上撑满整行，拇指更容易点到 */
-  .symptom + .el-button,
-  .panel :deep(.el-empty) .el-button {
-    width: 100%;
-  }
-
   /* 列表项整块可点，内边距也要够大。
      单条至少 44px 高（三行文字约 87px，本来就超），这里主要给足左右与纵向留白 */
   .fault-item {
@@ -476,6 +479,17 @@ onBeforeUnmount(() => clearTimeout(missTimer))
   .fault-symptom {
     line-height: 1.55;
     margin-top: 2px;
+  }
+
+  /* 两个按钮并排会各自挤成半行，竖排整行更容易点 */
+  .empty-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .empty-actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
   }
 }
 </style>

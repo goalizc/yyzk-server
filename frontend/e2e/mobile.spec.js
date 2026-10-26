@@ -151,27 +151,28 @@ for (const vp of VIEWPORTS) {
       expect(m.tooSmall, `首页空态可点区不足：${JSON.stringify(m.tooSmall)}`).toHaveLength(0)
       expect(m.smallFont, `首页空态输入框字号过小：${JSON.stringify(m.smallFont)}`).toHaveLength(0)
 
-      // ---------- 首页：选中三级后的故障卡片 ----------
+      // ---------- 首页：选完两级后的故障现象列表 ----------
       const fields = page.locator('.field .el-select')
       await pickOption(page, fields.nth(0))
       await pickOption(page, fields.nth(1))
-      await pickOption(page, fields.nth(2))
-      m = await audit(page)
-      await shot(page, `${vp.name}-02-首页-已选故障`)
-      expect(m.overflow, `首页选中态横向溢出 ${m.scrollWidth}/${m.clientWidth}`).toBe(false)
-      expect(m.tooSmall, `首页选中态可点区不足：${JSON.stringify(m.tooSmall)}`).toHaveLength(0)
-
-      // ---------- 首页：结果列表（把故障选择清掉，回落到列表） ----------
-      await page.goto('/')
       await page.waitForTimeout(400)
-      await pickOption(page, page.locator('.field .el-select').nth(0))
-      await pickOption(page, page.locator('.field .el-select').nth(1))
-      const listCount = await page.locator('.fault-item').count()
-      expect(listCount, '零件下应有故障列表，用例依赖此前提').toBeGreaterThan(0)
+      expect(
+        await page.locator('.fault-item').count(),
+        '零件下应有故障列表，用例依赖此前提'
+      ).toBeGreaterThan(0)
       m = await audit(page)
-      await shot(page, `${vp.name}-03-首页-故障列表`)
+      await shot(page, `${vp.name}-02-首页-故障列表`)
       expect(m.overflow, `首页列表态横向溢出 ${m.scrollWidth}/${m.clientWidth}`).toBe(false)
       expect(m.tooSmall, `首页列表态可点区不足：${JSON.stringify(m.tooSmall)}`).toHaveLength(0)
+
+      // ---------- 首页：关键词搜不到时的空态（提交工单入口必须点得到） ----------
+      await page.locator('.search input').fill('zzzzzz')
+      await page.waitForTimeout(1200)
+      await expect(page.getByText('没有找到匹配的解决方案')).toBeVisible()
+      m = await audit(page)
+      await shot(page, `${vp.name}-03-首页-无结果`)
+      expect(m.overflow, `首页空结果横向溢出 ${m.scrollWidth}/${m.clientWidth}`).toBe(false)
+      expect(m.tooSmall, `首页空结果可点区不足：${JSON.stringify(m.tooSmall)}`).toHaveLength(0)
 
       // ---------- 方案详情 ----------
       await page.goto(`/faults/${FAULT_ID}`)

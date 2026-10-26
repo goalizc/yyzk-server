@@ -90,7 +90,16 @@ describe('Home 三级级联', () => {
     await wrapper.vm.onPartChange(11)
     expect(listFaults).toHaveBeenCalledWith(1, 11)
     expect(wrapper.vm.faults).toHaveLength(2)
-    expect(wrapper.text()).toContain('找到 2 条可能的故障')
+    expect(wrapper.text()).toContain('2 条故障现象')
+    wrapper.unmount()
+  })
+
+  it('只有产品与零件两级，不再有"选择故障现象"下拉', async () => {
+    // 这条锁死设计决定：第三步下拉与下面的列表是同一批数据，且只显示术语标题，
+    // 比列表更难选。有人想加回来会先让这条变红（见 docs 页面清单 §客户首页）
+    const { wrapper } = await mountHome()
+    expect(wrapper.findAll('.field')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('选择故障现象')
     wrapper.unmount()
   })
 
@@ -109,13 +118,12 @@ describe('Home 三级级联', () => {
     wrapper.unmount()
   })
 
-  it('过滤无结果时出现提交工单入口，并携带上下文跳转', async () => {
+  it('过滤无结果时出现提交工单入口，并携带产品与零件上下文跳转', async () => {
     const { wrapper, router } = await mountHome()
     wrapper.vm.productId = 1
     await wrapper.vm.onProductChange(1)
     wrapper.vm.partId = 11
     await wrapper.vm.onPartChange(11)
-    wrapper.vm.faultId = 21
     wrapper.vm.keyword = 'ZZZZ'
     await flushPromises()
     expect(wrapper.text()).toContain('没有找到匹配的解决方案')
@@ -123,12 +131,103 @@ describe('Home 三级级联', () => {
     wrapper.vm.goTicket()
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('ticket-new')
-    // vue-router 会把 query 序列化成字符串，TicketNew.payload() 再转数字
+    // 已经不存在"选中的故障"，工单只带产品与零件
     expect(router.currentRoute.value.query).toMatchObject({
       product_id: '1',
-      part_id: '11',
-      fault_id: '21'
+      part_id: '11'
     })
+    wrapper.unmount()
+  })
+})
+
+describe('Home 列表即选择器', () => {
+  it('超过一屏时折叠，点「展开更多」再露出剩余条目', async () => {
+    listFaults.mockResolvedValue(
+      Array.from({ length: 7 }, (_, i) => ({
+        id: 100 + i,
+        title: `故障 ${i + 1}`,
+        symptom: `现象 ${i + 1}`,
+        view_count: 7 - i
+      }))
+    )
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    wrapper.vm.partId = 11
+    await wrapper.vm.onPartChange(11)
+    await flushPromises()
+
+    expect(wrapper.findAll('.fault-item')).toHaveLength(5)
+    expect(wrapper.text()).toContain('展开更多（还有 2 条）')
+
+    await wrapper.find('.more button').trigger('click')
+    expect(wrapper.findAll('.fault-item')).toHaveLength(7)
+    expect(wrapper.find('.more').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('换关键词时收起回第一屏（避免停在展开很多条的状态）', async () => {
+    listFaults.mockResolvedValue(
+      Array.from({ length: 7 }, (_, i) => ({ id: 100 + i, title: `故障${i}`, symptom: '', view_count: 0 }))
+    )
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    wrapper.vm.partId = 11
+    await wrapper.vm.onPartChange(11)
+    await flushPromises()
+
+    wrapper.vm.showMore()
+    expect(wrapper.vm.visibleCount).toBe(10)
+    wrapper.vm.keyword = '故障'
+    await flushPromises()
+    expect(wrapper.vm.visibleCount).toBe(5)
+    wrapper.unmount()
+  })
+
+  it('列表底部给出「都不是我的情况」的提交工单入口', async () => {
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    wrapper.vm.partId = 11
+    await wrapper.vm.onPartChange(11)
+    await flushPromises()
+
+    expect(wrapper.find('.list-footer').text()).toContain('都不是我的情况？')
+    expect(wrapper.find('.list-footer').text()).toContain('提交工单')
+    wrapper.unmount()
+  })
+
+  it('该零件没有故障记录时也有提交工单入口，文案区分"没记录"与"搜不到"', async () => {
+    listFaults.mockResolvedValue([])
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    wrapper.vm.partId = 11
+    await wrapper.vm.onPartChange(11)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('这个零件暂时还没有故障记录')
+    expect(wrapper.text()).toContain('提交工单')
+    // 没有关键词时不该出现"清空关键词"
+    expect(wrapper.text()).not.toContain('清空关键词')
+    wrapper.unmount()
+  })
+
+  it('关键词无匹配时可以一键清空关键词回到列表', async () => {
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    wrapper.vm.partId = 11
+    await wrapper.vm.onPartChange(11)
+    wrapper.vm.keyword = 'ZZZZ'
+    await flushPromises()
+    expect(wrapper.text()).toContain('没有找到匹配的解决方案')
+
+    await wrapper.find('.empty-actions button').trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.keyword).toBe('')
+    expect(wrapper.findAll('.fault-item')).toHaveLength(2)
     wrapper.unmount()
   })
 })

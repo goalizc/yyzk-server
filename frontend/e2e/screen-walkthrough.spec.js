@@ -83,13 +83,12 @@ test('@walkthrough 逐屏验证：客户侧三页', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '售后自助故障诊断' })).toBeVisible()
   await shot(page, '01-客户-首页-空态')
 
-  // ---------- 三级级联 ----------
+  // ---------- 两级联动 + 故障现象列表 ----------
   const field = (label) => page.locator('.field', { hasText: label })
   await pickOption(field('1. 选择产品').locator('.el-select'))
   await pickOption(field('2. 选择零件').locator('.el-select'))
-  await pickOption(field('3. 选择故障现象').locator('.el-select'))
-  await shot(page, '02-客户-首页-已选故障')
-  await page.getByRole('button', { name: '查看解决方案' }).click()
+  await shot(page, '02-客户-首页-故障列表')
+  await page.locator('.fault-item').first().click()
   await expect(page).toHaveURL(/\/faults\/\d+/)
 
   // ---------- 方案详情 ----------
