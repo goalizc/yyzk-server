@@ -29,7 +29,10 @@
           </svg>
           <span>{{ otherLocaleLabel }}</span>
         </button>
-        <router-link to="/admin/login" class="admin-link">{{ $t('public.adminEntry') }}</router-link>
+        <!-- 已登录就直接进后台首页，不再让人重登一次；未登录才去登录页。
+             这里只做"少一跳"的优化，真正的兜底在路由守卫（loggedInRedirect），
+             所以即使在别的标签页登录/退出，本页链接也不会把用户带到错的地方 -->
+        <router-link :to="adminEntryPath" class="admin-link">{{ $t('public.adminEntry') }}</router-link>
       </div>
     </header>
 
@@ -46,12 +49,15 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { currentLocale, setLocale } from '../../locales'
+import { hasValidToken } from '../../utils/token'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 
 const homePath = computed(() => (currentLocale() === 'en-US' ? '/en' : '/'))
+// 登录态只在页面加载时判定一次即可：反过来（在别的标签页登录/退出）由路由守卫兜底
+const adminEntryPath = hasValidToken() ? '/admin' : '/admin/login'
 // 按钮上显示"另一种语言"，点它就切过去——比显示当前语言更符合用户的预期
 const otherLocaleLabel = computed(() =>
   currentLocale() === 'en-US' ? t('common.language.zhCN') : t('common.language.enUS')
