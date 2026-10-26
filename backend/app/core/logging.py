@@ -89,6 +89,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         request_id = safe_request_id(request.headers.get("X-Request-ID"))
         token = request_id_ctx.set(request_id)
+        # 也放到 state 上：内层中间件（审计）出错时 ctx 可能已 reset，读 state 更稳
+        request.state.request_id = request_id
         started = time.perf_counter()
         try:
             response = await call_next(request)

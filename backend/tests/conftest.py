@@ -64,6 +64,19 @@ def _prepare_schema() -> Generator[None, None, None]:
     Base.metadata.drop_all(engine)
 
 
+@pytest.fixture(autouse=True)
+def _audit_uses_test_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """审计写入用的是独立会话（new_session），默认指向 settings 里的库。
+
+    测试库是 StaticPool 内存库，而 `new_session()` 会新建连接 → 拿到另一个空库，
+    审计记录会写失败并被吞掉。这里把审计的会话工厂换成测试引擎，
+    否则「审计写入」这类用例会一直假绿。
+    """
+    import app.services.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "new_session", TestingSession)
+
+
 @pytest.fixture
 def db() -> Generator[Session, None, None]:
     session = TestingSession()

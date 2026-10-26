@@ -237,6 +237,37 @@ CREATE TABLE ticket_status_logs (
 
 CREATE INDEX idx_ticket_logs_ticket ON ticket_status_logs(ticket_id, created_at);
 
+-- ------------------------------------------------------------
+-- 11. 操作审计（谁、何时、从哪、做了什么、结果如何）
+--     只记「动作与对象」，不记请求体：密码、客户手机号不进审计表。
+--     与 003_audit_logs.sql 保持一致，改一处必须同步另一处。
+-- ------------------------------------------------------------
+CREATE TABLE audit_logs (
+    id          BIGSERIAL PRIMARY KEY,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    request_id  VARCHAR(64),
+    user_id     INT REFERENCES users(id) ON DELETE SET NULL,
+    username    VARCHAR(50) NOT NULL,          -- 冗余存：账号删除或改名后仍可追溯
+    action      VARCHAR(50) NOT NULL,          -- auth.login / fault.update ...
+    target_type VARCHAR(30),                   -- fault / product / ticket / user ...
+    target_id   VARCHAR(50),                   -- 自增 id 或工单号，统一按字符串存
+    target_name VARCHAR(200),                  -- 冗余展示名，列表里不用再回查
+    method      VARCHAR(10) NOT NULL,
+    path        VARCHAR(200) NOT NULL,
+    status      INT NOT NULL,
+    result      VARCHAR(10) NOT NULL CHECK (result IN ('success', 'failure')),
+    error_code  VARCHAR(40),
+    ip          VARCHAR(50),
+    user_agent  VARCHAR(200),
+    detail      JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX idx_audit_logs_created ON audit_logs(created_at DESC);
+CREATE INDEX idx_audit_logs_user ON audit_logs(user_id, created_at DESC);
+CREATE INDEX idx_audit_logs_action ON audit_logs(action, created_at DESC);
+CREATE INDEX idx_audit_logs_target ON audit_logs(target_type, target_id);
+CREATE INDEX idx_audit_logs_ip ON audit_logs(ip, created_at DESC);
+
 -- ============================================================
 -- 初始化数据
 -- ⚠ 不在此插入管理员账号。bcrypt 哈希必须运行时生成，

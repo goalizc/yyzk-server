@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from app import models  # noqa: F401  确保 7 张表的模型注册到 Base.metadata
 from app.api import (
     admin,
+    admin_audit,
     admin_faults,
     admin_product_lines,
     admin_tickets,
@@ -21,6 +22,7 @@ from app.api import (
     stats,
 )
 from app.config import get_settings
+from app.core.audit import AuditMiddleware
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import RequestContextMiddleware, setup_logging
 
@@ -38,6 +40,11 @@ app = FastAPI(
     openapi_url="/api/openapi.json" if settings.debug else None,
 )
 
+# 中间件顺序 = 后加的在更外层：
+#   RequestContext（最外，生成 request_id 并输出访问日志）
+#   └─ Audit（内，命中动作规则时给写请求留痕）
+# 审计必须在内层，否则 request_id 已被 reset，日志与审计就对不上号了。
+app.add_middleware(AuditMiddleware)
 app.add_middleware(RequestContextMiddleware)
 register_exception_handlers(app)
 
@@ -50,3 +57,4 @@ app.include_router(admin_faults.router, prefix="/api/admin", tags=["后台"])
 app.include_router(admin_tickets.router, prefix="/api/admin", tags=["后台"])
 app.include_router(admin_users.router, prefix="/api/admin", tags=["后台"])
 app.include_router(stats.router, prefix="/api/admin/stats", tags=["统计"])
+app.include_router(admin_audit.router, prefix="/api/admin", tags=["审计"])

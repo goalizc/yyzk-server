@@ -84,16 +84,20 @@ def _validation_detail(exc: RequestValidationError) -> str:
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(BusinessError)
-    async def _business_error(_: Request, exc: BusinessError) -> JSONResponse:
+    async def _business_error(request: Request, exc: BusinessError) -> JSONResponse:
+        # 审计中间件读这个值写入 error_code：失败动作必须能看出「为什么失败」
+        request.state.audit_error_code = exc.code
         return error_response(exc.status_code, exc.code, exc.detail, exc.params)
 
     @app.exception_handler(RequestValidationError)
-    async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        request.state.audit_error_code = "VALIDATION_ERROR"
         return error_response(422, "VALIDATION_ERROR", _validation_detail(exc))
 
     @app.exception_handler(StarletteHTTPException)
-    async def _http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+    async def _http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = _STATUS_CODE_MAP.get(exc.status_code, "VALIDATION_ERROR")
+        request.state.audit_error_code = code
         detail = exc.detail if isinstance(exc.detail, str) and _CHINESE.search(exc.detail) else ""
         return error_response(exc.status_code, code, detail or _DEFAULT_DETAIL.get(code, "请求失败"))
 
@@ -101,4 +105,5 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _unhandled_error(request: Request, exc: Exception) -> JSONResponse:
         # 堆栈只进日志，不进响应体
         logger.exception("未捕获异常 path=%s", request.url.path, exc_info=exc)
+        request.state.audit_error_code = "INTERNAL_ERROR"
         return error_response(500, "INTERNAL_ERROR", _DEFAULT_DETAIL["INTERNAL_ERROR"])

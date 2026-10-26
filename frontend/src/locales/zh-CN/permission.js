@@ -14,5 +14,6 @@ export default {
   userRead: '查看用户',
   userWrite: '维护用户',
   productLineRead: '查看产品线',
+  auditRead: '查看操作日志',
   productLineWrite: '维护产品线'
 }

@@ -37,6 +37,8 @@ USER_READ = "user:read"
 USER_WRITE = "user:write"
 PRODUCT_LINE_READ = "product_line:read"
 PRODUCT_LINE_WRITE = "product_line:write"
+# 审计日志：含他人 IP 与操作轨迹，只给管理岗与只读审计岗
+AUDIT_READ = "audit:read"
 
 ALL_PERMISSIONS = frozenset(
     {
@@ -55,6 +57,7 @@ ALL_PERMISSIONS = frozenset(
         USER_WRITE,
         PRODUCT_LINE_READ,
         PRODUCT_LINE_WRITE,
+        AUDIT_READ,
     }
 )
 
@@ -78,6 +81,7 @@ _ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             STATS_READ,
             USER_READ,
             PRODUCT_LINE_READ,
+            AUDIT_READ,
         }
     ),
 }

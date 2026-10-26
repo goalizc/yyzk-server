@@ -6,7 +6,7 @@ import secrets
 import string
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -209,9 +209,17 @@ def list_users(
 )
 def create_user(
     payload: UserCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require(USER_WRITE)),
+    actor: User = Depends(require(USER_WRITE)),
 ) -> UserListItem:
+    # 建账号是最敏感的动作之一：谁在什么时候给谁开了什么角色的账号，必须留痕
+    request.state.audit = {
+        "username": actor.username,
+        "user_id": actor.id,
+        "target_name": payload.username[:200],
+        "detail": {"role": payload.role},
+    }
     _ensure_lines_exist(db, payload.product_lines)
     user = User(
         username=payload.username,
@@ -235,6 +243,7 @@ def create_user(
         .options(selectinload(User.product_lines).selectinload(UserProductLine.line))
         .where(User.id == user.id)
     )
+    request.state.audit["target_id"] = str(user.id)
     return _to_item(user)
 
 
@@ -242,12 +251,21 @@ def create_user(
 def update_user(
     user_id: int,
     payload: UserUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     actor: User = Depends(require(USER_WRITE)),
 ) -> UserListItem:
     user = db.get(User, user_id)
     if user is None:
         raise BusinessError("NOT_FOUND", "用户不存在", 404)
+
+    request.state.audit = {
+        "username": actor.username,
+        "user_id": actor.id,
+        "target_id": str(user_id),
+        "target_name": user.username,
+    }
+    before_role, before_active = user.role, user.is_active
 
     data = {
         key: value
@@ -281,6 +299,17 @@ def update_user(
         .options(selectinload(User.product_lines).selectinload(UserProductLine.line))
         .where(User.id == user.id)
     )
+    # 角色/启停是「越权」类问题的核心证据，只记真正变化的字段
+    changes: dict[str, object] = {}
+    if user.role != before_role:
+        changes["role_from"] = before_role
+        changes["role_to"] = user.role
+    if user.is_active != before_active:
+        changes["is_active_from"] = before_active
+        changes["is_active_to"] = user.is_active
+    if "username" in data:
+        changes["username_changed"] = True
+    request.state.audit["detail"] = changes
     return _to_item(user, _active_grant_counts(db, [user.id]).get(user.id, 0))
 
 
@@ -291,12 +320,22 @@ def update_user(
 )
 def reset_password(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require(USER_WRITE)),
+    actor: User = Depends(require(USER_WRITE)),
 ) -> ResetPasswordResponse:
     user = db.get(User, user_id)
     if user is None:
         raise BusinessError("NOT_FOUND", "用户不存在", 404)
+
+    # 重置密码会让该账号所有旧 token 失效，属于强制下线手段，必须留痕
+    request.state.audit = {
+        "username": actor.username,
+        "user_id": actor.id,
+        "target_id": str(user_id),
+        "target_name": user.username,
+        "detail": {"reason": "admin_reset"},
+    }
 
     password = _gen_password()
     user.password_hash = hash_password(password)
@@ -346,12 +385,25 @@ def list_grants(
 def create_grant(
     user_id: int,
     payload: GrantCreate,
+    request: Request,
     db: Session = Depends(get_db),
     actor: User = Depends(require(USER_WRITE)),
 ) -> GrantOut:
     target = db.get(User, user_id)
     if target is None:
         raise BusinessError("NOT_FOUND", "用户不存在", 404)
+
+    # 临时授权等于短时提权，是内部越权的高发点
+    request.state.audit = {
+        "username": actor.username,
+        "user_id": actor.id,
+        "target_id": str(user_id),
+        "target_name": target.username,
+        "detail": {
+            "permission": payload.permission,
+            "expires_at": payload.expires_at.isoformat() if payload.expires_at else None,
+        },
+    }
     if not target.is_active:
         raise BusinessError("USER_DISABLED", "账号已停用，不能发放临时授权", 400)
     if payload.permission not in grantable_permissions():
@@ -389,12 +441,21 @@ def create_grant(
 def revoke_grant(
     user_id: int,
     grant_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require(USER_WRITE)),
+    actor: User = Depends(require(USER_WRITE)),
 ) -> SuccessResponse:
     grant = db.get(UserPermissionGrant, grant_id)
     if grant is None or grant.user_id != user_id:
         raise BusinessError("NOT_FOUND", "临时授权不存在", 404)
+    target = db.get(User, user_id)
+    request.state.audit = {
+        "username": actor.username,
+        "user_id": actor.id,
+        "target_id": str(user_id),
+        "target_name": target.username if target else None,
+        "detail": {"grant_id": grant_id, "permission": grant.permission},
+    }
     if grant.revoked_at is None:
         grant.revoked_at = datetime.now(timezone.utc)
         db.commit()
@@ -409,13 +470,22 @@ def revoke_grant(
 def replace_product_lines(
     user_id: int,
     assignments: list[ProductLineAssignment],
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require(USER_WRITE)),
+    actor: User = Depends(require(USER_WRITE)),
 ) -> UserListItem:
     user = db.get(User, user_id)
     if user is None:
         raise BusinessError("NOT_FOUND", "用户不存在", 404)
 
+    # 产品线归属决定这个人能看到哪些数据，改动要留痕
+    request.state.audit = {
+        "username": actor.username,
+        "user_id": actor.id,
+        "target_id": str(user_id),
+        "target_name": user.username,
+        "detail": {"line_count": len(assignments)},
+    }
     _replace_lines(db, user, assignments)
     db.commit()
     user = db.scalar(

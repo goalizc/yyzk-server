@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -41,21 +41,55 @@ router = APIRouter()
         403: {"model": ErrorBody, "description": "账号已停用"},
     },
 )
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
+def login(
+    payload: LoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> LoginResponse:
     user = db.scalar(
         select(User).where(func.lower(User.username) == payload.username.strip().lower())
     )
 
+    # 审计埋点：登录是「人的问题」最关键的证据，失败原因用固定码值（前端再翻译）
+    attempted = payload.username.strip()[:50]
     if user is None:
         # 用户名不存在也走一次 bcrypt，避免用响应时间探测账号是否存在
+        request.state.audit = {
+            "username": attempted,
+            "target_id": None,
+            "target_name": attempted,
+            "detail": {"reason": "user_not_found"},
+        }
         waste_time_like_verify()
         raise BusinessError("AUTH_INVALID_CREDENTIALS", "用户名或密码错误", 401)
 
     if not verify_password(payload.password, user.password_hash):
+        request.state.audit = {
+            "username": user.username,
+            "user_id": user.id,
+            "target_id": str(user.id),
+            "target_name": user.username,
+            "detail": {"reason": "wrong_password"},
+        }
         raise BusinessError("AUTH_INVALID_CREDENTIALS", "用户名或密码错误", 401)
 
     if not user.is_active:
+        request.state.audit = {
+            "username": user.username,
+            "user_id": user.id,
+            "target_id": str(user.id),
+            "target_name": user.username,
+            "detail": {"reason": "disabled"},
+        }
         raise BusinessError("AUTH_USER_DISABLED", "账号已停用", 403)
+
+    request.state.audit = {
+        "username": user.username,
+        "user_id": user.id,
+        "target_id": str(user.id),
+        "target_name": user.username,
+        "detail": {"reason": "success", "role": user.role},
+    }
 
     token, expires_at = create_access_token(user.id, user.username, user.token_version)
     user.last_login_at = datetime.now(timezone.utc)
@@ -92,9 +126,19 @@ def me(
 )
 def change_password(
     payload: PasswordChangeRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PasswordChangeResponse:
+    # 改密是有后果的动作（会把该账号所有旧 token 踢掉），成功失败都要留痕
+    request.state.audit = {
+        "username": user.username,
+        "user_id": user.id,
+        "target_id": str(user.id),
+        "target_name": user.username,
+        "detail": {"reason": "self_change"},
+    }
+
     if not verify_password(payload.old_password, user.password_hash):
         raise BusinessError("PASSWORD_INVALID", "原密码不正确", 400)
 

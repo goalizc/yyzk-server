@@ -9,7 +9,8 @@ export default {
     productLines: '产品线',
     products: '产品管理',
     parts: '零件管理',
-    users: '用户管理'
+    users: '用户管理',
+    auditLogs: '操作日志'
   },
   topbar: {
     changePassword: '修改密码',
@@ -52,6 +53,7 @@ export default {
     faults: '故障知识库',
     faultEdit: '故障编辑',
     stats: '数据看板',
-    users: '用户管理'
+    users: '用户管理',
+    auditLogs: '操作日志'
   }
 }

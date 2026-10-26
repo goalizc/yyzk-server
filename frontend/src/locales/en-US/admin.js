@@ -7,7 +7,8 @@ export default {
     productLines: 'Product Lines',
     products: 'Products',
     parts: 'Parts',
-    users: 'Users'
+    users: 'Users',
+    auditLogs: 'Audit log'
   },
   topbar: {
     changePassword: 'Change password',
@@ -50,6 +51,7 @@ export default {
     faults: 'Fault Library',
     faultEdit: 'Edit fault',
     stats: 'Dashboard',
-    users: 'Users'
+    users: 'Users',
+    auditLogs: 'Audit log'
   }
 }

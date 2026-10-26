@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -150,15 +150,23 @@ def get_fault(
 )
 def create_fault(
     payload: FaultCreate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require(FAULT_WRITE)),
 ) -> FaultAdminDetail:
+    # 新建时路径里没有 id，审计的对象要从业务侧补，否则只能看到「建了一条故障」
+    request.state.audit = {
+        "username": user.username,
+        "user_id": user.id,
+        "target_name": payload.title,
+    }
     _ensure_product_part(db, payload.product_id, payload.part_id)
 
     fault = Fault(**payload.model_dump(), created_by=user.id)
     db.add(fault)
     db.commit()
     db.refresh(fault)
+    request.state.audit["target_id"] = str(fault.id)
     return _to_admin_detail(fault)
 
 
@@ -174,12 +182,21 @@ def create_fault(
 def update_fault(
     fault_id: int,
     payload: FaultUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require(FAULT_WRITE)),
+    user: User = Depends(require(FAULT_WRITE)),
 ) -> FaultAdminDetail:
     fault = db.get(Fault, fault_id)
     if fault is None:
         raise BusinessError("NOT_FOUND", "故障不存在", 404)
+
+    request.state.audit = {
+        "username": user.username,
+        "user_id": user.id,
+        "target_name": fault.title,
+        "target_id": str(fault.id),
+    }
+    before_title = fault.title
 
     data = payload.model_dump(exclude_unset=True)
     for field in _NOT_NULL:
@@ -194,6 +211,11 @@ def update_fault(
     for field, value in data.items():
         setattr(fault, field, value)
     fault.updated_at = datetime.now(timezone.utc)
+    changes = {}
+    if fault.title != before_title:
+        changes["title_from"] = before_title
+        changes["title_to"] = fault.title
+    request.state.audit["detail"] = changes
     db.commit()
     db.refresh(fault)
     return _to_admin_detail(fault)
@@ -207,13 +229,22 @@ def update_fault(
 )
 def delete_fault(
     fault_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require(FAULT_WRITE)),
+    user: User = Depends(require(FAULT_WRITE)),
 ) -> SuccessResponse:
     fault = db.get(Fault, fault_id)
     if fault is None:
         raise BusinessError("NOT_FOUND", "故障不存在", 404)
 
+    # 删完再查就没有这条了，名字必须在删除前记下来
+    request.state.audit = {
+        "username": user.username,
+        "user_id": user.id,
+        "target_id": str(fault.id),
+        "target_name": fault.title,
+        "detail": {"product_id": fault.product_id, "part_id": fault.part_id},
+    }
     db.delete(fault)
     db.commit()
     return SuccessResponse()

@@ -11,7 +11,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -195,9 +195,16 @@ def list_products(
 )
 def create_product(
     payload: ProductCreate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require(PRODUCT_WRITE)),
 ) -> ProductAdmin:
+    request.state.audit = {
+        "username": user.username,
+        "user_id": user.id,
+        "target_name": f"{payload.name} {payload.model}",
+        "detail": {"line_id": payload.line_id},
+    }
     _ensure_model_available(db, payload.model)
     _ensure_line(db, payload.line_id)
     _ensure_line_visible(db, user, payload.line_id, "无权在其它产品线下创建产品")
@@ -212,6 +219,7 @@ def create_product(
             "MODEL_DUPLICATED", f"型号 {payload.model} 已存在", 409, {"model": payload.model}
         ) from exc
     db.refresh(product)
+    request.state.audit["target_id"] = str(product.id)
     return _to_product_admin(product, 0)
 
 
@@ -273,6 +281,7 @@ def update_product(
 )
 def delete_product(
     product_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require(PRODUCT_WRITE)),
 ) -> SuccessResponse:
@@ -291,6 +300,13 @@ def delete_product(
             409,
         )
 
+    # 删除后对象就查不到了，名字必须在删之前记进审计
+    request.state.audit = {
+        "username": user.username,
+        "user_id": user.id,
+        "target_id": str(product.id),
+        "target_name": f"{product.name} {product.model}",
+    }
     db.delete(product)
     db.commit()
     return SuccessResponse()
@@ -340,9 +356,16 @@ def list_parts(
 )
 def create_part(
     payload: PartCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require(PART_WRITE)),
+    user: User = Depends(require(PART_WRITE)),
 ) -> PartAdmin:
+    request.state.audit = {
+        "username": user.username,
+        "user_id": user.id,
+        "target_name": payload.name,
+        "detail": {"product_id": payload.product_id},
+    }
     if db.get(Product, payload.product_id) is None:
         raise BusinessError("NOT_FOUND", "产品不存在", 404)
 
@@ -350,6 +373,7 @@ def create_part(
     db.add(part)
     db.commit()
     db.refresh(part)
+    request.state.audit["target_id"] = str(part.id)
     return _to_part_admin(part, 0)
 
 
@@ -393,12 +417,21 @@ def update_part(
 )
 def delete_part(
     part_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require(PART_WRITE)),
+    user: User = Depends(require(PART_WRITE)),
 ) -> SuccessResponse:
     part = db.get(Part, part_id)
     if part is None:
         raise BusinessError("NOT_FOUND", "零件不存在", 404)
+
+    request.state.audit = {
+        "username": user.username,
+        "user_id": user.id,
+        "target_id": str(part.id),
+        "target_name": part.name,
+        "detail": {"product_id": part.product_id},
+    }
 
     fault_count = _part_fault_count(db, part_id)
     if fault_count:

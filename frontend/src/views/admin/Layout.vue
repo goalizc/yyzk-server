@@ -169,7 +169,9 @@ const NAV_ITEMS = [
   { path: '/admin/product-lines', labelKey: 'admin.nav.productLines', permission: 'product_line:read' },
   { path: '/admin/products', labelKey: 'admin.nav.products', permission: 'product:read' },
   { path: '/admin/parts', labelKey: 'admin.nav.parts', permission: 'part:read' },
-  { path: '/admin/users', labelKey: 'admin.nav.users', permission: 'user:read' }
+  { path: '/admin/users', labelKey: 'admin.nav.users', permission: 'user:read' },
+  // 审计放最后：它属于「事后追查」，不是日常作业入口
+  { path: '/admin/audit-logs', labelKey: 'admin.nav.auditLogs', permission: 'audit:read' }
 ]
 
 const navItems = computed(() =>

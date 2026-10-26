@@ -13,5 +13,6 @@ export default {
   userRead: 'View users',
   userWrite: 'Manage users',
   productLineRead: 'View product lines',
+  auditRead: 'View audit log',
   productLineWrite: 'Manage product lines'
 }

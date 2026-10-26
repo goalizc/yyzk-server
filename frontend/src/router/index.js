@@ -99,6 +99,12 @@ const routes = [
         name: 'admin-users',
         component: () => import('../views/admin/users/UserList.vue'),
         meta: { titleKey: 'admin.page.users', permission: 'user:read' }
+      },
+      {
+        path: 'audit-logs',
+        name: 'admin-audit-logs',
+        component: () => import('../views/admin/audit/AuditLogList.vue'),
+        meta: { titleKey: 'admin.page.auditLogs', permission: 'audit:read' }
       }
     ]
   },

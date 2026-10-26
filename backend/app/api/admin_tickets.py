@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -200,6 +200,7 @@ def get_ticket(
 def update_ticket(
     ticket_id: int,
     payload: TicketUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require(TICKET_WRITE)),
 ) -> TicketDetail:
@@ -207,6 +208,16 @@ def update_ticket(
     if ticket is None:
         raise BusinessError("NOT_FOUND", "工单不存在", 404)
     ensure_ticket_visible(db, user, ticket)
+
+    # 审计：先落基础信息（校验失败时也要能看出动的是哪张单），成功后再补变更明细
+    request.state.audit = {
+        "username": user.username,
+        "user_id": user.id,
+        "target_id": str(ticket.id),
+        "target_name": ticket.ticket_no,
+    }
+    before_status = ticket.status
+    before_assignee = ticket.assignee_id
 
     data = payload.model_dump(exclude_unset=True)
     if "assignee_id" in data:
@@ -216,4 +227,15 @@ def update_ticket(
             ensure_assignable(db, ticket, data["assignee_id"])
 
     apply_update(db, ticket, payload, user)
+
+    changes: dict[str, object] = {}
+    if ticket.status != before_status:
+        changes["from_status"] = before_status
+        changes["to_status"] = ticket.status
+    if ticket.assignee_id != before_assignee:
+        changes["assignee_from"] = before_assignee
+        changes["assignee_to"] = ticket.assignee_id
+    if "remark" in data:
+        changes["remark_updated"] = True
+    request.state.audit["detail"] = changes
     return _detail(db, ticket)

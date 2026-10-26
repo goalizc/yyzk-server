@@ -21,7 +21,8 @@ export const PERMISSION_LABEL_KEYS = {
   'user:read': 'permission.userRead',
   'user:write': 'permission.userWrite',
   'product_line:read': 'permission.productLineRead',
-  'product_line:write': 'permission.productLineWrite'
+  'product_line:write': 'permission.productLineWrite',
+  'audit:read': 'permission.auditRead'
 }
 
 export function permissionLabel(code) {

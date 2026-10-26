@@ -7,6 +7,7 @@ import adminFault from './admin-fault'
 import adminCatalog from './admin-catalog'
 import adminStats from './admin-stats'
 import adminUser from './admin-user'
+import adminAudit from './admin-audit'
 import permission from './permission'
 import error from './error'
 
@@ -22,7 +23,8 @@ export default {
     fault: adminFault,
     ...adminCatalog,
     stats: adminStats,
-    user: adminUser
+    user: adminUser,
+    audit: adminAudit
   },
   permission,
   error

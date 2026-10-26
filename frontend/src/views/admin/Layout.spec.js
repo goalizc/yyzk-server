@@ -58,8 +58,11 @@ beforeEach(() => {
 
 describe('Layout', () => {
   it('侧栏菜单按「作业 → 分析 → 配置 → 管理」排序，基础数据三项连续', async () => {
-    // 全权限账号：顺序断言必须看到 7 项，缺一项就说明被权限过滤干扰了
-    const ALL = ['ticket:read', 'fault:read', 'stats:read', 'product_line:read', 'product:read', 'part:read', 'user:read']
+    // 全权限账号：顺序断言必须看到全部项，缺一项就说明被权限过滤干扰了
+    const ALL = [
+      'ticket:read', 'fault:read', 'stats:read', 'product_line:read',
+      'product:read', 'part:read', 'user:read', 'audit:read'
+    ]
     setPermissions(ALL)
     fetchMe.mockResolvedValue({ permissions: ALL })
 
@@ -74,7 +77,8 @@ describe('Layout', () => {
       '产品线',
       '产品管理',
       '零件管理',
-      '用户管理'
+      '用户管理',
+      '操作日志'
     ])
     // 产品线 → 产品 → 零件 是数据层级（从粗到细），中间不许插别的项
     const start = labels.indexOf('产品线')

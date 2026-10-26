@@ -1,10 +1,19 @@
 # API 接口契约
 
-> **版本**：v1.4 ｜ 修订日期：2026-10-22
+> **版本**：v1.5 ｜ 修订日期：2026-10-26
 > **Base URL**：`/api`
 > 数据格式：JSON，UTF-8
 > 时间格式：ISO 8601 带时区（如 `2026-10-19T10:00:00+08:00`），服务端统一 `TZ=Asia/Shanghai`
 > 鉴权：后台接口需 Header `Authorization: Bearer <token>`
+
+## v1.5 修订说明（操作审计）
+
+| # | 变更 | 原因 |
+|---|---|---|
+| 1 | 新增 `audit_logs` 表与「11. 操作审计」5 个端点 | 账号共享/误操作需要可追溯到人，只有运行日志无法回答「谁改的」 |
+| 2 | 新增权限码 `audit:read`（`super_admin`/`supervisor`/`auditor` 默认具备，`agent` 不具备） | 审计含他人 IP 与操作轨迹，不能对一线客服开放 |
+| 3 | 登录、改密、后台全部写操作改为自动写审计；失败动作同样记录 | 「所有操作有迹可循」，且失败比成功更能暴露问题 |
+| 4 | 审计默认保留 180 天，由每日清理任务回收 | 只增不减的表最终会吃掉磁盘，且审计数据需有保存期限 |
 
 ## v1.4 修订说明（用户权限、产品线与迁移机制）
 
@@ -96,6 +105,8 @@
 ### 0.3 鉴权与授权
 
 > **权限模型**：`users.role` 取值为 `super_admin` / `supervisor` / `agent` / `auditor`，角色对应固定权限码集合；接口按权限码校验（`require("资源:动作")`），不按角色名硬编码。生效权限 = 角色模板权限 ∪ 未过期且未收回的临时授权，并按依赖闭包补齐。数据范围只作用于工单：`ALL` 不受限，`LINES` 仅被授权产品线。
+
+权限码共 16 个（v1.5 新增 `audit:read`）：`ticket:read/write/assign`、`product:read/write`、`part:read/write`、`fault:read/write`、`upload:write`、`stats:read`、`user:read/write`、`product_line:read/write`、`audit:read`。
 
 未带 token、token 非法或过期，一律返回：
 
@@ -1179,7 +1190,7 @@ Error 503:
 
 ---
 
-## 10. 端点总览（44 个）
+## 10. 端点总览（49 个）
 
 | 分组 | 数量 | 明细 |
 |---|---|---|
@@ -1189,7 +1200,116 @@ Error 503:
 | 用户管理与临时授权 | 9 | 用户列表、候选人、新建、修改、重置密码、授权列表、发放、收回、产品线分配 |
 | 产品线 | 4 | 列表、新建、修改、删除 |
 | 统计 | 3 | overview / top-faults / missed |
+| 操作审计 | 5 | 列表、详情、动作清单、按人汇总、导出 CSV |
 | 运维 | 1 | health |
-| **合计** | **44** | 其中需鉴权 **35 个**（内容 17 + 用户 9 + 产品线 4 + 统计 3 + `/auth/me` + 改密） |
+| **合计** | **49** | 其中需鉴权 **40 个**（内容 17 + 用户 9 + 产品线 4 + 统计 3 + 审计 5 + `/auth/me` + 改密） |
 
 > 所有响应保持 `{"detail": string, "code": string}` 结构；`detail` 面向用户可直接展示（中文、无技术细节）。
+
+---
+
+## 11. 操作审计（v1.5 新增）
+
+> 本章端点均要求 `audit:read`（`super_admin` / `supervisor` / `auditor` 默认具备）。
+> 审计记录由中间件自动写入，**不需要前端调用**；本章只描述查询侧。
+
+**记录范围**（`backend/app/services/audit.py` 的规则表，新增写端点要同步补一行）：
+
+| 类别 | 动作 | 说明 |
+|---|---|---|
+| 鉴权 | `auth.login`、`auth.password_change` | 成功与失败都记，失败带 `detail.reason`：`user_not_found` / `wrong_password` / `disabled` |
+| 客户侧 | `ticket.create` | 客户建单，便于把「客户投诉」与「客服处理」串成一条线 |
+| 内容管理 | `fault.*`、`product.*`、`part.*`、`product_line.*`、`upload.*` | create / update / delete |
+| 工单 | `ticket.update` | `detail` 记 `from_status`/`to_status`/`assignee_from`/`assignee_to` |
+| 账号与授权 | `user.create/update/reset_password/grant/revoke_grant/set_product_lines` | 提权与强制下线类动作，必记 |
+
+**不记录**：GET 类读请求（客户侧查询已有 `query_logs`，后台读操作量大且无追责价值）、请求体（密码与客户手机号因此不会进入审计表）。
+
+### GET /api/admin/audit-logs
+
+查询参数（全部可选，可组合）：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| `user_id` | int | 按操作人 ID |
+| `username` | string | 按账号模糊匹配 |
+| `action` | string | 精确匹配，取值见 `/audit-logs/actions` |
+| `target_type` | string | `fault` / `part` / `product` / `product_line` / `ticket` / `user` / `upload` |
+| `target_id` | string | 对象 ID（工单为数字 id，展示名另存 `target_name`） |
+| `result` | string | `success` / `failure` |
+| `ip` | string | 按 IP 模糊匹配（排查账号外传） |
+| `start_date` / `end_date` | date | `YYYY-MM-DD`，`end_date` 含当日 |
+| `keyword` | string | 匹配对象名 / 请求路径 / 账号 |
+| `page` / `page_size` | int | 默认 1 / 20，上限 100 |
+
+```json
+{
+  "total": 128,
+  "page": 1,
+  "page_size": 20,
+  "items": [
+    {
+      "id": 9031,
+      "created_at": "2026-10-26T09:12:31+08:00",
+      "username": "kefu01",
+      "action": "ticket.update",
+      "target_type": "ticket",
+      "target_id": "18",
+      "target_name": "TK202610260003",
+      "method": "PUT",
+      "path": "/api/admin/tickets/18",
+      "status": 200,
+      "result": "success",
+      "ip": "203.0.113.9",
+      "request_id": "9f2c1a7b3d4e"
+    }
+  ]
+}
+```
+
+### GET /api/admin/audit-logs/{id}
+
+在列表字段基础上增加 `user_id`、`error_code`、`user_agent`、`detail`（JSONB 原样返回，前端按字段映射翻译）。
+
+`detail` 示例（工单状态流转）：
+
+```json
+{ "from_status": "open", "to_status": "processing", "assignee_to": 1 }
+```
+
+Error 404：`NOT_FOUND`（日志不存在）。
+
+### GET /api/admin/audit-logs/actions
+
+返回动作码数组，供前端筛选下拉使用（与后端规则表同源，不会漂移）：
+
+```json
+["auth.login", "fault.create", "fault.update", "ticket.update", "user.reset_password"]
+```
+
+### GET /api/admin/audit-logs/summary
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `days` | 7 | 统计最近 N 天，1–90 |
+| `limit` | 20 | 返回前 N 个账号 |
+
+```json
+{
+  "period_days": 7,
+  "total": 86,
+  "failures": 9,
+  "actors": [
+    { "user_id": 2, "username": "kefu01", "total": 41, "failures": 2, "distinct_ips": 3, "last_at": "2026-10-26T09:12:31+08:00" }
+  ]
+}
+```
+
+> `distinct_ips > 1` 是账号被多人使用的强信号（同一人正常只在办公网或 VPN 出口）。
+
+### GET /api/admin/audit-logs/export
+
+同列表筛选参数，导出 **CSV**（UTF-8 带 BOM，Excel 直接打开不乱码），单次上限 5000 行。
+响应头 `Content-Disposition: attachment; filename="audit-logs-YYYYMMDD-HHMM.csv"`。
+
+**保留期**：默认 180 天，由 `deploy/scripts/cleanup-audit.sh --apply` 每日 03:30 回收（`AUDIT_RETENTION_DAYS` 可调，下限 30 天）。
