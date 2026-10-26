@@ -58,7 +58,7 @@ def login(
             "username": attempted,
             "target_id": None,
             "target_name": attempted,
-            "detail": {"reason": "user_not_found"},
+            "detail": {"reason": "user_not_found", "identity_verified": False},
         }
         waste_time_like_verify()
         raise BusinessError("AUTH_INVALID_CREDENTIALS", "用户名或密码错误", 401)
@@ -69,7 +69,8 @@ def login(
             "user_id": user.id,
             "target_id": str(user.id),
             "target_name": user.username,
-            "detail": {"reason": "wrong_password"},
+            # 用户名是从输入里拿的，还没被密码证明——不能在审计里当成「已确认身份」
+            "detail": {"reason": "wrong_password", "identity_verified": False},
         }
         raise BusinessError("AUTH_INVALID_CREDENTIALS", "用户名或密码错误", 401)
 
@@ -79,7 +80,8 @@ def login(
             "user_id": user.id,
             "target_id": str(user.id),
             "target_name": user.username,
-            "detail": {"reason": "disabled"},
+            # 密码已通过，身份是确认的，只是账号被停用
+            "detail": {"reason": "disabled", "identity_verified": True},
         }
         raise BusinessError("AUTH_USER_DISABLED", "账号已停用", 403)
 
@@ -88,7 +90,7 @@ def login(
         "user_id": user.id,
         "target_id": str(user.id),
         "target_name": user.username,
-        "detail": {"reason": "success", "role": user.role},
+        "detail": {"reason": "success", "role": user.role, "identity_verified": True},
     }
 
     token, expires_at = create_access_token(user.id, user.username, user.token_version)

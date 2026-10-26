@@ -214,7 +214,7 @@ describe('AuditLogList', () => {
     // 来源：grep 后端 request.state.audit / detail[...] 里出现的字段名。
     // 漏一个的症状是详情里直接显示 title_from 这种原始字段名，中英文界面都一样。
     const BACKEND_DETAIL_KEYS = [
-      'reason', 'title_from', 'title_to',
+      'reason', 'identity_verified', 'error_class', 'title_from', 'title_to',
       'from_status', 'to_status', 'assignee_from', 'assignee_to',
       'remark_updated', 'role', 'role_from', 'role_to',
       'is_active_from', 'is_active_to', 'username_changed',

@@ -267,12 +267,15 @@ const ACTION_KEYS = {
   'user.grant': 'admin.audit.action.userGrant',
   'user.revoke_grant': 'admin.audit.action.userRevokeGrant',
   'user.set_product_lines': 'admin.audit.action.userSetProductLines',
+  'audit.export': 'admin.audit.action.auditExport',
   'upload.create': 'admin.audit.action.uploadCreate',
   'upload.delete': 'admin.audit.action.uploadDelete'
 }
 
 const FIELD_KEYS = {
   reason: 'admin.audit.field.reason',
+  identity_verified: 'admin.audit.field.identityVerified',
+  error_class: 'admin.audit.field.errorClass',
   title_from: 'admin.audit.field.titleFrom',
   title_to: 'admin.audit.field.titleTo',
   from_status: 'admin.audit.field.fromStatus',
@@ -335,6 +338,9 @@ function fieldLabel(key) {
 
 function fieldValue(key, value) {
   if (value === null || value === undefined || value === '') return '-'
+  if (key === 'identity_verified') {
+    return value ? t('admin.audit.verified.yes') : t('admin.audit.verified.no')
+  }
   if (key === 'reason') {
     const mapped = REASON_KEYS[value]
     return mapped ? t(mapped) : String(value)
@@ -351,7 +357,7 @@ function fieldValue(key, value) {
 // JSONB 存储会重排键（PG 按长度+字节序），直接遍历会得到「新标题 / 原标题」这种倒序，
 // 所以按业务阅读顺序固定排列；未登记的键排在最后，原样展示便于排查。
 const FIELD_ORDER = [
-  'reason', 'title_from', 'title_to',
+  'reason', 'identity_verified', 'error_class', 'title_from', 'title_to',
   'from_status', 'to_status', 'assignee_from', 'assignee_to', 'remark_updated',
   'role', 'role_from', 'role_to', 'is_active_from', 'is_active_to', 'username_changed',
   'permission', 'expires_at', 'grant_id',

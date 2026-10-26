@@ -35,6 +35,15 @@ from app.utils.search import LIKE_ESCAPE, like_pattern
 
 router = APIRouter()
 
+# Excel 公式注入防护：以这些字符开头的单元格会被 Excel/LibreOffice 当公式执行。
+# csv.writer 只做引号包裹，不解决这个问题；审计导出会被 HR/法务直接双击打开，必须挡。
+_CSV_UNSAFE_PREFIX = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_cell(value: object) -> str:
+    text = "" if value is None else str(value)
+    return "'" + text if text[:1] in _CSV_UNSAFE_PREFIX else text
+
 
 def _apply_filters(
     db: Session,
@@ -211,11 +220,12 @@ def export_audit_logs(
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(
-        ["时间", "账号", "动作", "对象类型", "对象ID", "对象名称", "结果", "状态码", "IP", "请求ID", "路径"]
+        [_csv_cell(cell) for cell in
+         ["时间", "账号", "动作", "对象类型", "对象ID", "对象名称", "结果", "状态码", "IP", "请求ID", "路径"]]
     )
     for row in rows:
         writer.writerow(
-            [
+            [_csv_cell(cell) for cell in [
                 to_app_tz(row.created_at).isoformat(),
                 row.username,
                 row.action,
@@ -227,7 +237,7 @@ def export_audit_logs(
                 row.ip or "",
                 row.request_id or "",
                 row.path,
-            ]
+            ]]
         )
     # BOM：Excel 直接双击打开时中文不乱码
     body = "\ufeff" + buffer.getvalue()

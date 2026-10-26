@@ -5,6 +5,8 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.database import get_db
+from app.main import app
 from app.models import AuditLog, Fault, Part, Product, Ticket
 from tests.conftest import auth_headers, login, make_line, make_user
 
@@ -331,3 +333,105 @@ def test_fault_delete_keeps_name_of_deleted_row(client: TestClient, db) -> None:
     # 对象已删，target_name 只能靠删除前记下来的那份
     assert row.target_name == "待删除的故障"
     assert row.target_id == str(fault.id)
+
+
+def test_audit_build_failure_does_not_break_business(client: TestClient, db, monkeypatch) -> None:
+    """审计构建抛异常时，业务必须照常成功——审计只是旁观者（审查报告 P1-2）。"""
+    headers = admin_headers(client, db)
+    product = make_product(db)
+    part = make_part(db, product)
+
+    import app.core.audit as audit_core
+
+    monkeypatch.setattr(
+        audit_core, "_build", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("build boom"))
+    )
+
+    response = client.post(
+        "/api/admin/faults",
+        json={"product_id": product.id, "part_id": part.id, "title": "审计挂了业务也要成"},
+        headers=headers,
+    )
+
+    assert response.status_code in (200, 201)
+    db.expire_all()
+    assert db.scalar(select(Fault).where(Fault.title == "审计挂了业务也要成")) is not None
+
+
+def test_unhandled_exception_records_error_class(client: TestClient, db, monkeypatch) -> None:
+    """未捕获异常的审计要能看出异常类型（handler 在中间件外层，error_code 拿不到）。"""
+    headers = admin_headers(client, db)
+    product = make_product(db)
+    part = make_part(db, product)
+
+    import app.api.admin_faults as faults_api
+
+    monkeypatch.setattr(
+        faults_api, "_ensure_product_part", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    app.dependency_overrides[get_db] = lambda: db
+    raw = TestClient(app, raise_server_exceptions=False)
+    response = raw.post(
+        "/api/admin/faults",
+        json={"product_id": product.id, "part_id": part.id, "title": "触发 500"},
+        headers=headers,
+    )
+
+    assert response.status_code == 500
+    row = audit_rows(db)[-1]
+    assert row.status == 500
+    assert row.detail.get("error_class") == "RuntimeError"
+
+
+def test_export_escapes_spreadsheet_formulas(client: TestClient, db) -> None:
+    """导出 CSV 必须挡掉 Excel 公式注入（审查报告 P1-1）。"""
+    headers = admin_headers(client, db)
+    db.add(
+        AuditLog(
+            username="admin",
+            action="fault.create",
+            target_type="fault",
+            target_id="1",
+            target_name='=HYPERLINK("http://evil.example","click")',
+            method="POST",
+            path="/api/admin/faults",
+            status=200,
+            result="success",
+            detail={},
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/admin/audit-logs/export", headers=headers)
+    text = response.content.decode("utf-8")
+    line = next(row for row in text.splitlines() if "HYPERLINK" in row)
+
+    # 前置单引号后 Excel 会当纯文本
+    assert "'=HYPERLINK" in line
+
+
+def test_export_itself_is_audited(client: TestClient, db) -> None:
+    """导出审计记录本身要留痕（meta-audit，审查报告 P1-4）。"""
+    headers = admin_headers(client, db)
+
+    client.get("/api/admin/audit-logs/export", headers=headers)
+
+    row = audit_rows(db)[-1]
+    assert row.action == "audit.export"
+    assert row.result == "success"
+
+
+def test_login_failure_marks_identity_unverified(client: TestClient, db) -> None:
+    """登录失败时用户名来自输入、未经验证，必须标记出来（审查报告 P1-6）。"""
+    make_user(db, username="kefu01", role="agent")
+
+    client.post("/api/auth/login", json={"username": "kefu01", "password": "wrong"})
+
+    row = audit_rows(db)[-1]
+    assert row.detail["reason"] == "wrong_password"
+    assert row.detail["identity_verified"] is False
+
+    client.post("/api/auth/login", json={"username": "kefu01", "password": "Admin@12345"})
+    ok_row = audit_rows(db)[-1]
+    assert ok_row.detail["identity_verified"] is True

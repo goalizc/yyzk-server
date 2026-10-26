@@ -268,6 +268,24 @@ CREATE INDEX idx_audit_logs_action ON audit_logs(action, created_at DESC);
 CREATE INDEX idx_audit_logs_target ON audit_logs(target_type, target_id);
 CREATE INDEX idx_audit_logs_ip ON audit_logs(ip, created_at DESC);
 
+-- 只追加：UPDATE / DELETE / TRUNCATE 直接抛错（与 004_audit_immutable.sql 一致）
+-- 说明见迁移文件头：应用账号是超级用户，REVOKE 无效，只能靠触发器兜
+CREATE OR REPLACE FUNCTION audit_logs_immutable() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION USING
+        MESSAGE = '审计记录为只追加（append-only），不允许修改或删除',
+        HINT = '如确需清理过期数据，请用 deploy/scripts/cleanup-audit.sh';
+END $$;
+
+CREATE TRIGGER trg_audit_logs_immutable
+    BEFORE UPDATE OR DELETE ON audit_logs
+    FOR EACH ROW EXECUTE FUNCTION audit_logs_immutable();
+
+CREATE TRIGGER trg_audit_logs_no_truncate
+    BEFORE TRUNCATE ON audit_logs
+    FOR EACH STATEMENT EXECUTE FUNCTION audit_logs_immutable();
+
 -- ============================================================
 -- 初始化数据
 -- ⚠ 不在此插入管理员账号。bcrypt 哈希必须运行时生成，

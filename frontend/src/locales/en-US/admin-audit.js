@@ -67,6 +67,7 @@ export default {
     userGrant: 'Granted a temporary permission',
     userRevokeGrant: 'Revoked a temporary permission',
     userSetProductLines: 'Changed data scope',
+    auditExport: 'Exported the audit log',
     uploadCreate: 'Uploaded a file',
     uploadDelete: 'Deleted an uploaded file',
     unknown: 'Other action'
@@ -93,6 +94,8 @@ export default {
 
   field: {
     reason: 'Reason',
+    identityVerified: 'Account name verified',
+    errorClass: 'Error type',
     titleFrom: 'Previous title',
     titleTo: 'New title',
     fromStatus: 'From status',
@@ -114,6 +117,11 @@ export default {
     lineCount: 'Product line count',
     query: 'Query parameters',
     errorCode: 'Error code'
+  },
+
+  verified: {
+    yes: 'Verified',
+    no: 'From input (unverified)'
   },
 
   reason: {

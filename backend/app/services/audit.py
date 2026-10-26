@@ -58,6 +58,8 @@ _RULES: tuple[tuple[str, str, str, str | None, str | None], ...] = (
     (r"POST", r"^/api/admin/users/(?P<id>\d+)/grants$", "user.grant", "user", "id"),
     (r"DELETE", r"^/api/admin/users/(?P<id>\d+)/grants/(?P<grant>\d+)$", "user.revoke_grant", "user", "id"),
     (r"PUT", r"^/api/admin/users/(?P<id>\d+)/product-lines$", "user.set_product_lines", "user", "id"),
+    # 审计导出本身也要留痕（meta-audit）：CSV 含所有人 IP，必须知道谁导过
+    (r"GET", r"^/api/admin/audit-logs/export$", "audit.export", "audit", None),
     (r"POST", r"^/api/admin/upload$", "upload.create", "upload", None),
     (r"DELETE", r"^/api/admin/upload$", "upload.delete", "upload", None),
 )

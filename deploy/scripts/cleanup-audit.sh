@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# 清理过期审计日志（默认保留 180 天）
+# 清理过期审计日志（默认保留 190 天：等保要求「不少于六个月」，自然月约 183 天）
 #
 # 为什么需要定期清理：审计表是只增不减的。后台每天几百次写操作，
 # 一年就是十万行量级；留着能查是好事，但不能无限增长把磁盘吃满，
@@ -17,7 +17,8 @@
 #   1) 不传 --apply 一律不删；
 #   2) --days 小于 30 直接拒绝：审计留不满一个月没有追溯价值，
 #      这个下限同时挡住「手滑多打一个 0」把近几天记录删光的情况；
-#   3) 删除前先打印区间与行数，删完再报一次实际删除数。
+#   3) 删除前先打印区间与行数，删完再报一次实际删除数；
+#   4) 审计表是 append-only（004 迁移加了触发器），脚本在本事务内临时禁用触发器再删。
 # ============================================================
 set -euo pipefail
 
@@ -25,7 +26,7 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$DEPLOY_DIR"
 
 APPLY=0
-DAYS="${AUDIT_RETENTION_DAYS:-180}"
+DAYS="${AUDIT_RETENTION_DAYS:-190}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -72,7 +73,17 @@ if (( APPLY == 0 )); then
   exit 0
 fi
 
-"${PSQL[@]}" -c "DELETE FROM audit_logs WHERE created_at < now() - interval '$DAYS days';" >/dev/null
+# 审计表被 004 迁移做成了只追加（UPDATE/DELETE/TRUNCATE 都会抛错），
+# 清理是唯一被允许的删除路径，必须显式临时禁用触发器。
+# 三条语句放在同一个事务里：DELETE 失败时事务回滚，触发器自动恢复启用，
+# 不会出现「触发器被关着」的中间态。
+"${PSQL[@]}" -c "
+BEGIN;
+ALTER TABLE audit_logs DISABLE TRIGGER trg_audit_logs_immutable;
+DELETE FROM audit_logs WHERE created_at < now() - interval '$DAYS days';
+ALTER TABLE audit_logs ENABLE TRIGGER trg_audit_logs_immutable;
+COMMIT;
+" >/dev/null
 echo "[audit-cleanup] 已删除 $COUNT 条"
 
 REMAIN=$("${PSQL[@]}" -c "SELECT count(*) FROM audit_logs;")

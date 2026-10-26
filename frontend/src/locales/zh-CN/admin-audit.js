@@ -67,6 +67,7 @@ export default {
     userGrant: '发放临时授权',
     userRevokeGrant: '收回临时授权',
     userSetProductLines: '调整数据范围',
+    auditExport: '导出审计日志',
     uploadCreate: '上传文件',
     uploadDelete: '删除上传文件',
     unknown: '其他操作'
@@ -93,6 +94,8 @@ export default {
 
   field: {
     reason: '原因',
+    identityVerified: '账号名已验证',
+    errorClass: '异常类型',
     titleFrom: '原标题',
     titleTo: '新标题',
     fromStatus: '原状态',
@@ -114,6 +117,11 @@ export default {
     lineCount: '产品线数量',
     query: '查询参数',
     errorCode: '错误码'
+  },
+
+  verified: {
+    yes: '已验证',
+    no: '未验证（来自输入）'
   },
 
   reason: {

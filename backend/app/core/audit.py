@@ -33,7 +33,12 @@ def _identity(request: Request) -> tuple[int | None, str]:
         try:
             payload = decode_access_token(header[7:])
             sub = payload.get("sub")
-            return (int(sub) if sub else None), str(payload.get("username") or "-")
+            try:
+                user_id = int(sub) if sub else None
+            except (TypeError, ValueError):
+                # sub 不是数字只可能来自被篡改的 token；记不下 id 也要留下这条动作
+                user_id = None
+            return user_id, str(payload.get("username") or "-")
         except BusinessError:
             # token 过期/伪造：照样记一条失败动作，但不知道是谁
             return None, "-"
@@ -74,6 +79,13 @@ def _build(request: Request, match: Match, status: int) -> AuditEvent:
 
 
 class AuditMiddleware(BaseHTTPMiddleware):
+    """审计只做旁观者：任何构建/写入异常都不得改变业务响应。
+
+    这里踩过一次坑——`_build()` 原先写在 try 之外，它一旦抛异常，业务已经提交
+    （DB 里数据在），客户端却收到 500，而且审计里什么都没留下。用户会以为保存失败
+    再重试，于是产生重复数据。所以整段都包起来，失败只留 warning。
+    """
+
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         match = resolve(request.method, request.url.path)
         if match is None:
@@ -81,10 +93,25 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
         try:
             response = await call_next(request)
-        except Exception:
-            # 未捕获异常由外层 ServerErrorMiddleware 转 500；这里先补一条失败记录
-            await run_in_threadpool(record, _build(request, match, 500))
+        except Exception as exc:
+            # 未捕获异常由外层 ServerErrorMiddleware 转 500；异常处理器在我们外层，
+            # 拿不到 error_code，只能把异常类型记下来供排查
+            await self._record_safely(request, match, 500, exc=exc)
             raise
 
-        await run_in_threadpool(record, _build(request, match, response.status_code))
+        await self._record_safely(request, match, response.status_code)
         return response
+
+    @staticmethod
+    async def _record_safely(
+        request: Request, match: Match, status: int, exc: Exception | None = None
+    ) -> None:
+        try:
+            event = _build(request, match, status)
+            if exc is not None:
+                event.detail.setdefault("error_class", type(exc).__name__)
+            await run_in_threadpool(record, event)
+        except Exception:  # noqa: BLE001 审计失败不能影响业务
+            logger.warning(
+                "审计事件构建失败 action=%s path=%s", match.action, request.url.path, exc_info=True
+            )
