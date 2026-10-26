@@ -61,8 +61,9 @@ export default {
     resolved: '{count} 人反馈已解决'
   },
   language: {
-    label: '语言',
     zhCN: '简体中文',
-    enUS: 'English'
+    enUS: 'English',
+    // 入口按钮的悬停/读屏说明：按钮文字显示的是"目标语言"，光看文字不知道点了会发生什么
+    switchTo: '切换到 {name}'
   }
 }

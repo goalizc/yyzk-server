@@ -63,8 +63,8 @@ export default {
     resolved: '{count} resolved'
   },
   language: {
-    label: 'Language',
     zhCN: '简体中文',
-    enUS: 'English'
+    enUS: 'English',
+    switchTo: 'Switch to {name}'
   }
 }

@@ -3,9 +3,31 @@
     <header class="header">
       <router-link :to="homePath" class="brand">{{ $t('public.brand') }}</router-link>
       <div class="header-right">
-        <!-- 切换语言 = 换一个 URL 前缀，页面位置和查询参数都保留 -->
-        <button type="button" class="lang-switch" :aria-label="$t('common.language.label')" @click="toggleLocale">
-          {{ otherLocaleLabel }}
+        <!-- 切换语言 = 换一个 URL 前缀，页面位置和查询参数都保留。
+             按钮上写**目标语言**，后面跟地球图标兜底：
+             只写"English"时，语言名完全没见过的人认不出这是语言入口 -->
+        <button
+          type="button"
+          class="lang-switch"
+          :aria-label="$t('common.language.switchTo', { name: otherLocaleLabel })"
+          @click="toggleLocale"
+        >
+          <svg
+            class="globe"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M3 12h18" />
+            <path d="M12 3.2c2.4 2.4 3.8 5.5 3.8 8.8s-1.4 6.4-3.8 8.8c-2.4-2.4-3.8-5.5-3.8-8.8S9.6 5.6 12 3.2z" />
+          </svg>
+          <span>{{ otherLocaleLabel }}</span>
         </button>
         <router-link to="/admin/login" class="admin-link">{{ $t('public.adminEntry') }}</router-link>
       </div>
@@ -92,6 +114,9 @@ function toggleLocale() {
 /* 用原生 button 而不是 el-button：这里只需要一个轻量文字入口，
    并且要能在窄屏上撑到 44px 命中区 */
 .lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: none;
   background: none;
   padding: 0;
@@ -99,6 +124,12 @@ function toggleLocale() {
   font-size: 13px;
   color: #909399;
   cursor: pointer;
+}
+
+.globe {
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 
 .lang-switch:hover {

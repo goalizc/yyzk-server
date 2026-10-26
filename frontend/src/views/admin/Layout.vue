@@ -29,14 +29,8 @@
               >
                 {{ item.label }}
               </el-dropdown-item>
-              <!-- 窄屏顶栏放不下独立的语言下拉，挂在这里：
-                   否则手机上没有任何切换语言的入口 -->
-              <el-dropdown-item divided command="lang:zh-CN">
-                {{ $t('common.language.zhCN') }}
-              </el-dropdown-item>
-              <el-dropdown-item command="lang:en-US">
-                {{ $t('common.language.enUS') }}
-              </el-dropdown-item>
+              <!-- 窄屏不再把语言项塞进导航下拉：那里是"页面导航"，混进语言会让人
+                   以为语言是某个页面的子项。语言入口统一由顶栏 LangSwitch 承担 -->
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -44,18 +38,9 @@
         <div class="actions">
           <span v-if="!isNarrow" class="user">{{ displayName }}</span>
           <el-tag v-if="!isNarrow && roleLabel" size="small" type="info">{{ roleLabel }}</el-tag>
-          <!-- 后台没有 URL 前缀，语言只能从这里切；选择结果写入 localStorage -->
-          <el-dropdown v-if="!isNarrow" trigger="click" @command="onLocaleChange">
-            <el-button link type="primary">
-              {{ localeLabel }}<span class="caret">▾</span>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="zh-CN">{{ $t('common.language.zhCN') }}</el-dropdown-item>
-                <el-dropdown-item command="en-US">{{ $t('common.language.enUS') }}</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <!-- 后台没有 URL 前缀，语言只能从这里切；选择结果写入 localStorage。
+               按钮显示"目标语言 + 地球图标"，否则中文界面下英文用户找不到入口 -->
+          <LangSwitch />
           <el-button link type="primary" @click="passwordVisible = true">{{ $t('admin.topbar.changePassword') }}</el-button>
           <el-button link type="danger" @click="onLogout">{{ $t('admin.topbar.logout') }}</el-button>
         </div>
@@ -95,9 +80,8 @@ import { changePassword, fetchMe } from '../../api/auth'
 import { clearPermissions, hasPermission, setPermissions } from '../../utils/permissions'
 import { errorCode } from '../../utils/admin'
 import { errorMessage } from '../../utils/error'
-import { applyPageTitle } from '../../utils/pageTitle'
-import { currentLocale, normalizeLocale, setLocale } from '../../locales'
 import { useFormLabelWidth } from '../../utils/formLabel'
+import LangSwitch from '../../components/LangSwitch.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -124,16 +108,6 @@ const displayName = computed(
 )
 const roleLabel = computed(() => (user.value.role ? t(`common.role.${user.value.role}`) : ''))
 
-// 后台没有 URL 前缀，语言完全靠 localStorage 记住，所以需要显式切换入口
-const localeLabel = computed(() =>
-  currentLocale() === 'en-US' ? t('common.language.enUS') : t('common.language.zhCN')
-)
-
-function onLocaleChange(value) {
-  setLocale(normalizeLocale(value) || 'zh-CN', { persist: true })
-  // 切语言不换路由，afterEach 不会触发，标签页标题要手动补一次
-  applyPageTitle(route.meta)
-}
 
 const pageTitle = computed(() => {
   // titleKey 是 i18n 化的页面名；title 是历史中文原值，作为未加 key 时的回退
@@ -181,13 +155,8 @@ const navItems = computed(() =>
   }))
 )
 
-function onNav(command) {
-  // 窄屏下拉同时承载导航与语言切换，用前缀区分，避免给语言单独做一个入口
-  if (typeof command === 'string' && command.startsWith('lang:')) {
-    onLocaleChange(command.slice('lang:'.length))
-    return
-  }
-  router.push(command)
+function onNav(path) {
+  router.push(path)
 }
 
 let narrowMql = null
