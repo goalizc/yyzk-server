@@ -5,8 +5,9 @@
 // 为什么只写这一条：单测已覆盖各页分支，E2E 的价值在"跨页面 + 真实后端 + 真实浏览器"，
 // 加 CRUD 会让维护成本翻倍而边际收益很低（技能 §14：E2E 少而精，只覆盖主链路）。
 //
-// 数据前提：docker 全栈已启动且已 init，库里存在产品「智能扫地机器人 X1」、
-// 零件「主刷模组」（动力系统）、故障「主刷不转动」。
+// 数据前提：docker 全栈已启动且已 init，库里存在产品「植保无人机 16L」、
+// 零件「隔膜泵」（喷洒系统）、故障「喷洒不出水，喷头无雾化」。
+// 这批数据由 scripts/dev/seed_demo.py 写入（demo_data.py 是内容源）。
 import { test, expect } from '@playwright/test'
 
 const ADMIN_USER = process.env.E2E_ADMIN_USER || 'admin'
@@ -15,7 +16,7 @@ const ADMIN_PASS = process.env.E2E_ADMIN_PASS || 'yyzk123456'
 // 每次跑都生成唯一联系方式，避免与历史工单混淆
 const stamp = Date.now().toString().slice(-8)
 const CONTACT = `138${stamp}`
-const DESCRIPTION = `E2E 自动化验证工单 ${stamp}：开机后主刷不转，已按方案排查未解决。`
+const DESCRIPTION = `E2E 自动化验证工单 ${stamp}：喷头不出水，已按方案清理滤网未解决。`
 
 /** Element Plus 的 el-select 不是原生 select：点开下拉再点选项 */
 async function pickSelect(page, fieldLabel, optionText) {
@@ -32,9 +33,9 @@ test('@smoke 客户排查到后台处理的主链路', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '售后自助故障诊断' })).toBeVisible()
 
-  await pickSelect(page, '1. 选择产品', '智能扫地机器人')
-  await pickSelect(page, '2. 选择零件', '主刷模组')
-  await pickSelect(page, '3. 选择故障现象', '主刷不转动')
+  await pickSelect(page, '1. 选择产品', '植保无人机 16L')
+  await pickSelect(page, '2. 选择零件', '隔膜泵')
+  await pickSelect(page, '3. 选择故障现象', '喷洒不出水')
 
   // 选中故障后出现"查看解决方案"
   await page.getByRole('button', { name: '查看解决方案' }).click()
@@ -106,7 +107,7 @@ test('@smoke 客户排查到后台处理的主链路', async ({ page }) => {
   await saveBtn.click()
   await expect(panel).toContainText('变更状态必须填写备注')
 
-  await remark.fill('E2E：已远程指导更换主刷电机')
+  await remark.fill('E2E：已远程指导更换隔膜泵')
   await saveBtn.click()
   await expect(page.locator('.el-message--success')).toBeVisible()
   // 保存后作为当前用户认领，提示文案随之变化

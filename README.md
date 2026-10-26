@@ -41,6 +41,8 @@
 │   ├── check_duplicate_tests.py  # 测试函数重名检查
 │   ├── load_test.py           # 性能压测（TC-70/71）
 │   ├── seed_pressure.py       # 压测数据准备
+│   ├── seed_demo.py           # 演示知识库写入（无人机机型/零件/故障 + 看板活动数据）
+│   ├── demo_data.py           # 演示知识库内容（改机型、补故障只改这里）
 │   └── pg_server.mjs          # 无原生 PG 时的 WASM 替代
 ├── requirements.txt
 ├── requirements-dev.txt
@@ -102,6 +104,8 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 | 校验文档链接 | `python scripts/dev/check_links.py` |
 | 检查测试重名 | `python scripts/dev/check_duplicate_tests.py` |
 | 后端测试 | `.venv/bin/pytest -q` |
+| 写入演示数据（幂等） | `.venv/bin/python scripts/dev/seed_demo.py --via-sql --activity` |
+| 重置演示数据（换机型） | `.venv/bin/python scripts/dev/seed_demo.py --reset --via-sql --activity` |
 | 前端构建 | `cd frontend && npm run build` |
 | 清理上传残留 | `cd deploy && ./scripts/cleanup-uploads.sh`（预演，加 `--apply` 执行） |
 

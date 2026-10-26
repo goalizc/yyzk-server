@@ -12,7 +12,7 @@ export default {
     selectProduct: 'Select a product',
     selectPart: 'Select a product first',
     selectFault: 'Select a part first',
-    keywordPlaceholder: 'Optional: filter by keyword, e.g. leaking, not charging',
+    keywordPlaceholder: 'Optional: filter by keyword, e.g. no spray, video dropout',
     productOption: '{name} ({model})',
     partOption: '{group} / {name}',
     viewSolution: 'View solution',

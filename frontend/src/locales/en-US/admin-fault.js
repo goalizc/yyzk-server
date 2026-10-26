@@ -43,7 +43,7 @@ export default {
     selectProductFirst: 'Select a product first',
     noPartsHint: 'This product has no parts yet. Add one under "Parts" first.',
     title: 'Fault title',
-    titlePlaceholder: 'e.g. No response when powered on',
+    titlePlaceholder: 'e.g. No spray from the nozzle',
     symptom: 'Symptom',
     symptomPlaceholder: 'What the customer can observe',
     rootCause: 'Possible cause',
@@ -51,7 +51,7 @@ export default {
     stepPlaceholder: 'What to do in this step',
     addStep: '+ Add step',
     requiredTools: 'Tools required',
-    requiredToolsPlaceholder: 'e.g. Phillips screwdriver; leave blank if none',
+    requiredToolsPlaceholder: 'e.g. Hex key; leave blank if none',
     needsProfessional: 'Requires a professional',
     needsProfessionalHint:
       'When enabled, the customer-facing page shows a "Do not disassemble" warning',

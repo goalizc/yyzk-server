@@ -46,7 +46,7 @@ export default {
     closedNoTransition: '已关闭，不可再流转',
     onSiteShort: '上门',
     remark: '备注',
-    remarkPlaceholderWithStatus: '如：已电话指导客户更换主刷电机，客户确认解决',
+    remarkPlaceholderWithStatus: '如：已电话指导客户更换隔膜泵，客户确认解决',
     remarkPlaceholderNoStatus: '仅更新备注可留空',
     save: '保存',
     hintCurrentAssignee: '当前处理人：{name}，保存不会改变处理人',

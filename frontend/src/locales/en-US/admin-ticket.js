@@ -45,7 +45,7 @@ export default {
     closedNoTransition: 'This ticket is closed and cannot change status',
     onSiteShort: 'On-site',
     remark: 'Note',
-    remarkPlaceholderWithStatus: 'e.g. Guided the customer to replace the main brush motor; confirmed resolved',
+    remarkPlaceholderWithStatus: 'e.g. Guided the customer to replace the diaphragm pump; confirmed resolved',
     remarkPlaceholderNoStatus: 'Optional when only updating the note',
     save: 'Save',
     hintCurrentAssignee: 'Current assignee: {name}. Saving will not change it.',

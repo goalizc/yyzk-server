@@ -38,7 +38,8 @@ const TAP_MIN = 44
 const ADMIN_USER = process.env.E2E_ADMIN_USER || 'admin'
 const ADMIN_PASS = process.env.E2E_ADMIN_PASS || 'yyzk123456'
 
-// 演示库里的固定数据：产品 12「智能扫地机器人 X1」/ 零件 9「主刷模组」/ 故障 9
+// 演示库里的固定数据：产品 1「植保无人机 16L」/ 零件 10「智能电池」/ 故障 9
+// （seed_demo.py 重建后 id 从 1 起，故障 9 是「满电续航明显缩短」）
 // 不写死也行，但移动端用例需要"打开就是有内容"的状态来量真实渲染尺寸，
 // 探测式取首条会引入顺序依赖，这里用初始化脚本里的演示数据更稳。
 const FAULT_ID = 9

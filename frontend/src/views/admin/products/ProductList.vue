@@ -43,7 +43,9 @@
             <div class="model">{{ row.model }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="line_name" :label="$t('admin.product.colLine')" width="120">
+        <!-- 用 min-width 而不是 width：产品线名长度差异大（「穿越机」3 字 vs
+             「农业植保无人机」7 字），固定 120px 会把长名折成三行 -->
+        <el-table-column prop="line_name" :label="$t('admin.product.colLine')" min-width="140">
           <template #default="{ row }">{{ row.line_name || '-' }}</template>
         </el-table-column>
         <el-table-column prop="fault_count" :label="$t('admin.product.colFaultCount')" width="90" align="center" />

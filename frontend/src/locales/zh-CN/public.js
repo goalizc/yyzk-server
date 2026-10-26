@@ -12,7 +12,7 @@ export default {
     selectProduct: '请选择产品',
     selectPart: '请先选择产品',
     selectFault: '请先选择零件',
-    keywordPlaceholder: '还可以输入关键词过滤，例如：漏水、不充电',
+    keywordPlaceholder: '还可以输入关键词过滤，例如：不出水、图传黑屏',
     productOption: '{name}（{model}）',
     partOption: '{group} / {name}',
     viewSolution: '查看解决方案',
