@@ -108,6 +108,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 | 重置演示数据（换机型） | `.venv/bin/python scripts/dev/seed_demo.py --reset --via-sql --activity` |
 | 前端构建 | `cd frontend && npm run build` |
 | 清理上传残留 | `cd deploy && ./scripts/cleanup-uploads.sh`（预演，加 `--apply` 执行） |
+| 清理过期审计 | `cd deploy && ./scripts/cleanup-audit.sh`（默认保留 180 天，加 `--apply` 执行） |
 
 ## 文档入口
 

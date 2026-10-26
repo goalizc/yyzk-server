@@ -147,6 +147,9 @@ services:
     image: nginx:1.25-alpine
     container_name: fault-nginx
     restart: unless-stopped
+    environment:
+      # 访问日志用本地时间；不设就是 UTC，排查时和后端日志的 +08:00 差 8 小时
+      TZ: ${TZ:-Asia/Shanghai}
     ports:
       - "80:80"
       # 配好证书后再开放 443（见 deploy/nginx-https.conf.example）

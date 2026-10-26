@@ -81,7 +81,7 @@ case "$MODE" in
     mkdir -p "$LOG_DIR"
     # 日志轮转：单文件超过 5MB 就清空。cron 任务里不方便再调 logrotate，
     # 用 shell 判断足够——清理日志本身价值有限，不需要长期留存
-    ENTRY="$RUN_TIME * * * cd $DEPLOY_DIR && ( [ -f $LOG_DIR/cleanup.log ] && [ \$(stat -c%s $LOG_DIR/cleanup.log) -gt 5242880 ] && : > $LOG_DIR/cleanup.log; ./scripts/cleanup-uploads.sh --apply >> $LOG_DIR/cleanup.log 2>&1 ) $MARKER"
+    ENTRY="$RUN_TIME * * * cd $DEPLOY_DIR && ( [ -f $LOG_DIR/cleanup.log ] && [ \$(stat -c%s $LOG_DIR/cleanup.log) -gt 5242880 ] && : > $LOG_DIR/cleanup.log; ./scripts/cleanup-uploads.sh --apply >> $LOG_DIR/cleanup.log 2>&1; ./scripts/cleanup-audit.sh --apply >> $LOG_DIR/cleanup.log 2>&1 ) $MARKER"
 
     {
       printf '%s\n' "$WITHOUT"
