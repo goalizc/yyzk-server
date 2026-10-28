@@ -128,6 +128,19 @@ describe('startIdleWatch', () => {
     stop()
   })
 
+  it('活动记录被清空后不判定超时（否则 Date.now() 减 0 会立刻误触发）', () => {
+    // 触发路径：另一个标签登出、401 拦截器清理都会清掉 lastActiveAt，
+    // 而本标签的 Layout 还没卸载，定时器仍会跑一次
+    const onIdle = vi.fn()
+    const stop = startIdleWatch({ onIdle })
+
+    localStorage.removeItem('lastActiveAt')
+    vi.advanceTimersByTime(31 * 1000)
+
+    expect(onIdle).not.toHaveBeenCalled()
+    stop()
+  })
+
   it('stop 之后定时器与事件监听都不再生效', () => {
     const onIdle = vi.fn()
     const stop = startIdleWatch({ onIdle })

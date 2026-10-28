@@ -61,9 +61,22 @@ describe('idleRedirect', () => {
     expect(idleRedirect({ path: '/admin/tickets', query: {} })).toBeNull()
   })
 
-  it('没有 token 时不动（客户侧与未登录访客不受影响）', () => {
+  it('没有 token 时不动（未登录访客不受影响）', () => {
     idleMinutesAgo(120)
     expect(idleRedirect({ path: '/', query: {} })).toBeNull()
+  })
+
+  it('客户侧页面不受影响：即使已登录且空闲超时，也不清凭证不跳转', () => {
+    // 回归：曾经漏了这个路径判断，同一浏览器登录过后台的人，
+    // 空闲超时后打开客户首页会被弹到 /admin/login，自助查询直接不可用
+    loginWith(nowSeconds() + 3600)
+    idleMinutesAgo(120)
+
+    expect(idleRedirect({ path: '/', query: {} })).toBeNull()
+    expect(idleRedirect({ path: '/faults/9', query: {} })).toBeNull()
+    expect(idleRedirect({ path: '/en', query: {} })).toBeNull()
+    // 客户侧不该动后台凭证：那是后台的会话，与客户页面无关
+    expect(localStorage.getItem('token')).not.toBeNull()
   })
 
   it('空闲超过 60 分钟：清凭证并带 reason=idle 回登录页', () => {

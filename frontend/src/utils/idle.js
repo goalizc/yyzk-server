@@ -113,7 +113,12 @@ export function startIdleWatch({ onIdle, onWarn, timeoutMs = IDLE_TIMEOUT_MS } =
 
   function check() {
     if (stopped) return
-    const idle = Date.now() - readLastActive()
+    const last = readLastActive()
+    // 没有记录就别判：`Date.now() - 0` 是"空闲了 56 年"，会立刻误触发。
+    // 记录会被 clearAuthLocal() 清掉（另一个标签登出、401 拦截器清理），
+    // 此时本标签还没卸载，定时器仍会跑一次。口径要与 isIdleExpired() 一致。
+    if (!last) return
+    const idle = Date.now() - last
     if (idle >= timeoutMs) {
       stop()
       onIdle?.()

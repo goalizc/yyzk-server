@@ -151,10 +151,13 @@ export function loggedInRedirect(to) {
  * 下班关机后第二天开机，浏览器恢复的是"后台某页"的地址。守卫先跑，
  * 用户看不到后台内容一闪而过；只靠定时器会先渲染出工单列表再跳走。
  *
- * 只在有 token 时判定，客户侧不受影响。
+ * 只作用于 `/admin/*`：客户侧页面不读也不清后台凭证。
  * 独立导出便于单测（见 router/guard.spec.js）。
  */
 export function idleRedirect(to) {
+  // 只管后台。客户侧页面与后台会话无关：同一个浏览器登录过后台的人，
+  // 空闲超时后再打开客户首页，不能被弹到后台登录页（自助查询直接不可用）
+  if (!to.path.startsWith('/admin')) return null
   if (!localStorage.getItem('token')) return null
   if (!isIdleExpired()) return null
   clearAuthLocal()
