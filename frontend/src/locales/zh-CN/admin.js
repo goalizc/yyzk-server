@@ -15,7 +15,8 @@ export default {
   topbar: {
     changePassword: '修改密码',
     logout: '退出登录',
-    loggedIn: '已登录'
+    loggedIn: '已登录',
+    idleWarning: '长时间未操作，即将自动退出；动一下鼠标即可继续'
   },
   login: {
     subtitle: '后台管理登录',
@@ -27,7 +28,8 @@ export default {
     passwordRequired: '请输入密码',
     submit: '登录',
     success: '登录成功',
-    failed: '登录失败，请稍后重试'
+    failed: '登录失败，请稍后重试',
+    idleLogout: '长时间未操作，已自动退出，请重新登录'
   },
   password: {
     title: '修改密码',

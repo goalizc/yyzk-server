@@ -10,6 +10,20 @@ vi.mock('../../api/auth', () => ({
   fetchMe: vi.fn().mockResolvedValue({ permissions: ['ticket:read'] })
 }))
 
+// 空闲监控在单测里没有意义（会挂真定时器），换成可手动触发的假实现：
+// 既能断言"真的启动了"，也能直接调 onIdle 验证超时后的行为
+const idleMock = vi.hoisted(() => ({ options: null }))
+vi.mock('../../utils/idle', () => ({
+  startIdleWatch: vi.fn((options) => {
+    idleMock.options = options
+    return vi.fn()
+  }),
+  clearActivity: vi.fn(),
+  resetActivity: vi.fn(),
+  touchActivity: vi.fn(),
+  isIdleExpired: vi.fn(() => false)
+}))
+
 import { changePassword, fetchMe } from '../../api/auth'
 import { setPermissions } from '../../utils/permissions'
 
@@ -228,5 +242,29 @@ describe('Layout', () => {
     expect(localStorage.getItem('token')).toBe(null)
     expect(localStorage.getItem('user')).toBe(null)
     expect(router.currentRoute.value.path).toBe('/admin/login')
+  })
+
+  it('进入后台就启动空闲监控（60 分钟无操作自动退出）', async () => {
+    await mountLayout()
+    expect(idleMock.options).toBeTruthy()
+    expect(typeof idleMock.options.onIdle).toBe('function')
+    expect(typeof idleMock.options.onWarn).toBe('function')
+  })
+
+  it('空闲超时：清掉凭证并带 reason=idle 回登录页', async () => {
+    // mountLayout 的 beforeEach 只造了 user 与权限，这里补一个 token 才能验证"被清掉"
+    localStorage.setItem('token', 'fake-token')
+    const { router } = await mountLayout()
+    expect(localStorage.getItem('token')).toBe('fake-token')
+
+    idleMock.options.onIdle()
+    await flushPromises()
+
+    expect(localStorage.getItem('token')).toBe(null)
+    expect(localStorage.getItem('user')).toBe(null)
+    expect(localStorage.getItem('permissions')).toBe(null)
+    expect(router.currentRoute.value.path).toBe('/admin/login')
+    // 带原因，登录页才知道要显示"长时间未操作"
+    expect(router.currentRoute.value.query.reason).toBe('idle')
   })
 })

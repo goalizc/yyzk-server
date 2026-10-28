@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { clearPermissions } from '../utils/permissions'
+import { clearAuthLocal } from '../utils/auth'
 
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '/api',
@@ -20,9 +20,7 @@ request.interceptors.response.use(
     // 登录失败（AUTH_INVALID_CREDENTIALS）必须在表单内提示，不能闪回登录页。
     // AUTH_USER_DISABLED（403）：账号被停用，token 已无意义，同样回登录页
     if (code === 'AUTH_TOKEN_EXPIRED' || code === 'AUTH_USER_DISABLED') {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-      clearPermissions()
+      clearAuthLocal()
       if (!location.pathname.endsWith('/admin/login')) {
         location.href = '/admin/login'
       }

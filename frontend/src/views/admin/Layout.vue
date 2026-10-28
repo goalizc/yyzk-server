@@ -77,7 +77,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { changePassword, fetchMe } from '../../api/auth'
-import { clearPermissions, hasPermission, setPermissions } from '../../utils/permissions'
+import { hasPermission, setPermissions } from '../../utils/permissions'
+import { clearAuthLocal } from '../../utils/auth'
+import { startIdleWatch } from '../../utils/idle'
 import { errorCode } from '../../utils/admin'
 import { errorMessage } from '../../utils/error'
 import { useFormLabelWidth } from '../../utils/formLabel'
@@ -160,6 +162,8 @@ function onNav(path) {
 }
 
 let narrowMql = null
+// 停止空闲监控的函数（组件卸载时必须调用，否则定时器会跟着路由走了还在跑）
+let stopIdleWatch = null
 const syncNarrow = (event) => {
   isNarrow.value = event.matches
 }
@@ -176,15 +180,43 @@ async function refreshPermissions() {
 
 onMounted(() => {
   refreshPermissions()
+  // 放在窄屏判断之前：matchMedia 不可用时这里会提前 return，
+  // 空闲监控不能跟着被跳过
+  stopIdleWatch = startIdleWatch({
+    onWarn: () => ElMessage.warning(t('admin.topbar.idleWarning')),
+    onIdle: () => {
+      clearAuthLocal()
+      router.replace({ path: '/admin/login', query: { reason: 'idle' } })
+    }
+  })
+  window.addEventListener('storage', onStorage)
+
   narrowMql = window.matchMedia?.(NARROW_QUERY)
   if (!narrowMql) return
   isNarrow.value = narrowMql.matches
   narrowMql.addEventListener?.('change', syncNarrow)
 })
 
-onBeforeUnmount(() => narrowMql?.removeEventListener?.('change', syncNarrow))
+onBeforeUnmount(() => {
+  narrowMql?.removeEventListener?.('change', syncNarrow)
+  stopIdleWatch?.()
+  window.removeEventListener('storage', onStorage)
+})
 
-watch(() => route.fullPath, refreshPermissions)
+/**
+ * 另一个标签页退出登录或空闲超时后，本标签页的界面还留在工单列表上，
+ * 但 token 已经被清掉了。不跟着走的话，屏幕上的客户信息仍然可见。
+ */
+function onStorage(event) {
+  if (event.key === 'token' && !event.newValue) router.replace('/admin/login')
+}
+
+// 权限每次换页都刷新（管理员可能刚改了授权/角色）。
+// 但登出后（空闲超时、主动退出）别再拉：token 已经清了，只会白打一发 401
+watch(() => route.fullPath, () => {
+  if (!localStorage.getItem('token')) return
+  refreshPermissions()
+})
 
 // computed 而不是常量：语言切换后校验文案要跟着变
 const rules = computed(() => ({
@@ -257,9 +289,7 @@ async function onSubmit() {
 }
 
 function onLogout() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  clearPermissions()
+  clearAuthLocal()
   router.replace('/admin/login')
 }
 </script>

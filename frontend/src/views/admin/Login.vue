@@ -4,6 +4,16 @@
       <h1 class="title">{{ $t('common.appName') }}</h1>
       <p class="subtitle">{{ $t('admin.login.subtitle') }}</p>
 
+      <!-- 空闲超时被踢回来时给个说明，否则用户以为自己点错了 -->
+      <el-alert
+        v-if="idleNotice"
+        type="info"
+        show-icon
+        :closable="false"
+        :title="$t('admin.login.idleLogout')"
+        class="error"
+      />
+
       <el-alert
         v-if="formError"
         :title="formError"
@@ -45,6 +55,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { login } from '../../api/auth'
 import { setPermissions } from '../../utils/permissions'
+import { resetActivity } from '../../utils/idle'
 import { errorMessage } from '../../utils/error'
 
 const router = useRouter()
@@ -54,6 +65,8 @@ const formRef = ref()
 const loading = ref(false)
 // 原名 errorText，与 utils/error 导出的 errorText 概念撞车，改为 formError
 const formError = ref('')
+// 守卫因空闲超时把用户踢回来时会带 reason=idle
+const idleNotice = computed(() => route.query.reason === 'idle')
 
 const form = reactive({ username: '', password: '' })
 // computed：语言切换后校验文案跟着变
@@ -73,6 +86,9 @@ async function onSubmit() {
     localStorage.setItem('token', data.access_token)
     localStorage.setItem('user', JSON.stringify(data.user))
     setPermissions(data.permissions)
+    // 立刻重置空闲计时：登录页可能开着很久，不重置会被紧接着的路由守卫判成超时，
+    // 表现为"刚登录成功又被踢回登录页"
+    resetActivity()
     ElMessage.success(t('admin.login.success'))
     router.replace(typeof route.query.redirect === 'string' ? route.query.redirect : '/admin')
   } catch (error) {

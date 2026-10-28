@@ -1,7 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { fetchMe } from '../api/auth'
-import { clearPermissions, hasPermission, setPermissions } from '../utils/permissions'
+import { hasPermission, setPermissions } from '../utils/permissions'
 import { hasValidToken } from '../utils/token'
+import { isIdleExpired } from '../utils/idle'
+import { clearAuthLocal } from '../utils/auth'
 import { DEFAULT_LOCALE, localeFromPath, setLocale } from '../locales'
 import { applyPageTitle } from '../utils/pageTitle'
 
@@ -142,6 +144,25 @@ export function loggedInRedirect(to) {
   return { path: redirect.startsWith('/admin') ? redirect : '/admin' }
 }
 
+/**
+ * 空闲超时（默认 60 分钟）时把后台页面踢回登录页。
+ *
+ * 为什么必须在守卫里做、不能只靠 Layout 里的定时器：
+ * 下班关机后第二天开机，浏览器恢复的是"后台某页"的地址。守卫先跑，
+ * 用户看不到后台内容一闪而过；只靠定时器会先渲染出工单列表再跳走。
+ *
+ * 只在有 token 时判定，客户侧不受影响。
+ * 独立导出便于单测（见 router/guard.spec.js）。
+ */
+export function idleRedirect(to) {
+  if (!localStorage.getItem('token')) return null
+  if (!isIdleExpired()) return null
+  clearAuthLocal()
+  // 目标本来就是登录页：凭证已清，别再让它跳自己一次
+  if (to.path === '/admin/login') return null
+  return { path: '/admin/login', query: { reason: 'idle' } }
+}
+
 router.beforeEach(async (to) => {
   // 语言同步：客户侧 URL 是权威（带前缀=英文，无前缀=中文）；
   // 后台没有前缀，保持本地偏好，不动。
@@ -152,6 +173,10 @@ router.beforeEach(async (to) => {
     // persist=false：客户侧语言由 URL 承载，写 localStorage 会污染后台偏好
     setLocale(prefixed || DEFAULT_LOCALE, { persist: false })
   }
+
+  // 空闲超时优先于"已登录跳过登录页"：否则会被送回后台再被判一次
+  const idle = idleRedirect(to)
+  if (idle) return idle
 
   // 已登录（token 未过期）再进登录页没有意义，直接送进后台。
   // 放在 public 放行之前：登录页是 public，先放行就轮不到这条判断了
@@ -170,9 +195,7 @@ router.beforeEach(async (to) => {
       const data = await fetchMe()
       setPermissions(data.permissions)
     } catch {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-      clearPermissions()
+      clearAuthLocal()
       return { path: '/admin/login', query: { redirect: to.fullPath } }
     }
   }

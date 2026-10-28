@@ -13,7 +13,8 @@ export default {
   topbar: {
     changePassword: 'Change password',
     logout: 'Sign out',
-    loggedIn: 'Signed in'
+    loggedIn: 'Signed in',
+    idleWarning: 'You will be signed out soon. Move the mouse to stay signed in.'
   },
   login: {
     subtitle: 'Admin sign-in',
@@ -25,7 +26,8 @@ export default {
     passwordRequired: 'Please enter your password',
     submit: 'Sign in',
     success: 'Signed in',
-    failed: 'Sign-in failed. Please try again.'
+    failed: 'Sign-in failed. Please try again.',
+    idleLogout: 'Signed out after a period of inactivity. Please sign in again.'
   },
   password: {
     title: 'Change password',
