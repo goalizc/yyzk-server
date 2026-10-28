@@ -29,7 +29,7 @@ export default {
     submit: '登录',
     success: '登录成功',
     failed: '登录失败，请稍后重试',
-    idleLogout: '长时间未操作，已自动退出，请重新登录'
+    idleLogout: '长时间未操作，已自动退出'
   },
   password: {
     title: '修改密码',
