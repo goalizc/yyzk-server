@@ -14,11 +14,14 @@
  * 后者要服务端会话表或 refresh_token + httpOnly cookie 才管得住。
  */
 
-/** 默认空闲阈值：60 分钟（产品确认值） */
-export const IDLE_TIMEOUT_MS = 60 * 60 * 1000
+/**
+ * 默认空闲阈值：60 分钟（产品确认值）。
+ * 改这里就是改行为，没有配置入口——一期单机部署，不值得为它加一层配置下发。
+ */
+const IDLE_TIMEOUT_MS = 60 * 60 * 1000
 
 /** 超时前多久提醒一次（只在最后这段时间弹一条，避免反复打扰） */
-export const WARN_BEFORE_MS = 2 * 60 * 1000
+const WARN_BEFORE_MS = 2 * 60 * 1000
 
 const ACTIVITY_KEY = 'lastActiveAt'
 const TOUCH_THROTTLE_MS = 15 * 1000
@@ -87,10 +90,10 @@ export function clearActivity() {
  * 是否已经空闲超时。
  * 没有活动记录时返回 false —— 那说明从没登录过或刚被清理，不该判成超时。
  */
-export function isIdleExpired(now = Date.now(), timeoutMs = IDLE_TIMEOUT_MS) {
+export function isIdleExpired(now = Date.now()) {
   const last = readLastActive()
   if (!last) return false
-  return now - last >= timeoutMs
+  return now - last >= IDLE_TIMEOUT_MS
 }
 
 /**
@@ -98,16 +101,17 @@ export function isIdleExpired(now = Date.now(), timeoutMs = IDLE_TIMEOUT_MS) {
  * @param {object} options
  * @param {() => void} options.onIdle 超时回调（调用前已自动停止监控，不会重复触发）
  * @param {() => void} [options.onWarn] 即将超时的提醒回调（每个空闲周期最多一次）
- * @param {number} [options.timeoutMs]
  * @returns {() => void} 停止监控
  */
-export function startIdleWatch({ onIdle, onWarn, timeoutMs = IDLE_TIMEOUT_MS } = {}) {
+export function startIdleWatch({ onIdle, onWarn } = {}) {
   // 首次进入时若没有记录（刚登录 / 本机第一次用），立刻写一次：
   // 否则会被"无记录"当成空闲很久，或者反过来要等到第一次鼠标移动才开始计时
   if (!readLastActive()) touchActivity()
 
   let warned = false
   let stopped = false
+  // 先声明再赋值：stop() 里会用到，不能依赖"首次 check 一定发生在赋值之后"
+  let timer = null
 
   const onActivity = () => touchActivity()
 
@@ -119,15 +123,15 @@ export function startIdleWatch({ onIdle, onWarn, timeoutMs = IDLE_TIMEOUT_MS } =
     // 此时本标签还没卸载，定时器仍会跑一次。口径要与 isIdleExpired() 一致。
     if (!last) return
     const idle = Date.now() - last
-    if (idle >= timeoutMs) {
+    if (idle >= IDLE_TIMEOUT_MS) {
       stop()
       onIdle?.()
       return
     }
-    if (!warned && idle >= timeoutMs - WARN_BEFORE_MS) {
+    if (!warned && idle >= IDLE_TIMEOUT_MS - WARN_BEFORE_MS) {
       warned = true
       onWarn?.()
-    } else if (idle < timeoutMs - WARN_BEFORE_MS) {
+    } else if (idle < IDLE_TIMEOUT_MS - WARN_BEFORE_MS) {
       warned = false
     }
   }
@@ -141,12 +145,12 @@ export function startIdleWatch({ onIdle, onWarn, timeoutMs = IDLE_TIMEOUT_MS } =
   function stop() {
     if (stopped) return
     stopped = true
-    clearInterval(timer)
+    if (timer) clearInterval(timer)
     ACTIVITY_EVENTS.forEach((name) => window.removeEventListener(name, onActivity, true))
     document.removeEventListener('visibilitychange', onVisibility)
   }
 
-  const timer = setInterval(check, CHECK_INTERVAL_MS)
+  timer = setInterval(check, CHECK_INTERVAL_MS)
   ACTIVITY_EVENTS.forEach((name) =>
     window.addEventListener(name, onActivity, { passive: true, capture: true })
   )

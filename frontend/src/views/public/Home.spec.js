@@ -287,6 +287,41 @@ describe('Home 未命中上报', () => {
     expect(reportMiss).not.toHaveBeenCalled()
     wrapper.unmount()
   })
+
+  it('零件下没有任何故障记录时立即上报 raw_query=null（不必等关键词）', async () => {
+    // 契约 §4 要求"未输入关键词"这一桶也要有数据，否则看板里永远空着
+    listFaults.mockResolvedValue([])
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    wrapper.vm.partId = 11
+    await wrapper.vm.onPartChange(11)
+
+    expect(reportMiss).toHaveBeenCalledTimes(1)
+    expect(reportMiss).toHaveBeenCalledWith({ product_id: 1, part_id: 11, raw_query: null })
+    wrapper.unmount()
+  })
+
+  it('空结果 + 关键词都命中同一组合时，只按各自的 key 各报一次', async () => {
+    listFaults.mockResolvedValue([])
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    wrapper.vm.partId = 11
+    await wrapper.vm.onPartChange(11)
+    expect(reportMiss).toHaveBeenCalledTimes(1) // raw_query=null 一次
+
+    wrapper.vm.keyword = '不出水'
+    wrapper.vm.onKeywordInput()
+    await vi.advanceTimersByTimeAsync(700)
+    expect(reportMiss).toHaveBeenCalledTimes(2) // 关键词那次是另一个 key
+    expect(reportMiss).toHaveBeenLastCalledWith({
+      product_id: 1,
+      part_id: 11,
+      raw_query: '不出水'
+    })
+    wrapper.unmount()
+  })
 })
 
 describe('Home 卸载清理', () => {

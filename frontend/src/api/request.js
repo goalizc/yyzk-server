@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { clearAuthLocal } from '../utils/auth'
+import { clearAuthLocal } from '../utils/session'
 
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '/api',
@@ -21,6 +21,9 @@ request.interceptors.response.use(
     // AUTH_USER_DISABLED（403）：账号被停用，token 已无意义，同样回登录页
     if (code === 'AUTH_TOKEN_EXPIRED' || code === 'AUTH_USER_DISABLED') {
       clearAuthLocal()
+      // 这里是整页跳转而不是 router.push：拦截器可能在 router 初始化之前被调用
+      // （守卫里的 fetchMe 失败就走这条路），import router 会形成循环依赖。
+      // 整页刷新正好把内存里的旧状态一并清掉，代价可以接受。
       if (!location.pathname.endsWith('/admin/login')) {
         location.href = '/admin/login'
       }

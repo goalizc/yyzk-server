@@ -48,11 +48,9 @@ test('@smoke 切回标签页时补判一次（后台标签的定时器会被节�
   await login(page)
   await backdateActivity(page, 90)
 
-  // 不刷新页面，靠 visibilitychange 的补判：模拟"从别的窗口切回来"
-  await page.evaluate(() => {
-    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
-    document.dispatchEvent(new Event('visibilitychange'))
-  })
+  // 不刷新页面，靠 visibilitychange 的补判：模拟"从别的窗口切回来"。
+  // Playwright 的页面本来就处于 visible，直接派发事件即可，不必改写 document 属性
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
 
   await expect(page).toHaveURL(/\/admin\/login\?reason=idle/)
 })

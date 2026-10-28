@@ -1,9 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { fetchMe } from '../api/auth'
 import { hasPermission, setPermissions } from '../utils/permissions'
-import { hasValidToken } from '../utils/token'
+import { hasValidToken, clearAuthLocal } from '../utils/session'
 import { isIdleExpired } from '../utils/idle'
-import { clearAuthLocal } from '../utils/auth'
 import { DEFAULT_LOCALE, localeFromPath, setLocale } from '../locales'
 import { applyPageTitle } from '../utils/pageTitle'
 

@@ -1,9 +1,9 @@
-// utils/token.js：本地凭证"是否还值得进后台"的判断
+// utils/session.js：本地凭证"是否还值得进后台"的判断
 //
 // 这条判断只影响"要不要跳过登录页"，不承担鉴权（签名/账号状态由后端判定）。
 // 但边界必须准：说"有效"会让用户进后台被 401 踹回来，说"无效"会让已登录的人白登一次。
 import { beforeEach, describe, expect, it } from 'vitest'
-import { hasValidToken } from './token'
+import { hasValidToken } from './session'
 
 const b64url = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url')
 const jwt = (payload) => `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}.sig`

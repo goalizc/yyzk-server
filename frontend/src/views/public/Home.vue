@@ -241,11 +241,28 @@ async function onPartChange(value) {
   await loadFaults()
 }
 
+/**
+ * 未命中上报（契约 §4）：同一 产品|零件|关键词 30 秒内只报一次。
+ * 抽出来是因为有两个触发点——接口本身 0 条（raw_query=null）与关键词过滤为空。
+ */
+function reportMissOnce(productId, partId, rawQuery) {
+  const key = `${productId}|${partId}|${rawQuery || ''}`
+  const now = Date.now()
+  if (now - (reported.get(key) || 0) < REPORT_INTERVAL) return
+  reported.set(key, now)
+  reportMiss({ product_id: productId, part_id: partId, raw_query: rawQuery }).catch(() => {
+    // 上报失败不影响用户操作，也不弹错误
+  })
+}
+
 async function loadFaults() {
   loading.faults = true
   error.value = ''
   try {
     faults.value = await listFaults(productId.value, partId.value)
+    // 接口本身 0 条 = "这个零件下没有任何故障记录"，与关键词无关，记一条 raw_query=null。
+    // 有关键词的情况交给 onKeywordInput：一次操作只记一条，不能两边都报
+    if (!faults.value.length) reportMissOnce(productId.value, partId.value, null)
   } catch (e) {
     error.value = errorMessage(e, { fallbackKey: 'public.home.faultLoadFailed' })
   } finally {
@@ -257,21 +274,9 @@ function onKeywordInput() {
   if (!partId.value || !productId.value) return
   clearTimeout(missTimer)
   missTimer = setTimeout(() => {
-    // 只有"过滤结果为 0"才算未命中；空关键词也要上报（raw_query=null），
-    // 否则"未输入关键词"这一桶永远为空
+    // 只有"过滤结果为 0"才算未命中
     if (filteredFaults.value.length > 0) return
-    const key = `${productId.value}|${partId.value}|${keyword.value.trim()}`
-    const now = Date.now()
-    const last = reported.get(key) || 0
-    if (now - last < REPORT_INTERVAL) return
-    reported.set(key, now)
-    reportMiss({
-      product_id: productId.value,
-      part_id: partId.value,
-      raw_query: keyword.value.trim() || null
-    }).catch(() => {
-      // 上报失败不影响用户操作，也不弹错误
-    })
+    reportMissOnce(productId.value, partId.value, keyword.value.trim() || null)
   }, 600)
 }
 
