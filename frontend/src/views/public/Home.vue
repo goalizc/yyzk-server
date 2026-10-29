@@ -150,7 +150,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { listParts, listProducts } from '../../api/product'
@@ -160,6 +160,9 @@ import { localeRoute } from '../../locales'
 
 const router = useRouter()
 const { t } = useI18n()
+
+// keep-alive 的 include="Home" 按组件 name 匹配，<script setup> 默认没有 name，必须显式声明
+defineOptions({ name: 'Home' })
 
 // 一次展开多少条。故障数通常 1~3 条（78% 的零件只有 1 条），
 // 但真实客户环境一个零件可能有十几条，超过就先折叠
@@ -327,7 +330,14 @@ function retry() {
 
 onMounted(loadProducts)
 
-// 防抖定时器里引用着产品/零件 id，卸载后触发只会拿过期上下文上报
+// 首页被 keep-alive 缓存：从详情页返回时不会重新挂载，这里兜底补一次产品列表
+// （极端情况：首次进入即被缓存但 loadProducts 失败，激活后仍为空时重拉）
+onActivated(() => {
+  if (products.value.length === 0) loadProducts()
+})
+
+// 防抖定时器里引用着产品/零件 id：离开首页（失活或最终卸载）后触发只会拿过期上下文上报
+onDeactivated(() => clearTimeout(missTimer))
 onBeforeUnmount(() => clearTimeout(missTimer))
 </script>
 

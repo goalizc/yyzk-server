@@ -36,8 +36,17 @@
       </div>
     </header>
 
+    <!--
+      客户首页（Home）用 keep-alive 缓存：用户选了产品/零件、输完关键词、展开若干条后，
+      点进故障详情再点返回，首页应原样恢复，而不是重新加载并清空筛选条件。
+      只缓存 Home（include="Home"），详情页/工单页的瞬时状态（如反馈已提交）不应被保留。
+    -->
     <main class="main">
-      <router-view />
+      <router-view v-slot="{ Component }">
+        <keep-alive include="Home">
+          <component :is="Component" />
+        </keep-alive>
+      </router-view>
     </main>
 
     <footer class="footer">{{ $t('public.footer') }}</footer>
