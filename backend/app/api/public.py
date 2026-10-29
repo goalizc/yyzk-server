@@ -69,19 +69,23 @@ def list_product_parts(product_id: int, db: Session = Depends(get_db)) -> list[P
     "/faults",
     response_model=list[FaultListItem],
     summary="客户侧故障列表",
-    description="仅返回已发布故障，按 view_count 降序；关键词匹配标题与现象，无结果返回空数组。",
+    description=(
+        "仅返回已发布故障，按 view_count 降序；关键词匹配标题与现象，无结果返回空数组。"
+        "part_id 选填——不传则返回该产品下全部故障（零件降级为可选过滤器，见页面清单 P-01）。"
+    ),
 )
 def list_faults(
     product_id: int = Query(..., description="产品 ID"),
-    part_id: int = Query(..., description="零件 ID"),
+    part_id: int | None = Query(None, description="零件 ID，不传则返回产品下全部故障"),
     q: str | None = Query(None, max_length=50, description="关键词"),
     db: Session = Depends(get_db),
-) -> list[Fault]:
+) -> list[FaultListItem]:
     stmt = select(Fault).where(
         Fault.product_id == product_id,
-        Fault.part_id == part_id,
         Fault.is_published.is_(True),
     )
+    if part_id is not None:
+        stmt = stmt.where(Fault.part_id == part_id)
     if q and q.strip():
         lowered = like_pattern(q.lower())
         stmt = stmt.where(
@@ -91,7 +95,22 @@ def list_faults(
             )
         )
     stmt = stmt.order_by(Fault.view_count.desc(), Fault.id.desc())
-    return list(db.scalars(stmt))
+    # 用 selectinload 而不是 join：列表是"一行故障一个零件名"的从属关系，
+    # selectinload 发一条 `WHERE parts.id IN (...)` 的副查询，主查询保持
+    # `select(Fault)` 单表形态，索引选择不受影响，也省掉 join 的重复宽行。
+    # 详情接口用 `select(Fault, Product.name, Part.name).join(...)` 是另一回事——那里按主键取单行，join 才划算。
+    faults = db.scalars(stmt.options(selectinload(Fault.part))).all()
+    # 列表项带 part_name：零件不再是必经步骤，条目上要能看出"这是哪个部件的问题"
+    return [
+        FaultListItem(
+            id=fault.id,
+            title=fault.title,
+            symptom=fault.symptom,
+            view_count=fault.view_count,
+            part_name=fault.part.name if fault.part else None,
+        )
+        for fault in faults
+    ]
 
 
 @router.get(
@@ -218,12 +237,14 @@ def create_query_log(
 ) -> QueryLogCreated:
     if db.get(Product, payload.product_id) is None:
         raise BusinessError("NOT_FOUND", "产品不存在", 404)
-    part = db.get(Part, payload.part_id)
-    if part is None:
-        raise BusinessError("NOT_FOUND", "零件不存在", 404)
-    if part.product_id != payload.product_id:
-        # 组合错配会污染未命中统计的分组口径，直接拒绝
-        raise BusinessError("PART_PRODUCT_MISMATCH", "零件不属于所选产品", 400)
+    # part_id 可空：零件是可选过滤器，用户没选零件也能上报未命中（页面清单 P-01）
+    if payload.part_id is not None:
+        part = db.get(Part, payload.part_id)
+        if part is None:
+            raise BusinessError("NOT_FOUND", "零件不存在", 404)
+        if part.product_id != payload.product_id:
+            # 组合错配会污染未命中统计的分组口径，直接拒绝
+            raise BusinessError("PART_PRODUCT_MISMATCH", "零件不属于所选产品", 400)
 
     log = build_log(
         request,

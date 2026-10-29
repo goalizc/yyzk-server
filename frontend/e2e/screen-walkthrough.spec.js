@@ -83,9 +83,14 @@ test('@walkthrough 逐屏验证：客户侧三页', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '售后自助故障诊断' })).toBeVisible()
   await shot(page, '01-客户-首页-空态')
 
-  // ---------- 两级联动 + 故障现象列表 ----------
+  // ---------- 只选产品即出故障列表（零件是可选过滤器） ----------
   const field = (label) => page.locator('.field', { hasText: label })
   await pickOption(field('1. 选择产品').locator('.el-select'))
+  await page.waitForTimeout(500)
+  await expect(page.locator('.fault-item').first()).toBeVisible()
+  await shot(page, '01b-客户-首页-只选产品的故障列表')
+
+  // ---------- 再选零件，列表按零件收窄 ----------
   await pickOption(field('2. 选择零件').locator('.el-select'))
   await shot(page, '02-客户-首页-故障列表')
   await page.locator('.fault-item').first().click()

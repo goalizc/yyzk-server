@@ -2,9 +2,12 @@ import request from './request'
 
 /**
  * 客户侧故障列表：一次拉全量，前端本地过滤（契约 §4）。
+ * partId 选填 —— 不传则返回该产品下全部故障（零件是可选过滤器）。
  */
 export function listFaults(productId, partId) {
-  return request.get('/faults', { params: { product_id: productId, part_id: partId } })
+  const params = { product_id: productId }
+  if (partId) params.part_id = partId
+  return request.get('/faults', { params })
 }
 
 /**

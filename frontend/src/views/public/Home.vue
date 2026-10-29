@@ -29,12 +29,14 @@
           </div>
         </el-col>
 
+        <!-- 零件是可选过滤器：客户多数不知道内部零件叫什么，不选也能看全部故障。
+             提示语直接写进 placeholder：能省一行高度，英文句子也不会因折行把关键词框顶下去 -->
         <el-col :xs="24" :sm="12">
           <div class="field">
             <label>{{ $t('public.home.step2') }}</label>
             <el-select
               v-model="partId"
-              :placeholder="$t('public.home.selectPart')"
+              :placeholder="$t('public.home.allParts')"
               filterable
               clearable
               :disabled="!productId"
@@ -61,7 +63,7 @@
         class="search"
         :placeholder="$t('public.home.keywordPlaceholder')"
         clearable
-        :disabled="!partId"
+        :disabled="!productId"
         @input="onKeywordInput"
       />
     </el-card>
@@ -84,8 +86,9 @@
       结果列表 = 故障现象选择器。
       以前这里还有一级"3. 选择故障现象"下拉，选项和下面的列表是同一批数据，
       下拉里又只有标题（维修术语）、没有现象描述，反而比列表更难选，已删除。
+      选完产品就出列表，零件只是可选过滤器。
     -->
-    <el-card v-else-if="partId && filteredFaults.length" shadow="never" class="panel">
+    <el-card v-else-if="productId && filteredFaults.length" shadow="never" class="panel">
       <template #header>
         {{ $t('public.home.foundCount', filteredFaults.length) }}
       </template>
@@ -97,7 +100,11 @@
       >
         <div class="fault-title">{{ item.title }}</div>
         <div class="fault-symptom">{{ item.symptom || $t('public.home.symptomEmpty') }}</div>
-        <div class="fault-meta">{{ $t('common.count.viewed', item.view_count) }}</div>
+        <div class="fault-meta">
+          <!-- 零件名是参考信息：客户不知道自己坏在哪也能读，知道的话还能据此确认 -->
+          <span v-if="item.part_name" class="fault-part">{{ item.part_name }}</span>
+          <span>{{ $t('common.count.viewed', item.view_count) }}</span>
+        </div>
       </div>
 
       <div v-if="hasMore" class="more">
@@ -115,8 +122,8 @@
       </div>
     </el-card>
 
-    <!-- 空态：搜不到 / 该零件还没有故障记录，两种情况都要能直接报障 -->
-    <el-card v-else-if="partId" shadow="never" class="panel">
+    <!-- 空态：搜不到 / 该产品还没有故障记录，两种情况都要能直接报障 -->
+    <el-card v-else-if="productId" shadow="never" class="panel">
       <el-empty :description="hasKeyword ? $t('public.home.noResult') : $t('public.home.noFaultData')">
         <p class="empty-tip">
           {{ hasKeyword ? $t('public.home.emptyTip') : $t('public.home.noDataTip') }}
@@ -124,6 +131,9 @@
         <div class="empty-actions">
           <el-button v-if="hasKeyword" @click="clearKeyword">
             {{ $t('public.home.clearKeyword') }}
+          </el-button>
+          <el-button v-if="partId && !hasKeyword" @click="clearPart">
+            {{ $t('public.home.clearPart') }}
           </el-button>
           <el-button type="primary" @click="goTicket">
             {{ $t('public.home.submitTicket') }}
@@ -227,30 +237,39 @@ async function onProductChange(value) {
     parts.value = await listParts(value)
   } catch (e) {
     error.value = errorMessage(e, { fallbackKey: 'public.home.partLoadFailed' })
+    return
   } finally {
     loading.parts = false
   }
+  // 选完产品就出列表（零件可选），不用等用户再挑零件
+  await loadFaults()
 }
 
-async function onPartChange(value) {
+async function onPartChange() {
   keyword.value = ''
   faults.value = []
   visibleCount.value = PAGE_SIZE
-  if (!value) return
+  if (!productId.value) return
 
   await loadFaults()
+}
+
+function clearPart() {
+  partId.value = null
+  onPartChange()
 }
 
 /**
  * 未命中上报（契约 §4）：同一 产品|零件|关键词 30 秒内只报一次。
  * 抽出来是因为有两个触发点——接口本身 0 条（raw_query=null）与关键词过滤为空。
+ * 零件可能为 null（零件是可选过滤器），此时上报体里带 part_id=null。
  */
-function reportMissOnce(productId, partId, rawQuery) {
-  const key = `${productId}|${partId}|${rawQuery || ''}`
+function reportMissOnce(pid, part, rawQuery) {
+  const key = `${pid}|${part}|${rawQuery || ''}`
   const now = Date.now()
   if (now - (reported.get(key) || 0) < REPORT_INTERVAL) return
   reported.set(key, now)
-  reportMiss({ product_id: productId, part_id: partId, raw_query: rawQuery }).catch(() => {
+  reportMiss({ product_id: pid, part_id: part ?? null, raw_query: rawQuery }).catch(() => {
     // 上报失败不影响用户操作，也不弹错误
   })
 }
@@ -260,7 +279,7 @@ async function loadFaults() {
   error.value = ''
   try {
     faults.value = await listFaults(productId.value, partId.value)
-    // 接口本身 0 条 = "这个零件下没有任何故障记录"，与关键词无关，记一条 raw_query=null。
+    // 接口本身 0 条 = "这个产品（或产品+零件）下没有任何故障记录"，与关键词无关，记一条 raw_query=null。
     // 有关键词的情况交给 onKeywordInput：一次操作只记一条，不能两边都报
     if (!faults.value.length) reportMissOnce(productId.value, partId.value, null)
   } catch (e) {
@@ -271,7 +290,8 @@ async function loadFaults() {
 }
 
 function onKeywordInput() {
-  if (!partId.value || !productId.value) return
+  // 选完产品就能用关键词，不需要先选零件
+  if (!productId.value) return
   clearTimeout(missTimer)
   missTimer = setTimeout(() => {
     // 只有"过滤结果为 0"才算未命中
@@ -286,20 +306,18 @@ function openDetail(id) {
   )
 }
 
-// 没有选中故障这回事了，工单只带产品与零件上下文
+// 没有选中故障这回事了，工单只带产品与零件上下文（零件未选时不带该参数）
 function goTicket() {
-  router.push(
-    localeRoute('ticket-new', {}, {
-      product_id: productId.value,
-      part_id: partId.value
-    })
-  )
+  const query = { product_id: productId.value }
+  if (partId.value) query.part_id = partId.value
+  router.push(localeRoute('ticket-new', {}, query))
 }
 
 function retry() {
   if (!productId.value) {
     loadProducts()
-  } else if (!partId.value) {
+  } else if (parts.value.length === 0 && faults.value.length === 0) {
+    // 零件列表没拿到（选产品后连请求就失败了）→ 整个产品的上下文重来一遍
     onProductChange(productId.value)
   } else {
     loadFaults()
@@ -380,6 +398,20 @@ onBeforeUnmount(() => clearTimeout(missTimer))
   margin-top: 4px;
   color: #a8abb2;
   font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* 零件名只是参考：用标签形态与前两项的纯文本元信息区分开。
+   底色比 #f4f4f5 深一档，浅色背景上原值几乎看不出是个标签 */
+.fault-part {
+  padding: 0 6px;
+  border-radius: 3px;
+  background: #eef0f3;
+  color: #6b7280;
+  line-height: 18px;
 }
 
 .more {

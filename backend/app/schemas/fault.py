@@ -74,6 +74,8 @@ class FaultListItem(BaseModel):
     title: str
     symptom: str | None = None
     view_count: int
+    # 零件名降级为参考信息（零件不再是必经步骤，见页面清单 P-01）
+    part_name: str | None = None
 
 
 class FaultDetail(BaseModel):
@@ -211,7 +213,8 @@ class FeedbackResponse(BaseModel):
 
 class QueryLogCreate(BaseModel):
     product_id: int
-    part_id: int
+    # 零件可空：零件是可选过滤器，用户没选零件也能上报未命中
+    part_id: int | None = None
     raw_query: str | None = Field(default=None, max_length=100)
 
     @field_validator("raw_query")

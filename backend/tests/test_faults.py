@@ -76,7 +76,8 @@ def test_public_faults_only_published_sorted_by_view_count(client: TestClient, d
     assert response.status_code == 200
     body = response.json()
     assert [item["title"] for item in body] == ["多人看", "少人看"]
-    assert set(body[0]) == {"id", "title", "symptom", "view_count"}
+    assert set(body[0]) == {"id", "title", "symptom", "view_count", "part_name"}
+    assert body[0]["part_name"] == part.name
 
 
 def test_public_faults_keyword_matches_title_and_symptom(client: TestClient, db) -> None:
@@ -102,11 +103,31 @@ def test_public_faults_empty_result_is_empty_array(client: TestClient, db) -> No
     assert response.json() == []
 
 
-def test_public_faults_requires_product_and_part(client: TestClient, db) -> None:
-    response = client.get("/api/faults?product_id=1")
+def test_public_faults_requires_product(client: TestClient, db) -> None:
+    response = client.get("/api/faults")
 
     assert response.status_code == 422
     assert response.json()["code"] == "VALIDATION_ERROR"
+
+
+def test_public_faults_part_optional_returns_all(client: TestClient, db) -> None:
+    """零件降级为可选过滤器（v1.6）：不传 part_id 应返回该产品下全部故障。"""
+    product = make_product(db)
+    part_a = make_part(db, product, name="隔膜泵")
+    part_b = make_part(db, product, name="喷头")
+    make_fault(db, product, part_a, title="泵不出水", view_count=10)
+    make_fault(db, product, part_b, title="喷头堵塞", view_count=20)
+
+    response = client.get(f"/api/faults?product_id={product.id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["title"] for item in body] == ["喷头堵塞", "泵不出水"]
+    assert {item["part_name"] for item in body} == {"隔膜泵", "喷头"}
+
+    # 传 part_id 时仍是过滤器语义
+    filtered = client.get(f"/api/faults?product_id={product.id}&part_id={part_a.id}").json()
+    assert [item["title"] for item in filtered] == ["泵不出水"]
 
 
 # ---------------------------------------------------------------- 公开详情
@@ -287,6 +308,29 @@ def test_query_log_rejects_overlong_raw_query(client: TestClient, db) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_query_log_allows_null_part_id(client: TestClient, db) -> None:
+    """零件可选（v1.6）：用户没选零件也能上报未命中，part_id 落库为 NULL。"""
+    product = make_product(db)
+
+    response = client.post(
+        "/api/query-logs",
+        json={"product_id": product.id, "raw_query": "漏水"},
+    )
+
+    assert response.status_code == 201
+    log = db.scalar(select(QueryLog).where(QueryLog.id == response.json()["id"]))
+    assert log.part_id is None
+    assert log.product_id == product.id
+    assert log.raw_query == "漏水"
+
+
+def test_query_log_rejects_unknown_product_even_without_part(client: TestClient, db) -> None:
+    response = client.post("/api/query-logs", json={"product_id": 9999, "raw_query": "漏水"})
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "NOT_FOUND"
 
 
 # ---------------------------------------------------------------- 后台

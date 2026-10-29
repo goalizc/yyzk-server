@@ -1,4 +1,4 @@
-// Home.vue：三级级联、关键词过滤、未命中上报（600ms 防抖 + 30s 去重）
+// Home.vue：产品→故障两级（零件可选过滤）、关键词过滤、未命中上报（600ms 防抖 + 30s 去重）
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
@@ -26,8 +26,8 @@ const PARTS = [
   { id: 12, name: '水箱模组', group_name: '清洁系统' }
 ]
 const FAULTS = [
-  { id: 21, title: '主刷不转', symptom: '启动后主刷不转', view_count: 10 },
-  { id: 22, title: '异响', symptom: '工作时异响', view_count: 3 }
+  { id: 21, title: '主刷不转', symptom: '启动后主刷不转', view_count: 10, part_name: '主刷模组' },
+  { id: 22, title: '异响', symptom: '工作时异响', view_count: 3, part_name: '水箱模组' }
 ]
 
 function makeRouter() {
@@ -64,7 +64,7 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-describe('Home 三级级联', () => {
+describe('Home 产品优先，零件可选', () => {
   it('挂载时加载产品列表', async () => {
     const { wrapper } = await mountHome()
     expect(listProducts).toHaveBeenCalledTimes(1)
@@ -72,29 +72,57 @@ describe('Home 三级级联', () => {
     wrapper.unmount()
   })
 
-  it('选产品后加载零件并清空下级', async () => {
+  it('选产品后加载零件，并立刻加载该产品全部故障（不等零件）', async () => {
     const { wrapper } = await mountHome()
     wrapper.vm.productId = 1 // el-select v-model 先更新，再触发 @change
     await wrapper.vm.onProductChange(1)
     expect(listParts).toHaveBeenCalledWith(1)
     expect(wrapper.vm.partId).toBeNull()
-    expect(wrapper.vm.faults).toEqual([])
+    // 第二参数为空 → api 层不带 part_id，后端返回该产品全部故障
+    expect(listFaults).toHaveBeenCalledWith(1, null)
+    expect(wrapper.vm.faults).toHaveLength(2)
     wrapper.unmount()
   })
 
-  it('选零件后加载故障列表', async () => {
+  it('选零件后按零件重新过滤列表', async () => {
     const { wrapper } = await mountHome()
     wrapper.vm.productId = 1
     await wrapper.vm.onProductChange(1)
     wrapper.vm.partId = 11
     await wrapper.vm.onPartChange(11)
-    expect(listFaults).toHaveBeenCalledWith(1, 11)
+    expect(listFaults).toHaveBeenLastCalledWith(1, 11)
     expect(wrapper.vm.faults).toHaveLength(2)
     expect(wrapper.text()).toContain('2 条故障现象')
     wrapper.unmount()
   })
 
-  it('只有产品与零件两级，不再有"选择故障现象"下拉', async () => {
+  it('清空零件（查看全部零件）后回到产品全量列表', async () => {
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    wrapper.vm.partId = 11
+    await wrapper.vm.onPartChange(11)
+    listFaults.mockClear()
+
+    wrapper.vm.clearPart()
+    await flushPromises()
+
+    expect(wrapper.vm.partId).toBeNull()
+    expect(listFaults).toHaveBeenCalledWith(1, null)
+    wrapper.unmount()
+  })
+
+  it('列表项带零件名作为参考信息', async () => {
+    // 零件不再是必经步骤，客户要知道"这条大概出在哪个部件"
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    await flushPromises()
+    expect(wrapper.find('.fault-part').text()).toBe('主刷模组')
+    wrapper.unmount()
+  })
+
+  it('只有产品与零件两个下拉，不再有"选择故障现象"下拉', async () => {
     // 这条锁死设计决定：第三步下拉与下面的列表是同一批数据，且只显示术语标题，
     // 比列表更难选。有人想加回来会先让这条变红（见 docs 页面清单 §客户首页）
     const { wrapper } = await mountHome()
@@ -107,8 +135,6 @@ describe('Home 三级级联', () => {
     const { wrapper } = await mountHome()
     wrapper.vm.productId = 1
     await wrapper.vm.onProductChange(1)
-    wrapper.vm.partId = 11
-    await wrapper.vm.onPartChange(11)
     wrapper.vm.keyword = '异响'
     expect(wrapper.vm.filteredFaults.map((f) => f.id)).toEqual([22])
     wrapper.vm.keyword = '主刷' // 只在标题里
@@ -136,6 +162,20 @@ describe('Home 三级级联', () => {
       product_id: '1',
       part_id: '11'
     })
+    wrapper.unmount()
+  })
+
+  it('未选零件也能提交工单，只带产品上下文', async () => {
+    const { wrapper, router } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    await flushPromises()
+
+    wrapper.vm.goTicket()
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('ticket-new')
+    expect(router.currentRoute.value.query).toMatchObject({ product_id: '1' })
+    expect(router.currentRoute.value.query.part_id).toBeUndefined()
     wrapper.unmount()
   })
 })
@@ -198,7 +238,21 @@ describe('Home 列表即选择器', () => {
     wrapper.unmount()
   })
 
-  it('该零件没有故障记录时也有提交工单入口，文案区分"没记录"与"搜不到"', async () => {
+  it('该产品没有故障记录时也有提交工单入口，文案区分"没记录"与"搜不到"', async () => {
+    listFaults.mockResolvedValue([])
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('暂时还没有这类故障记录')
+    expect(wrapper.text()).toContain('提交工单')
+    // 没有关键词时不该出现"清空关键词"
+    expect(wrapper.text()).not.toContain('清空关键词')
+    wrapper.unmount()
+  })
+
+  it('选了零件但该零件没有记录时，给出「查看全部零件」回到产品全量', async () => {
     listFaults.mockResolvedValue([])
     const { wrapper } = await mountHome()
     wrapper.vm.productId = 1
@@ -206,11 +260,13 @@ describe('Home 列表即选择器', () => {
     wrapper.vm.partId = 11
     await wrapper.vm.onPartChange(11)
     await flushPromises()
+    expect(wrapper.text()).toContain('查看全部零件')
 
-    expect(wrapper.text()).toContain('这个零件暂时还没有故障记录')
-    expect(wrapper.text()).toContain('提交工单')
-    // 没有关键词时不该出现"清空关键词"
-    expect(wrapper.text()).not.toContain('清空关键词')
+    const btn = wrapper.findAll('.empty-actions button').find((b) => b.text() === '查看全部零件')
+    await btn.trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.partId).toBeNull()
+    expect(listFaults).toHaveBeenLastCalledWith(1, null)
     wrapper.unmount()
   })
 
@@ -279,7 +335,7 @@ describe('Home 未命中上报', () => {
     wrapper.unmount()
   })
 
-  it('未选择零件时不上报', async () => {
+  it('未选择产品时不上报（选完产品就能报，不必等零件）', async () => {
     const { wrapper } = await mountHome()
     wrapper.vm.keyword = '随便'
     wrapper.vm.onKeywordInput()
@@ -288,12 +344,45 @@ describe('Home 未命中上报', () => {
     wrapper.unmount()
   })
 
-  it('零件下没有任何故障记录时立即上报 raw_query=null（不必等关键词）', async () => {
+  it('未选零件时关键词未命中也要上报，part_id 传 null', async () => {
+    // 零件是可选过滤器，客户没选零件正是最需要被统计的那批"不知道该搜什么"的人
+    listFaults.mockResolvedValue(FAULTS)
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    expect(wrapper.vm.partId).toBeNull()
+
+    wrapper.vm.keyword = 'ZZZZ'
+    wrapper.vm.onKeywordInput()
+    await vi.advanceTimersByTimeAsync(700)
+
+    expect(reportMiss).toHaveBeenCalledTimes(1)
+    expect(reportMiss).toHaveBeenCalledWith({
+      product_id: 1,
+      part_id: null,
+      raw_query: 'ZZZZ'
+    })
+    wrapper.unmount()
+  })
+
+  it('产品下没有任何故障记录时立即上报 raw_query=null（不必等关键词）', async () => {
     // 契约 §4 要求"未输入关键词"这一桶也要有数据，否则看板里永远空着
     listFaults.mockResolvedValue([])
     const { wrapper } = await mountHome()
     wrapper.vm.productId = 1
     await wrapper.vm.onProductChange(1)
+
+    expect(reportMiss).toHaveBeenCalledTimes(1)
+    expect(reportMiss).toHaveBeenCalledWith({ product_id: 1, part_id: null, raw_query: null })
+    wrapper.unmount()
+  })
+
+  it('选了零件后零件无记录，上报带 part_id', async () => {
+    listFaults.mockResolvedValue([])
+    const { wrapper } = await mountHome()
+    wrapper.vm.productId = 1
+    await wrapper.vm.onProductChange(1)
+    reportMiss.mockClear()
     wrapper.vm.partId = 11
     await wrapper.vm.onPartChange(11)
 
@@ -307,14 +396,16 @@ describe('Home 未命中上报', () => {
     const { wrapper } = await mountHome()
     wrapper.vm.productId = 1
     await wrapper.vm.onProductChange(1)
+    // 选产品阶段已按 (1, null, null) 报过一次；选零件是另一个 key，会再报一次
     wrapper.vm.partId = 11
     await wrapper.vm.onPartChange(11)
-    expect(reportMiss).toHaveBeenCalledTimes(1) // raw_query=null 一次
+    expect(reportMiss).toHaveBeenCalledTimes(2)
+    expect(reportMiss).toHaveBeenLastCalledWith({ product_id: 1, part_id: 11, raw_query: null })
 
     wrapper.vm.keyword = '不出水'
     wrapper.vm.onKeywordInput()
     await vi.advanceTimersByTimeAsync(700)
-    expect(reportMiss).toHaveBeenCalledTimes(2) // 关键词那次是另一个 key
+    expect(reportMiss).toHaveBeenCalledTimes(3) // 关键词那次是另一个 key
     expect(reportMiss).toHaveBeenLastCalledWith({
       product_id: 1,
       part_id: 11,
