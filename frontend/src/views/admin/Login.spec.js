@@ -71,3 +71,25 @@ describe('Login 登录成功', () => {
     wrapper.unmount()
   })
 })
+
+describe('Login 语言入口', () => {
+  it('渲染语言切换按钮（登录页独立于后台 Layout，需自带入口）', async () => {
+    const { wrapper } = await mountLogin()
+    const sw = wrapper.find('.lang-corner .lang-switch')
+    expect(sw.exists()).toBe(true)
+    // 默认中文界面下按钮显示目标语言 English，与后台顶栏同一规则
+    expect(sw.text()).toBe('English')
+    wrapper.unmount()
+  })
+
+  it('点击切到英文并持久化到 localStorage、同步 html lang', async () => {
+    const { wrapper } = await mountLogin()
+    const sw = wrapper.find('.lang-corner .lang-switch')
+    await sw.trigger('click')
+    await flushPromises()
+
+    expect(localStorage.getItem('locale')).toBe('en-US')
+    expect(document.documentElement.getAttribute('lang')).toBe('en-US')
+    wrapper.unmount()
+  })
+})

@@ -1,5 +1,11 @@
 <template>
   <div class="login-page">
+    <!-- 登录页独立于后台 Layout（无顶栏），这里单独挂一个语言入口。
+         后台语言跟随本地偏好（DOCs/国际化设计.md §2.3），persist 写 localStorage，
+         这样未登录时选了 English，登录进后台仍是英文。 -->
+    <div class="lang-corner">
+      <LangSwitch />
+    </div>
     <el-card class="login-card" shadow="always">
       <h1 class="title">{{ $t('common.appName') }}</h1>
       <p class="subtitle">{{ $t('admin.login.subtitle') }}</p>
@@ -57,6 +63,7 @@ import { login } from '../../api/auth'
 import { setPermissions } from '../../utils/permissions'
 import { resetActivity } from '../../utils/idle'
 import { errorMessage } from '../../utils/error'
+import LangSwitch from '../../components/LangSwitch.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -102,11 +109,19 @@ async function onSubmit() {
 
 <style scoped>
 .login-page {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 100%;
   padding: 24px;
+}
+
+.lang-corner {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
 }
 
 .login-card {
