@@ -53,13 +53,15 @@ export default {
   },
   roleGroup: {
     system: 'System',
+    master: 'Product master',
     service: 'After-sales roles',
     warehouse: 'Warehouse roles'
   },
   role: {
-    // key 与后端 users.role 取值逐字一致，勿改驼峰
+    // key 与后端 user_roles.role 取值逐字一致，勿改驼峰
     super_admin: 'Super Admin',
     supervisor: 'Service Supervisor',
+    product_planner: 'Product Planner',
     warehouse_clerk: 'Stock Clerk',
     warehouse_manager: 'Stock Manager',
     agent: 'Support Agent',

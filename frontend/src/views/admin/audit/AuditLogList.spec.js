@@ -187,7 +187,7 @@ describe('AuditLogList', () => {
   })
 
   it('角色变更显示中文名，不把 warehouse_clerk 原样丢给用户', async () => {
-    // 审计 detail 里存的是 users.role 原值；不翻译就是英文原文
+    // 审计 detail 里存的是角色原值；不翻译就是英文原文
     adminGetAuditLog.mockResolvedValue({
       ...LOGS[0],
       action: 'user.update',
@@ -201,6 +201,22 @@ describe('AuditLogList', () => {
     const values = wrapper.vm.$.setupState.extraFields.map((item) => item.value)
     expect(values).toContain('仓管录入员')
     expect(values).toContain('仓管主管')
+  })
+
+  it('多角色数组在审计详情里逐个翻译', async () => {
+    adminGetAuditLog.mockResolvedValue({
+      ...LOGS[0],
+      action: 'user.update',
+      detail: { role_from: ['agent'], role_to: ['supervisor', 'warehouse_clerk'] }
+    })
+    const wrapper = await mountPage()
+
+    await wrapper.find('.el-table__row').trigger('click')
+    await flushPromises()
+
+    const values = wrapper.vm.$.setupState.extraFields.map((item) => item.value)
+    expect(values).toContain('一线客服')
+    expect(values).toContain('售后主管 / 仓管录入员')
   })
 
   it('汇总条展示近 7 天失败数与多 IP 提示', async () => {
@@ -235,7 +251,7 @@ describe('AuditLogList', () => {
     const BACKEND_DETAIL_KEYS = [
       'reason', 'identity_verified', 'error_class', 'title_from', 'title_to',
       'from_status', 'to_status', 'assignee_from', 'assignee_to',
-      'remark_updated', 'role', 'role_from', 'role_to',
+      'remark_updated', 'role', 'roles', 'role_from', 'role_to',
       'is_active_from', 'is_active_to', 'username_changed',
       'permission', 'expires_at', 'grant_id',
       'line_id', 'product_id', 'line_count', 'query', 'error_code'

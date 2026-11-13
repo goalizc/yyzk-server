@@ -34,7 +34,7 @@ os.environ["MAX_UPLOAD_MB"] = "20"
 from app.core.security import hash_password  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import ProductLine, User  # noqa: E402
+from app.models import ProductLine, User, UserRole  # noqa: E402
 
 DEFAULT_PASSWORD = "Admin@12345"
 DEFAULT_PASSWORD_HASH = hash_password(DEFAULT_PASSWORD)
@@ -105,15 +105,17 @@ def make_user(
     *,
     real_name: str = "系统管理员",
     role: str = "super_admin",
+    roles: list[str] | None = None,
     is_active: bool = True,
 ) -> User:
     user = User(
         username=username,
         password_hash=DEFAULT_PASSWORD_HASH if password == DEFAULT_PASSWORD else hash_password(password),
         real_name=real_name,
-        role=role,
         is_active=is_active,
     )
+    for value in roles or [role]:
+        user.roles.append(UserRole(role=value))
     db.add(user)
     db.commit()
     db.refresh(user)

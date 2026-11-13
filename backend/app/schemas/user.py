@@ -6,10 +6,12 @@ from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.roles import ROLE_PRIORITY
 from app.core.security import BCRYPT_MAX_BYTES
 from app.schemas.common import AppDateTime
 
-ROLE_VALUES = ("super_admin", "supervisor", "agent", "auditor", "warehouse_clerk", "warehouse_manager")
+# 角色白名单与优先级顺序共用一份定义：输入规范化与接口输出顺序必须一致。
+ROLE_VALUES = tuple(ROLE_PRIORITY)
 
 
 def _validate_password(value: str) -> str:
@@ -18,6 +20,16 @@ def _validate_password(value: str) -> str:
     if len(value.encode("utf-8")) > BCRYPT_MAX_BYTES:
         raise ValueError(f"密码不能超过 {BCRYPT_MAX_BYTES} 字节")
     return value
+
+
+def _validate_roles(value: list[str]) -> list[str]:
+    unique = set(value)
+    if not unique:
+        raise ValueError("至少选择一个角色")
+    if unique - set(ROLE_VALUES):
+        raise ValueError("角色不合法")
+    # 按 ROLE_VALUES 固定顺序返回，便于接口输出与前端回填保持稳定
+    return [role for role in ROLE_VALUES if role in unique]
 
 
 class ProductLineAssignment(BaseModel):
@@ -46,7 +58,8 @@ class UserCreate(BaseModel):
     username: str = Field(max_length=50)
     real_name: str = Field(max_length=50)
     password: str
-    role: str = "agent"
+    # 必填：角色是权限唯一来源，省略不能静默降级成 agent
+    roles: list[str]
     product_lines: list[ProductLineAssignment] = Field(default_factory=list)
 
     @field_validator("username")
@@ -70,18 +83,16 @@ class UserCreate(BaseModel):
     def _password_rules(cls, value: str) -> str:
         return _validate_password(value)
 
-    @field_validator("role")
+    @field_validator("roles")
     @classmethod
-    def _role_rules(cls, value: str) -> str:
-        if value not in ROLE_VALUES:
-            raise ValueError("角色不合法")
-        return value
+    def _roles_rules(cls, value: list[str]) -> list[str]:
+        return _validate_roles(value)
 
 
 class UserUpdate(BaseModel):
     username: str | None = Field(default=None, max_length=50)
     real_name: str | None = Field(default=None, max_length=50)
-    role: str | None = None
+    roles: list[str] | None = None
     is_active: bool | None = None
 
     @field_validator("real_name")
@@ -104,12 +115,12 @@ class UserUpdate(BaseModel):
             raise ValueError("不能为空")
         return value
 
-    @field_validator("role")
+    @field_validator("roles")
     @classmethod
-    def _role_rules(cls, value: str | None) -> str | None:
-        if value is not None and value not in ROLE_VALUES:
-            raise ValueError("角色不合法")
-        return value
+    def _roles_rules(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return value
+        return _validate_roles(value)
 
 
 class UserListItem(BaseModel):
@@ -117,6 +128,7 @@ class UserListItem(BaseModel):
     username: str
     real_name: str
     role: str
+    roles: list[str] = Field(default_factory=list)
     is_active: bool
     active_grant_count: int = 0
     last_login_at: AppDateTime | None = None

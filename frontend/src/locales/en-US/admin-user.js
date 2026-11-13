@@ -29,7 +29,7 @@ export default {
     realName: 'Full name',
     password: 'Initial password',
     confirmPassword: 'Confirm password',
-    role: 'Role',
+    role: 'Roles',
     productLines: 'Product lines',
     addLine: 'Add product line',
     selectLine: 'Select a product line',
@@ -42,7 +42,7 @@ export default {
     rulePasswordMin: 'Password must be at least 8 characters',
     ruleConfirmRequired: 'Please confirm the initial password',
     ruleConfirmMismatch: 'The two passwords do not match',
-    ruleRole: 'Please select a role',
+    ruleRole: 'Please select at least one role',
     saved: 'Saved',
     usernameDuplicated: 'This username already exists'
   },

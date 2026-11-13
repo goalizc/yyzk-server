@@ -23,6 +23,7 @@ def test_login_success_returns_token_and_user(client: TestClient, db) -> None:
         "username": "admin",
         "real_name": "系统管理员",
         "role": "super_admin",
+        "roles": ["super_admin"],
     }
 
 

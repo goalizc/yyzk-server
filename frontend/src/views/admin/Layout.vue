@@ -2,10 +2,13 @@
   <el-container class="layout">
     <el-aside v-if="!isNarrow" width="200px" class="aside">
       <div class="brand">{{ $t('admin.brand') }}</div>
-      <el-menu :default-active="activeMenu" router class="menu">
-        <el-menu-item v-for="item in navItems" :key="item.path" :index="item.path">
-          {{ item.label }}
-        </el-menu-item>
+      <el-menu ref="menuRef" :default-active="activeMenu" :default-openeds="['group-master']" router class="menu">
+        <el-sub-menu v-for="group in navGroups" :key="group.index" :index="group.index">
+          <template #title>{{ group.label }}</template>
+          <el-menu-item v-for="item in group.items" :key="item.path" :index="item.path">
+            {{ item.label }}
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 
@@ -37,7 +40,9 @@
 
         <div class="actions">
           <span v-if="!isNarrow" class="user">{{ displayName }}</span>
-          <el-tag v-if="!isNarrow && roleLabel" size="small" type="info">{{ roleLabel }}</el-tag>
+          <span v-if="!isNarrow && roleLabels.length" class="roles">
+            <el-tag v-for="label in roleLabels" :key="label" size="small" type="info">{{ label }}</el-tag>
+          </span>
           <!-- 后台没有 URL 前缀，语言只能从这里切；选择结果写入 localStorage。
                按钮显示"目标语言 + 地球图标"，否则中文界面下英文用户找不到入口 -->
           <LangSwitch />
@@ -98,20 +103,29 @@ const formRef = ref()
 
 const form = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
 
-const user = computed(() => {
+function readStoredUser() {
   try {
     return JSON.parse(localStorage.getItem('user') || '{}')
   } catch {
     return {}
   }
-})
+}
+
+// 用 ref 而不是直接读 localStorage 的 computed：/me 返回最新角色时要能刷新顶栏
+const user = ref(readStoredUser())
 
 const displayName = computed(
   () => user.value.real_name || user.value.username || t('admin.topbar.loggedIn')
 )
 // 走 utils/roles.js 而不是拼 `common.role.${role}`：拼字符串在漏登记时会
 // 把 "common.role.warehouse_clerk" 直接显示在顶栏上。
-const roleLabel = computed(() => roleLabelOf(t, user.value.role))
+// 多角色逐个展示；旧缓存只有 role 时按单角色兜底。
+const roleLabels = computed(() => {
+  const values = Array.isArray(user.value.roles) && user.value.roles.length
+    ? user.value.roles
+    : [user.value.role].filter(Boolean)
+  return values.map((role) => roleLabelOf(t, role)).filter(Boolean)
+})
 
 
 const pageTitle = computed(() => {
@@ -137,19 +151,17 @@ const labelWidth = useFormLabelWidth('96px', '150px')
 const isNarrow = ref(false)
 const dialogWidth = computed(() => (isNarrow.value ? '92%' : '420px'))
 
-// 菜单顺序 = 使用频率分区：日常作业 → 数据分析 → 基础配置 → 系统管理。
-// 不要按"功能上线先后"往数组尾部追加：产品线/产品/零件必须连续，且从粗到细
-// （线 → 产品 → 零件），否则层级会被打断。顺序由 Layout.spec.js 锁定。
+// 菜单顺序 = 数据层级：主数据（产品线 → 产品 → 零件）是售后与仓管的上级，
+// 放在最前；其后是售后作业、进销存、系统管理。顺序由 Layout.spec.js 锁定。
 // label 由 labelKey 翻译得到，不要在模板里拼 `admin.nav.` + 变量（扫描脚本抓不到）。
 const NAV_ITEMS = [
-  { path: '/admin/tickets', labelKey: 'admin.nav.tickets', permission: 'ticket:read' },
-  { path: '/admin/faults', labelKey: 'admin.nav.faults', permission: 'fault:read' },
-  { path: '/admin/stats', labelKey: 'admin.nav.stats', permission: 'stats:read' },
   { path: '/admin/product-lines', labelKey: 'admin.nav.productLines', permission: 'product_line:read' },
   { path: '/admin/products', labelKey: 'admin.nav.products', permission: 'product:read' },
   { path: '/admin/parts', labelKey: 'admin.nav.parts', permission: 'part:read' },
-  // 进销存是独立内部台账，单独成组：放在基础数据之后、系统管理之前，
-  // 不打断「产品线 → 产品 → 零件」的从粗到细层级。
+  { path: '/admin/tickets', labelKey: 'admin.nav.tickets', permission: 'ticket:read' },
+  { path: '/admin/faults', labelKey: 'admin.nav.faults', permission: 'fault:read' },
+  { path: '/admin/stats', labelKey: 'admin.nav.stats', permission: 'stats:read' },
+  // 进销存是独立内部台账，单独成组：放在售后之后、系统管理之前。
   // 分类是 SKU 的从属主数据（先建分类，再建物资），故排在 SKU 之前。
   { path: '/admin/inventory/categories', labelKey: 'admin.nav.inventoryCategories', permission: 'inventory:sku:read' },
   { path: '/admin/inventory/skus', labelKey: 'admin.nav.inventorySkus', permission: 'inventory:sku:read' },
@@ -169,6 +181,58 @@ const navItems = computed(() =>
   }))
 )
 
+// 菜单分组：主数据是售后与仓管的上级内容，放在第一组；
+// 分组只是导航层级，权限仍由每一项的 permission 决定。
+const NAV_GROUPS = [
+  {
+    index: 'group-master',
+    key: 'admin.nav.groupMaster',
+    paths: ['/admin/product-lines', '/admin/products', '/admin/parts']
+  },
+  {
+    index: 'group-service',
+    key: 'admin.nav.groupService',
+    paths: ['/admin/tickets', '/admin/faults', '/admin/stats']
+  },
+  {
+    index: 'group-inventory',
+    key: 'admin.nav.groupInventory',
+    paths: [
+      '/admin/inventory/categories',
+      '/admin/inventory/skus',
+      '/admin/inventory/inbound',
+      '/admin/inventory/outbound',
+      '/admin/inventory/movements',
+      '/admin/inventory/adjustments'
+    ]
+  },
+  {
+    index: 'group-system',
+    key: 'admin.nav.groupSystem',
+    paths: ['/admin/users', '/admin/audit-logs']
+  }
+]
+
+const navGroups = computed(() =>
+  NAV_GROUPS.map((group) => ({
+    index: group.index,
+    key: group.key,
+    label: t(group.key),
+    items: group.paths
+      .map((path) => navItems.value.find((item) => item.path === path))
+      .filter(Boolean)
+  })).filter((group) => group.items.length)
+)
+
+const menuRef = ref()
+// 直接访问子页面时展开其所属分组；主数据组默认展开。
+function openActiveGroup(path) {
+  const group = NAV_GROUPS.find((item) => item.paths.includes(path))
+  if (group) menuRef.value?.open(group.index)
+}
+watch(activeMenu, (path) => openActiveGroup(path))
+onMounted(() => openActiveGroup(activeMenu.value))
+
 function onNav(path) {
   router.push(path)
 }
@@ -185,6 +249,11 @@ async function refreshPermissions() {
   try {
     const data = await fetchMe()
     setPermissions(data.permissions)
+    // 角色可能在别处被管理员改过：同步顶栏标签与本地缓存，避免显示旧角色
+    if (data.user) {
+      user.value = data.user
+      localStorage.setItem('user', JSON.stringify(data.user))
+    }
   } catch {
     // 401/403 已由拦截器跳登录；网络错误忽略，避免误退出
   }
@@ -356,6 +425,12 @@ function onLogout() {
 .user {
   color: #606266;
   font-size: 13px;
+}
+
+.roles {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 .main {

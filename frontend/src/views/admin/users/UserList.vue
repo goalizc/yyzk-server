@@ -28,9 +28,13 @@
             <div class="sub">{{ row.real_name }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="$t('admin.user.list.colRole')" min-width="140">
+        <el-table-column :label="$t('admin.user.list.colRole')" min-width="160">
           <template #default="{ row }">
-            <div>{{ roleName(row.role) }}</div>
+            <div class="role-tags">
+              <el-tag v-for="value in rowRoles(row)" :key="value" size="small" type="info">
+                {{ roleName(value) }}
+              </el-tag>
+            </div>
             <el-tag
               v-if="row.active_grant_count > 0"
               type="warning"
@@ -48,7 +52,7 @@
               {{ line.name }}{{ line.expires_at ? $t('admin.user.list.temporary') : '' }}
             </el-tag>
             <span v-if="!row.product_lines.length" class="sub">
-              {{ usesProductLines(row.role) ? $t('admin.user.list.noLines') : $t('admin.user.list.linesNotApplicable') }}
+              {{ usesProductLines(rowRoles(row)) ? $t('admin.user.list.noLines') : $t('admin.user.list.linesNotApplicable') }}
             </span>
           </template>
         </el-table-column>
@@ -112,8 +116,8 @@
         <el-form-item v-if="!editingId" :label="$t('admin.user.form.confirmPassword')" prop="confirm_password">
           <el-input v-model="form.confirm_password" type="password" show-password />
         </el-form-item>
-        <el-form-item :label="$t('admin.user.form.role')" prop="role">
-          <el-select v-model="form.role">
+        <el-form-item :label="$t('admin.user.form.role')" prop="roles">
+          <el-select v-model="form.roles" multiple collapse-tags class="role-select">
             <el-option-group v-for="group in roleGroups" :key="group.key" :label="$t(group.key)">
               <el-option v-for="item in group.options" :key="item.value" :label="item.label" :value="item.value" />
             </el-option-group>
@@ -267,18 +271,20 @@ const dialogVisible = ref(false)
 const editingId = ref(null)
 const submitting = ref(false)
 const formRef = ref()
-// 编辑前的角色快照：保存时若发生变化要二次确认（权限立即生效）
-const originalRole = ref('')
+// 编辑前的角色快照：保存时若角色集合发生变化要二次确认（权限立即生效）
+const originalRoles = ref([])
 const form = reactive({
   username: '',
   real_name: '',
   password: '',
   confirm_password: '',
-  role: 'agent',
+  // 多选不能预选 agent：否则再点仓管/产品计划会变成"叠加"，
+  // 把售后权限顺带发给仓管/主数据账号。留空由规则强制至少选一个。
+  roles: [],
   product_lines: []
 })
-// 产品线只对售后线有意义（工单数据范围），仓管与超管表单里不显示
-const showProductLines = computed(() => usesProductLines(form.role))
+// 产品线只对售后线有意义（工单数据范围），仓管 / 主数据 / 超管表单里不显示
+const showProductLines = computed(() => usesProductLines(form.roles))
 
 const passwordVisible = ref(false)
 const resetPassword = ref('')
@@ -308,7 +314,13 @@ const rules = computed(() => ({
       trigger: 'blur'
     }
   ],
-  role: [{ required: true, message: t('admin.user.form.ruleRole'), trigger: 'change' }]
+  roles: [{
+    validator: (_rule, value, callback) => {
+      if (!Array.isArray(value) || !value.length) callback(new Error(t('admin.user.form.ruleRole')))
+      else callback()
+    },
+    trigger: 'change'
+  }]
 }))
 const grantRules = computed(() => ({
   permission: [{ required: true, message: t('admin.user.grant.rulePermission'), trigger: 'change' }],
@@ -320,6 +332,18 @@ const grantableOptions = ref([])
 
 // utils/roles.js 的 roleLabel 需要 t，这里包一层省得模板里到处传
 const roleName = (value) => roleLabel(t, value)
+
+// 多角色兼容：旧缓存/旧接口只有 role 时按单角色展示
+const rowRoles = (row) => (row.roles?.length ? row.roles : [row.role].filter(Boolean))
+
+// 角色集合比较：顺序不同不算变化
+function sameRoleSet(left, right) {
+  if (left.length !== right.length) return false
+  const sorted = [...right].sort()
+  return [...left].sort().every((value, index) => value === sorted[index])
+}
+
+const rolesLabel = (values) => values.map((value) => roleName(value)).join(' / ')
 
 let keywordTimer = null
 
@@ -373,13 +397,13 @@ function onSizeChange() {
 
 function resetForm() {
   editingId.value = null
-  originalRole.value = ''
+  originalRoles.value = []
   Object.assign(form, {
     username: '',
     real_name: '',
     password: '',
     confirm_password: '',
-    role: 'agent',
+    roles: [],
     product_lines: []
   })
   formRef.value?.clearValidate()
@@ -399,11 +423,11 @@ function onRowClick(row) {
 function openEdit(row) {
   resetForm()
   editingId.value = row.id
-  originalRole.value = row.role
+  originalRoles.value = [...rowRoles(row)]
   Object.assign(form, {
     username: row.username,
     real_name: row.real_name,
-    role: row.role,
+    roles: [...rowRoles(row)],
     product_lines: row.product_lines.map((line) => ({
       line_id: line.id,
       expires_at: line.expires_at ? line.expires_at.slice(0, 10) : ''
@@ -424,14 +448,14 @@ async function onSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
 
-  // 角色变更会立即改变对方权限：保存前明确确认一次
-  if (editingId.value && form.role !== originalRole.value) {
+  // 角色集合变更会立即改变对方权限：保存前明确确认一次
+  if (editingId.value && !sameRoleSet(form.roles, originalRoles.value)) {
     try {
       await ElMessageBox.confirm(
         t('admin.user.role.changeConfirm', {
           name: form.real_name,
-          from: roleName(originalRole.value),
-          to: roleName(form.role)
+          from: rolesLabel(originalRoles.value),
+          to: rolesLabel(form.roles)
         }),
         t('admin.user.role.changeTitle'),
         { type: 'warning', confirmButtonText: t('admin.user.role.confirmChange'), cancelButtonText: t('common.action.cancel') }
@@ -441,7 +465,7 @@ async function onSubmit() {
     }
   }
 
-  // 仓管 / 超管不参与产品线分配：既不显示也不改写，
+  // 仓管 / 超管 / 产品计划不参与产品线分配：既不显示也不改写，
   // 避免"打开一次编辑就把历史分配清空"（这些角色本来就不读 product_lines）
   const assignments = showProductLines.value
     ? form.product_lines
@@ -455,7 +479,7 @@ async function onSubmit() {
       await adminUpdateUser(editingId.value, {
         username: form.username.trim(),
         real_name: form.real_name.trim(),
-        role: form.role
+        roles: [...form.roles]
       })
       if (assignments) await adminReplaceUserLines(editingId.value, assignments)
     } else {
@@ -463,7 +487,7 @@ async function onSubmit() {
         username: form.username.trim(),
         real_name: form.real_name.trim(),
         password: form.password,
-        role: form.role,
+        roles: [...form.roles],
         product_lines: assignments || []
       })
     }
@@ -597,6 +621,8 @@ onBeforeUnmount(() => clearTimeout(keywordTimer))
 .sub { color: #909399; font-size: 12px; }
 .hint { color: #909399; font-size: 12px; line-height: 1.6; }
 .tag { margin-right: 4px; }
+.role-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.role-select { width: 100%; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .assignments { display: flex; flex-direction: column; gap: 8px; }
 /* 英文「Delete」比中文「删除」宽，三件套写死宽度会把按钮挤出弹窗；

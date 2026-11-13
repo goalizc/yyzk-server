@@ -1,6 +1,10 @@
 export default {
   brand: 'Service Console',
   nav: {
+    groupService: 'After-sales',
+    groupMaster: 'Product master',
+    groupInventory: 'Inventory',
+    groupSystem: 'System',
     tickets: 'Tickets',
     faults: 'Fault Library',
     stats: 'Dashboard',

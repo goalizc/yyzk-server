@@ -4,7 +4,7 @@
 
 **Goal:** 把产品/零件/产品线主数据的唯一业务写权限收口到新增的 `product_planner`（产品计划）角色，售后与物资只保留只读引用，并把主数据从售后菜单中分组出来。
 
-**Architecture:** 复用现有 `product:read/write`、`part:read/write`、`product_line:read/write` 权限码，不新增权限码；新增一个角色 `product_planner` 作为唯一常规写者，`super_admin` 保留 break-glass 全部权限。售后主管移除三个主数据写码，页面已有 `hasPermission` 门禁会自动变成只读；仓管继续走库存域 `/inventory/refs/*`。主数据写权限同时从临时授权清单中排除。多角色（`user_roles`）不在本计划内，作为后续独立改造；本计划保持单角色模型。
+**Architecture:** 复用现有 `product:read/write`、`part:read/write`、`product_line:read/write` 权限码，不新增权限码；新增一个角色 `product_planner` 作为唯一常规写者，`super_admin` 保留 break-glass 全部权限。售后主管移除三个主数据写码，页面已有 `hasPermission` 门禁会自动变成只读；仓管继续走库存域 `/inventory/refs/*`。主数据写权限同时从临时授权清单中排除。多角色（`user_roles`）纳入本期（用户已确认），采用 `user_roles` 关联表作为角色唯一来源，权限与数据范围取并集，旧 `users.role` 列迁移后删除、接口保留 `role` 派生值做兼容。
 
 **Tech Stack:** FastAPI + SQLAlchemy + PostgreSQL + Pytest；Vue 3 + Element Plus + Vitest + Playwright。
 
@@ -1240,6 +1240,36 @@ Expected: `migrate` 执行 008（或显示没有待执行迁移）；health 200�
 
 ---
 
+## Task 9: 多角色（user_roles 唯一来源）
+
+用户已确认：多角色纳入本期，不做“后续独立改造”。
+
+**数据模型**
+- 新建 `user_roles(user_id, role)` 复合主键，FK `users(id) ON DELETE CASCADE`，`role` CHECK 七角色。
+- 迁移 `deploy/migrations/009_multi_role.sql`：建表 → 回填 `users.role` → 删除 `users.role` 与旧 CHECK；全部幂等。
+- `deploy/schema.sql` v1.6：`users` 去掉 `role` 列，新增 `user_roles`，登记 `009_multi_role`。
+- `User.roles` relationship + `role_values` / 派生 `role` 属性（按管理职责优先级取一个，供旧接口兼容展示）。
+
+**后端**
+- `permissions.py`：`effective_permissions` 取所有角色权限并集后再 `expand()`；`data_scope` 任一角色为 ALL 即 ALL，否则 LINES。
+- `backend/app/schemas/user.py`：`UserCreate.roles` / `UserUpdate.roles`（至少 1 个、去重、七角色白名单）；`UserListItem.role` 保留派生值并新增 `roles`。
+- `admin_users.py`：创建/修改改为整体替换角色集合；列表按角色筛选走 `user_roles` 子查询；超管保护改用 `user_roles` 行锁；自我角色变更按集合比较；审计记录 `role_from` / `role_to` 数组。
+- `auth.py`：登录审计记录 `roles`；`UserOut` 增加 `roles`。
+- `deploy/scripts/init_admin.py`：建号写入 `user_roles`；列表聚合展示多角色；`--role` 选项补齐七角色。
+
+**前端**
+- `roles.js`：`usesProductLines` 支持数组（任一角色属于售后线即显示产品线分配）。
+- `UserList.vue`：角色筛选保持单选；表格按 `roles` 展示多个标签；新建/编辑改为多选，提交 `roles`；角色变更确认按集合比较。
+- `Layout.vue`：顶栏展示全部角色标签。
+- 文案：`admin.user.form.role` 改为“角色（可多选）”，`ruleRole` 改为“请至少选择一个角色”。
+
+**验收**
+- 后端：建号 `roles=["supervisor","warehouse_clerk"]` 成功；该账号同时拥有工单与库存权限；列表按次级角色筛选可命中；仅停用/降级最后一个超管时返回 `LAST_SUPER_ADMIN`。
+- 迁移：009 连续执行两次成功；回填后每个用户至少一个角色；`users.role` 列已不存在。
+- 前端：多角色表格显示多个中文标签；编辑弹窗回填多个角色；提交载荷为 `roles` 数组。
+
+---
+
 ## Self-Review
 
 **Spec coverage**
@@ -1249,7 +1279,7 @@ Expected: `migrate` 执行 008（或显示没有待执行迁移）；health 200�
 - 主数据菜单分组：Task 5。
 - 售后/仓管缺档只提示：Task 6。
 - 文档与迁移同步：Task 2、7、8。
-- 多角色后续改造：明确不在本计划内，单角色模型保持不变。
+- 多角色（`user_roles` 唯一来源）：Task 9，纳入本期，不延后。
 
 **Placeholder scan**
 - 无 TBD/TODO；所有代码步骤含实际代码或实际文案。

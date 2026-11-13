@@ -224,6 +224,11 @@ test('@smoke 英文界面弹窗内容不横向溢出', async ({ page }) => {
       path: '/admin/users',
       open: async () => {
         await page.getByRole('button', { name: 'New user' }).click()
+        // 多选角色默认留空；先选一个售后角色，产品线分配区才会出现
+        await page.locator('.el-dialog').filter({ hasText: 'New user' }).locator('.el-select').first().click()
+        await page.locator('.el-select-dropdown:visible .el-select-dropdown__item', { hasText: 'Support Agent' }).click()
+        // 多选下拉选完不会自动收起，先关掉再点分配行，避免浮层拦截点击
+        await page.keyboard.press('Escape')
         // 分配行是溢出的高发区，必须有一行才量得到
         await page.getByRole('button', { name: 'Add product line' }).click()
       }

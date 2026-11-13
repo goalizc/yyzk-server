@@ -114,7 +114,7 @@
 
 ### 0.3 鉴权与授权
 
-> **权限模型**：`users.role` 取值为 `super_admin` / `supervisor` / `agent` / `auditor` / `warehouse_clerk` / `warehouse_manager`，角色对应固定权限码集合；接口按权限码校验（`require("资源:动作")`），不按角色名硬编码。生效权限 = 角色模板权限 ∪ 未过期且未收回的临时授权，并按依赖闭包补齐。数据范围只作用于工单：`ALL` 不受限，`LINES` 仅被授权产品线。
+> **权限模型**：账号角色存 `user_roles(user_id, role)`，一人可多岗；`role` 取值为 `super_admin` / `supervisor` / `product_planner` / `agent` / `auditor` / `warehouse_clerk` / `warehouse_manager`，角色对应固定权限码集合。接口按权限码校验（`require("资源:动作")`），不按角色名硬编码。生效权限 = 全部角色模板权限的并集 ∪ 未过期且未收回的临时授权，并按依赖闭包补齐。数据范围只作用于工单：任一角色为 `ALL` 即 `ALL`，否则 `LINES`（仅被授权产品线）。
 
 权限码共 27 个：`ticket:read/write/assign`、`product:read/write`、`part:read/write`、`fault:read/write`、`upload:write`、`stats:read`、`user:read/write`、`product_line:read/write`、`audit:read`，以及进销存 11 个 `inventory:*`（详见 PRD §6）。
 
@@ -156,13 +156,16 @@ Response 200:
     "id": 1,
     "username": "admin",
     "real_name": "系统管理员",
-    "role": "super_admin"
+    "role": "super_admin",
+    "roles": ["super_admin"]
   },
   "permissions": ["fault:read", "fault:write", "product:read", "ticket:read", "..."]
 }
 ```
 
 `permissions` 为**已展开依赖闭包**的生效权限码数组（含未过期且未收回的临时授权），前端直接存入 localStorage，按码渲染菜单/路由/按钮，不再判断角色名。
+
+`user.role` 是按管理职责优先级派生的主角色，仅作旧前端兼容展示；权限判定以 `user.roles` 与 `permissions` 为准。
 
 Error 401：`{"detail": "用户名或密码错误", "code": "AUTH_INVALID_CREDENTIALS"}`
 Error 403：`{"detail": "账号已停用", "code": "AUTH_USER_DISABLED"}`
@@ -182,7 +185,8 @@ Response 200:
     "id": 1,
     "username": "admin",
     "real_name": "系统管理员",
-    "role": "super_admin"
+    "role": "super_admin",
+    "roles": ["super_admin"]
   },
   "permissions": ["fault:read", "fault:write", "product:read", "ticket:read", "..."]
 }
@@ -851,7 +855,7 @@ Response 200：返回更新后的工单详情（结构同 GET 详情）。
 
 **权限 `user:read`**。用户列表。
 
-Query：`keyword`（匹配用户名/姓名，≤100 字）、`role`、`is_active`、`page`、`page_size`
+Query：`keyword`（匹配用户名/姓名，≤100 字）、`role`（筛选拥有该角色的账号）、`is_active`、`page`、`page_size`
 
 Response 200:
 ```json
@@ -865,6 +869,7 @@ Response 200:
       "username": "admin",
       "real_name": "系统管理员",
       "role": "super_admin",
+      "roles": ["super_admin"],
       "is_active": true,
       "last_login_at": "2026-10-22T09:00:00+08:00",
       "created_at": "2026-10-01T09:00:00+08:00",
@@ -875,6 +880,8 @@ Response 200:
   ]
 }
 ```
+
+`roles` 为账号全部角色；`role` 为派生的主角色，仅作兼容展示。
 
 ### GET /api/admin/users/assignable
 
@@ -898,7 +905,7 @@ Response 200:
   "username": "li",
   "real_name": "李工",
   "password": "Init@12345",
-  "role": "agent",
+  "roles": ["agent"],
   "product_lines": [
     { "line_id": 1, "expires_at": null },
     { "line_id": 2, "expires_at": "2026-12-31T23:59:59+08:00" }
@@ -906,7 +913,7 @@ Response 200:
 }
 ```
 
-规则：`username` ≤50 且唯一；`real_name` ≤50；密码 8 位以上且 ≤72 字节；`role` 取四个合法值；产品线到期时间必须晚于当前时间或为 `null`（长期）。
+规则：`username` ≤50 且唯一；`real_name` ≤50；密码 8 位以上且 ≤72 字节；`roles` **必填**，为七角色白名单的非空数组，重复值自动去重、至少保留一个；产品线到期时间必须晚于当前时间或为 `null`（长期）。
 
 Response 201：返回用户列表项结构（同 GET 列表项）。
 Error 409：`{"detail": "用户名 li 已存在", "code": "USERNAME_DUPLICATED"}`
@@ -914,10 +921,10 @@ Error 404：`line_id` 不存在
 
 ### PUT /api/admin/users/{id}
 
-**权限 `user:write`**。修改用户名 / 姓名 / 角色 / 启用状态。
+**权限 `user:write`**。修改用户名 / 姓名 / 角色集合 / 启用状态。
 
 ```json
-{ "username": "li2", "real_name": "李工", "role": "supervisor", "is_active": true }
+{ "username": "li2", "real_name": "李工", "roles": ["supervisor", "warehouse_clerk"], "is_active": true }
 ```
 
 字段规则：
@@ -927,8 +934,8 @@ Error 404：`line_id` 不存在
 
 硬约束：
 - 不能停用自己 → 400 `SELF_DISABLE`
-- 不能修改自己的角色 → 400 `SELF_ROLE_CHANGE`
-- 停用或降级最后一个在用超管 → 400 `LAST_SUPER_ADMIN`（事务内 `FOR UPDATE` 锁定在用超管行后判断）
+- 不能修改自己的角色集合 → 400 `SELF_ROLE_CHANGE`（按集合比较，顺序变化不算修改）
+- 停用或降级最后一个在用超管 → 400 `LAST_SUPER_ADMIN`（事务内 `FOR UPDATE` 锁定 `user_roles` 超管行后判断）
 
 不提供删除用户，只停用；历史 `tickets.assignee_id`、`ticket_status_logs.operator_id`、`faults.created_by` 保留。
 
@@ -952,7 +959,7 @@ Response 200:
 ["audit:read", "fault:read", "inventory:sku:read", "..."]
 ```
 
-> 已排除 `user:write`（提权入口）、`inventory:adjust:write`（冲正可凭空改账）、`inventory:cost:read`（L1 未启用）。排序为字典序。
+> 已排除 `user:write`（提权入口）、`inventory:adjust:write`（冲正可凭空改账）、`inventory:cost:read`（L1 未启用）、`product:write` / `part:write` / `product_line:write`（主数据单写者）。排序为字典序。
 
 ### GET /api/admin/users/{id}/grants
 

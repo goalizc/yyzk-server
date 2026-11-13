@@ -125,7 +125,10 @@ export default {
     disableFailed: '停用失败，请重试',
     lowStockTag: '低库存',
     lowStockSummary: '低库存 {n}',
+    productMissingHint: '暂无产品档案，请联系产品/计划岗建档；也可留空按纯物资处理',
+    partMissingHint: '暂无零件档案，请联系产品/计划岗建档；也可留空按纯物资处理',
     recentMovements: '最近流水',
+    productsLoadFailed: '产品列表加载失败，请刷新页面后重试',
     partsLoadFailed: '零件列表加载失败'
   },
   category: {

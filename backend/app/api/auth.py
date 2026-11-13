@@ -32,6 +32,17 @@ from app.schemas.common import ErrorBody
 router = APIRouter()
 
 
+def _user_out(user: User) -> UserOut:
+    """显式构造：ORM 的 roles 是 UserRole 对象，不能直接喂给 list[str]。"""
+    return UserOut(
+        id=user.id,
+        username=user.username,
+        real_name=user.real_name,
+        role=user.role,
+        roles=user.role_values,
+    )
+
+
 @router.post(
     "/login",
     response_model=LoginResponse,
@@ -90,7 +101,7 @@ def login(
         "user_id": user.id,
         "target_id": str(user.id),
         "target_name": user.username,
-        "detail": {"reason": "success", "role": user.role, "identity_verified": True},
+        "detail": {"reason": "success", "roles": user.role_values, "identity_verified": True},
     }
 
     token, expires_at = create_access_token(user.id, user.username, user.token_version)
@@ -100,7 +111,7 @@ def login(
     return LoginResponse(
         access_token=token,
         expires_at=expires_at,
-        user=UserOut.model_validate(user),
+        user=_user_out(user),
         permissions=current_permissions(user, db),
     )
 
@@ -111,7 +122,7 @@ def me(
     db: Session = Depends(get_db),
 ) -> MeResponse:
     return MeResponse(
-        user=UserOut.model_validate(user),
+        user=_user_out(user),
         permissions=current_permissions(user, db),
     )
 

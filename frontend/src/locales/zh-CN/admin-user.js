@@ -31,7 +31,7 @@ export default {
     realName: '姓名',
     password: '初始密码',
     confirmPassword: '确认密码',
-    role: '角色',
+    role: '角色（可多选）',
     productLines: '产品线',
     addLine: '添加产品线',
     selectLine: '选择产品线',
@@ -44,7 +44,7 @@ export default {
     rulePasswordMin: '密码至少 8 位',
     ruleConfirmRequired: '请再次输入初始密码',
     ruleConfirmMismatch: '两次输入的密码不一致',
-    ruleRole: '请选择角色',
+    ruleRole: '请至少选择一个角色',
     saved: '已保存',
     usernameDuplicated: '账号已存在'
   },

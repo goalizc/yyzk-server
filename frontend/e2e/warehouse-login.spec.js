@@ -19,20 +19,37 @@ async function loginWarehouse(page) {
   await page.getByRole('button', { name: '登录' }).click()
 }
 
-test('@smoke warehouse 角色登录不卡死，落在库存首页', async ({ page }) => {
+test('@smoke warehouse 账号登录不卡死，按权限稳定落地', async ({ page }) => {
   await loginWarehouse(page)
+  await expect(page.locator('.layout')).toBeVisible()
 
-  // 关键断言：最终稳定停在库存 SKU 页。若仍是重定向死循环，URL 会不停跳动，
-  // 这里在 10s 内不满足而超时失败。
-  await expect(page).toHaveURL(/\/admin\/inventory\/skus/)
+  const permissions = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('permissions') || '[]')
+  )
+  // 账号可能被人工追加了其它角色（例如产品计划），此时落地页会随权限变化。
+  // 纯仓管账号仍必须落在物资 SKU；所有情况都不得停在登录页或来回跳转。
+  const pureWarehouse = ![
+    'ticket:read',
+    'product:read',
+    'product_line:read',
+    'part:read',
+    'fault:read',
+    'stats:read',
+    'user:read'
+  ].some((code) => permissions.includes(code))
+  if (pureWarehouse) {
+    await expect(page).toHaveURL(/\/admin\/inventory\/skus/)
+    // 库存页真实渲染（菜单/标题含「物资 SKU」）
+    await expect(page.getByText('物资 SKU').first()).toBeVisible()
+  }
 
-  // 没被踢回登录页
+  // 没被踢回登录页，后台布局真实渲染
   await expect(page.locator('.login-card')).toHaveCount(0)
-
-  // 库存页真实渲染（菜单/标题含「物资 SKU」）
-  await expect(page.getByText('物资 SKU').first()).toBeVisible()
+  await expect(page.locator('.layout')).toBeVisible()
 
   // 双保险：停留 3 秒，URL 仍稳定，证明不是"某次恰好命中"
+  const landing = page.url()
   await page.waitForTimeout(3000)
-  await expect(page).toHaveURL(/\/admin\/inventory\/skus/)
+  expect(page.url()).toBe(landing)
+  await expect(page.locator('.login-card')).toHaveCount(0)
 })

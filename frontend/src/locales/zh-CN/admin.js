@@ -3,6 +3,10 @@
 export default {
   brand: '售后故障诊断',
   nav: {
+    groupService: '售后业务',
+    groupMaster: '主数据',
+    groupInventory: '进销存',
+    groupSystem: '系统管理',
     tickets: '工单管理',
     faults: '故障知识库',
     stats: '数据看板',

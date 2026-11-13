@@ -122,7 +122,10 @@ export default {
     disableFailed: 'Failed to disable. Please retry.',
     lowStockTag: 'Low stock',
     lowStockSummary: 'Low stock {n}',
+    productMissingHint: 'No product records yet. Ask the product planner to create one, or leave it blank for general supplies.',
+    partMissingHint: 'No part records yet. Ask the product planner to create one, or leave it blank for general supplies.',
     recentMovements: 'Recent movements',
+    productsLoadFailed: 'Failed to load products. Refresh the page and retry.',
     partsLoadFailed: 'Failed to load parts'
   },
   category: {

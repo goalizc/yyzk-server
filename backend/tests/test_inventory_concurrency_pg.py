@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessError
 from app.database import Base
-from app.models import InventoryDocument, InventorySku, InventoryWarehouse, StockMovement, User
+from app.models import InventoryDocument, InventorySku, InventoryWarehouse, StockMovement, User, UserRole
 from app.services.inventory import (
     DocumentInput,
     ItemInput,
@@ -59,7 +59,7 @@ def _seed(engine) -> tuple[int, int, int, int]:
             username="concurrent_op",
             password_hash="x",
             real_name="并发测试",
-            role="super_admin",
+            roles=[UserRole(role="super_admin")],
         )
         warehouse = InventoryWarehouse(code="DEFAULT", name="默认仓")
         db.add_all([user, warehouse])

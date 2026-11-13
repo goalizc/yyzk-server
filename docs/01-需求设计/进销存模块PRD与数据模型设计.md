@@ -47,13 +47,14 @@
 |---|---|
 | `warehouse_clerk` 仓管录入员 | 建 SKU、登记入出库、查流水、导出（**不能**改已生效单、不能冲正）；建 SKU 选「关联产品 / 零件」时走库存域只读引用端点 `/refs/*`，**不授予** `product:read` / `part:read` |
 | `warehouse_manager` 仓管主管 | 录入员全部动作，外加修改已生效入库/出库单的数量与种类（**不含**冲正） |
-| `supervisor` 售后主管 | 全部动作，外加冲正（`inventory:adjust:write`）与盘点 |
-| `super_admin` 超级管理员 | 全部动作，账号与角色维护 |
+| `product_planner` 产品计划 | **产品 / 零件 / 产品线主数据的唯一常规写者**；不参与售后与库存业务 |
+| `supervisor` 售后主管 | 库存全部动作（含冲正 `inventory:adjust:write` 与盘点）；产品 / 零件 / 产品线**只读** |
+| `super_admin` 超级管理员 | 全部动作（**break-glass**）；账号与角色维护 |
 | `auditor` 只读审计 | 只读台账与流水、导出 |
 | `agent` 一线客服 | 无库存权限（长期不与售后挂钩） |
 
-> **账号表单的角色下拉按业务线分区**：系统管理（`super_admin`）/ 售后角色（`supervisor`、`agent`、`auditor`）/ 仓管角色（`warehouse_clerk`、`warehouse_manager`）。6 项平铺时「售后主管」与「仓管主管」极易选错。
-> **产品线分配只对售后线开放**：`super_admin` 与两个仓管角色不参与工单数据范围，表单隐藏该字段、列表显示「不适用」，且编辑保存时**不调用**产品线替换接口（避免把历史分配清空）。
+> **账号表单的角色下拉按职责分区且可多选**：系统管理（`super_admin`）/ 主数据（`product_planner`）/ 售后角色（`supervisor`、`agent`、`auditor`）/ 仓管角色（`warehouse_clerk`、`warehouse_manager`）。7 项平铺时「售后主管」「仓管主管」「产品计划」极易选错；一人多岗时勾选多个角色，权限取并集。
+> **产品线分配只对售后线开放**：`super_admin`、`product_planner` 与两个仓管角色不参与工单数据范围，表单隐藏该字段、列表显示「不适用」，且编辑保存时**不调用**产品线替换接口（避免把历史分配清空）。
 
 ---
 
@@ -532,7 +533,12 @@ L1 的定位是"只记数量、不做金额账"，但定案稿要求为未来成
 - `ROLE_NAMES` 追加 `"warehouse_clerk": "仓管录入员"` 与 `"warehouse_manager": "仓管主管"`。中文名必须带「仓管」限定词：`supervisor` 已是「售后主管」，裸写「录入员」「主管」两个角色分不清。
 - `_ROLE_PERMISSIONS` 按定案稿 §2.2 分配（录入员 8 码；主管 = 录入员全部 + `inventory:doc:edit`）；`_DATA_SCOPE` 中两个仓管角色均取 `ALL`。
 - `_DEPENDENCIES` 登记闭包：`*:write` → 对应 `*:read`；`inventory:adjust:write` → `movement:read` + `inbound:read` + `outbound:read`；`inventory:export` → 全部 `:read`。
-- `grantable_permissions()` 在原有 `USER_WRITE` 之外**再排除 `inventory:adjust:write` 与 `inventory:cost:read`**。前者冲正能凭空改账，不应带 `expires_at` / `reason` 临时发放；后者按 §3.6「只登记、不分配、不启用」且一期无任何端点 `require` 它，出现在临时授权下拉里就是「没有实际功能的选项」（同定案稿 §6.3 不预登记 review 码的理由）。
+- 新增角色 `product_planner`（产品计划）：`product:read/write`、`part:read/write`、`product_line:read/write`，是产品 / 零件 / 产品线主数据的**唯一常规写者**。
+- `supervisor` 移除 `product:write` / `part:write` / `product_line:write`，保留三个 `:read`；售后台账动作不变。
+- `grantable_permissions()` 在原有排除项之外**再排除 `product:write` / `part:write` / `product_line:write`**：主数据单写者，`super_admin` 仅保留自身 break-glass，不通过临时授权转授。
+- 迁移 008 会收回既有的未过期主数据写临时授权，避免历史授权绕过新边界。
+- 账号采用多角色：角色存 `user_roles(user_id, role)`，一人可多岗；生效权限为全部角色模板权限的并集，数据范围任一角色为 `ALL` 即 `ALL`。旧 `users.role` 列在迁移 009 中回填后删除，接口保留派生的 `role` 字段仅作兼容展示。
+- 迁移 009 会把存量单角色回填到 `user_roles`，并删除 `users.role` 与旧 CHECK；`schema.sql` 修订号 → v1.6。
 
 **数据范围**：库存域统一 `ALL`，在 service 层显式写死，**不得复用 `apply_ticket_scope`**（它按产品线过滤，纯物资 `part_id` 为空会导致谁都看不见）。
 
@@ -540,27 +546,30 @@ L1 的定位是"只记数量、不做金额账"，但定案稿要求为未来成
 
 | 文件 | 改动 |
 |---|---|
-| `deploy/schema.sql` | `users.role` 的 CHECK 为 6 角色（含 `warehouse_clerk` / `warehouse_manager`）；追加 9 张库存表与流水触发器；登记 `005_inventory` / `006_warehouse_roles` / `007_inventory_categories`；修订号 → v1.4 |
+| `deploy/schema.sql` | 新增 `user_roles` 多角色表（v1.6）；7 角色 CHECK 落在 `user_roles.role`；追加 9 张库存表与流水触发器；登记 `005` / `006` / `007` / `008` / `009`；修订号 → v1.6 |
 | `deploy/migrations/005_inventory.sql` | 6 张库存表 + 默认仓 + append-only 触发器（幂等） |
 | `deploy/migrations/006_warehouse_roles.sql` | `warehouse` 拆为 `warehouse_clerk` / `warehouse_manager`，旧账号升级为主管 |
 | `deploy/migrations/007_inventory_categories.sql` | 分类主数据 + 两张多对多关联；删旧 `category` 列前先回填分类 |
-| `frontend/src/locales/{zh-CN,en-US}/common.js` | `role.warehouse_clerk` / `role.warehouse_manager` + `roleGroup.*` |
-| `frontend/src/utils/roles.js` | `ROLE_KEYS` / `ROLE_GROUPS` / `usesProductLines`（角色唯一来源） |
+| `deploy/migrations/008_product_planner.sql` | 角色 CHECK 放宽到 7 角色；收回既有主数据写临时授权 |
+| `deploy/migrations/009_multi_role.sql` | 新建 `user_roles`；回填存量单角色；删除 `users.role` 与旧 CHECK（幂等） |
+| `frontend/src/locales/{zh-CN,en-US}/common.js` | `role.warehouse_clerk` / `role.warehouse_manager` / `role.product_planner` + `roleGroup.master` |
+| `frontend/src/utils/roles.js` | `ROLE_KEYS` / `ROLE_GROUPS` / `usesProductLines`（角色唯一来源，含 product_planner） |
 | `frontend/src/utils/permissionLabels.js` | 追加 11 个 `permission.*` key 映射 |
 | `frontend/src/locales/{zh-CN,en-US}/permission.js` | 追加 11 个权限名 |
 | `frontend/src/locales/{zh-CN,en-US}/error.js` | 追加本文 §7 列出的 7 个错误码文案 |
-| `frontend/src/locales/{zh-CN,en-US}/admin.js` | `admin.nav.inventory*` 6 项 + `admin.page.inventory*` 6 项 |
-| `frontend/src/locales/{zh-CN,en-US}/admin-inventory.js` | **新建**，6 个页面的全部业务文案 |
+| `frontend/src/locales/{zh-CN,en-US}/admin.js` | `admin.nav.inventory*` 6 项 + `admin.page.inventory*` 6 项 + 4 个菜单分组标题 |
+| `frontend/src/locales/{zh-CN,en-US}/admin-inventory.js` | **新建**，6 个页面的全部业务文案 + 缺档提示 |
 | `frontend/src/locales/{zh-CN,en-US}/index.js` | 注册 `admin.inventory = adminInventory` |
 | `frontend/src/router/index.js` | 追加 6 条后台子路由 + `meta.permission` |
-| `frontend/src/views/admin/Layout.vue` | `NAV_ITEMS` 追加 6 项 |
+| `frontend/src/views/admin/Layout.vue` | `NAV_ITEMS` 追加 6 项；侧栏分为售后 / 主数据 / 进销存 / 系统四组 |
+| `frontend/src/views/admin/inventory/SkuList.vue` / `faults/FaultEdit.vue` | 产品/零件缺档时提示联系产品/计划岗 |
 | `backend/app/services/audit.py` | `_RULES` 补 11 行、`_NAME_FIELDS` 加 3 项（见 §9） |
 | `backend/app/api/admin_inventory*.py` | 3 个 router，共 24 个端点（§4） |
 | `backend/app/models/__init__.py` | 注册 9 个新模型，注释「11 张表」→「20 张表」 |
-| `backend/app/schemas/user.py` | `ROLE_VALUES` whitelist 为 6 个角色 |
-| `backend/tests/test_permissions.py` / `frontend/src/utils/permissionLabels.spec.js` / `frontend/src/views/admin/users/UserList.spec.js` | 基线断言同步：角色闭包循环加仓管角色；grantable 等式排除 3 码；权限码清单 16→27；角色下拉 4→6 |
+| `backend/app/schemas/user.py` | `ROLE_VALUES` whitelist 为 7 个角色 |
+| `backend/tests/test_permissions.py` / `frontend/src/utils/permissionLabels.spec.js` / `frontend/src/views/admin/users/UserList.spec.js` | 基线断言同步：角色闭包循环加仓管/产品计划角色；grantable 等式排除 6 码；权限码清单 16→27；角色下拉 4→7 |
 | `frontend/src/views/admin/users/UserList.vue` | 授权下拉改由 `GET /admin/permissions/grantable` 提供，与后端 `grantable_permissions()` 单一来源 |
-| `backend/tests/test_inventory_permissions.py` | **新建**（任务卡 #2 验收）：11 码登记、6 角色矩阵、依赖闭包封闭、仓管数据范围 ALL、grantable 三类排除，纯函数无需 db |
+| `backend/tests/test_inventory_permissions.py` | **新建**（任务卡 #2 验收）：11 码登记、7 角色矩阵、依赖闭包封闭、仓管数据范围 ALL、grantable 6 类排除，纯函数无需 db |
 
 > 新增语言包必须**两个 `index.js` 都注册**，否则 `check_i18n.py` 键集合校验会红。
 
@@ -660,9 +669,10 @@ L1 的定位是"只记数量、不做金额账"，但定案稿要求为未来成
 | `deploy/migrations/005_inventory.sql` | 已有环境升级 | 6 张库存表 + 默认仓 + append-only 触发器，全部幂等 |
 | `deploy/migrations/006_warehouse_roles.sql` | 角色拆分 | 旧 `warehouse` 账号升级为 `warehouse_manager`，CHECK 放宽 |
 | `deploy/migrations/007_inventory_categories.sql` | 分类主数据 | 建分类/关联表；**先回填旧 `category` 再删列** |
-| `deploy/schema.sql` | 全新库 initdb 一次建到最新 | 同步 9 张库存表 DDL + role CHECK + 触发器 + 登记 `005` / `006` / `007` |
+| `deploy/migrations/008_product_planner.sql` | 主数据角色 | 角色 CHECK 放宽到 7 角色；收回既有主数据写临时授权 |
+| `deploy/schema.sql` | 全新库 initdb 一次建到最新 | 同步 9 张库存表 DDL + role CHECK + 触发器 + 登记 `005` / `006` / `007` / `008` |
 
-`migrate.py` 用 `path.stem`（如 `005_inventory`）作版本号；全新库的 `schema.sql` 必须显式登记 `005` / `006` / `007`，否则 migrate 会在全新库上再跑一遍。三个迁移本身也写成幂等，双保险。
+`migrate.py` 用 `path.stem`（如 `005_inventory`）作版本号；全新库的 `schema.sql` 必须显式登记 `005` / `006` / `007` / `008`，否则 migrate 会在全新库上再跑一遍。四个迁移本身也写成幂等，双保险。
 
 ### 10.2 迁移硬约束
 
@@ -722,7 +732,7 @@ L1 的定位是"只记数量、不做金额账"，但定案稿要求为未来成
 | 并发 | 两会话同时扣同一 SKU，最终余额正确（`SELECT ... FOR UPDATE`；SQLite 单测不支持行锁时标记跳过，留 PG 集成测） |
 | 冲正 | 生成反向单、原单 `void`、重复冲正 400、流水条数只增 |
 | append-only | 对 `stock_movements` 的 UPDATE/DELETE/TRUNCATE 被触发器拒绝（PG 环境） |
-| 权限 | 10 码 × 5 角色矩阵；403 `PERMISSION_DENIED`；`adjust:write` 不在 `grantable_permissions()` |
+| 权限 | 11 码 × 7 角色矩阵；403 `PERMISSION_DENIED`；`adjust:write` / 主数据三写码不在 `grantable_permissions()`；product_planner 可写主数据、supervisor 403 |
 | 数据范围 | 库存域不受 `LINES` 影响；`agent` 无菜单权限 |
 | 契约 | 分页 `{total,page,page_size,items}`、`page_size=101` 截断、时间 `+08:00` |
 | **防回归** | L1 单据 `status == 'confirmed'`、`confirmed_by` 非空、流水条数 = 明细条数（防未来改默认值忘接审核流） |
@@ -785,7 +795,8 @@ python scripts/dev/check_i18n.py && python scripts/dev/check_links.py && python 
 2. `check_i18n.py` / `check_links.py` / `check_duplicate_tests.py` 全过；`locale.spec.js` 错误码比对通过。
 3. `docker compose run --rm migrate` 连跑两次幂等；全新库由 `schema.sql` 直接起服。
 4. 英文界面 6 个页面表单标签不折行，`useFormLabelWidth('88px','120px')`。
-5. 演示数据可对账：Σ`stock_movements.delta` 按 SKU 分组 == `inventory_balances.quantity`。
-6. 镜像重新构建并部署验证（方案 B），`deploy.sh --check` 通过。
+5. 主数据权限：product_planner 可维护产品/零件/产品线；supervisor 写主数据返回 403；仓管仍只读引用；主数据写不在临时授权清单。
+6. 演示数据可对账：Σ`stock_movements.delta` 按 SKU 分组 == `inventory_balances.quantity`。
+7. 镜像重新构建并部署验证（方案 B），`deploy.sh --check` 通过。
 
 > 本文为可开发版 PRD，需求侧全部收口：§3.6 的 `unit_cost`「可选写入留档、不返回、不计算」取舍已于 2026-11-12 经用户确认（「反直觉没关系」），按此实现即可。

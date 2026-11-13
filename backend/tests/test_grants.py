@@ -128,7 +128,14 @@ def test_grantable_permissions_endpoint_is_single_source(client, db):
     assert codes == sorted(codes)
     assert "audit:read" in codes
     assert "inventory:doc:edit" in codes
-    for hidden in ("user:write", "inventory:adjust:write", "inventory:cost:read"):
+    for hidden in (
+        "user:write",
+        "inventory:adjust:write",
+        "inventory:cost:read",
+        "product:write",
+        "part:write",
+        "product_line:write",
+    ):
         assert hidden not in codes
 
 
@@ -140,6 +147,25 @@ def test_grantable_permissions_requires_user_write(client, db):
 
     assert response.status_code == 403
     assert response.json()["code"] == "PERMISSION_DENIED"
+
+
+def test_grant_master_data_write_rejected(client, db):
+    headers = _admin_headers(client, db)
+    agent = _make_agent(db)
+    expires = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+
+    response = client.post(
+        f"/api/admin/users/{agent.id}/grants",
+        json={
+            "permission": "product:write",
+            "expires_at": expires,
+            "reason": "临时改产品",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_PERMISSION"
 
 
 def test_replace_product_lines(client, db):

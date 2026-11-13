@@ -17,6 +17,9 @@ from app.core.permissions import (
     INVENTORY_OUTBOUND_WRITE,
     INVENTORY_SKU_READ,
     INVENTORY_SKU_WRITE,
+    PART_WRITE,
+    PRODUCT_LINE_WRITE,
+    PRODUCT_WRITE,
     expand,
     grantable_permissions,
     role_permissions,
@@ -39,7 +42,15 @@ INVENTORY_CODES = frozenset(
 }
 )
 
-ROLES = ("super_admin", "supervisor", "warehouse_clerk", "warehouse_manager", "agent", "auditor")
+ROLES = (
+    "super_admin",
+    "supervisor",
+    "product_planner",
+    "warehouse_clerk",
+    "warehouse_manager",
+    "agent",
+    "auditor",
+)
 
 
 def test_eleven_inventory_codes_registered():
@@ -47,9 +58,13 @@ def test_eleven_inventory_codes_registered():
     assert INVENTORY_CODES <= ALL_PERMISSIONS
 
 
-def test_role_matrix_is_closed_for_all_six_roles():
+def test_role_matrix_is_closed_for_all_seven_roles():
     for role in ROLES:
         assert role_permissions(role) == expand(role_permissions(role)), role
+
+
+def test_product_planner_has_no_inventory_access():
+    assert role_permissions("product_planner").isdisjoint(INVENTORY_CODES)
 
 
 def test_super_admin_and_supervisor_have_full_inventory():
@@ -134,9 +149,16 @@ def test_dependencies_expand_to_reads():
     assert INVENTORY_SKU_READ in expand({INVENTORY_INBOUND_WRITE})
 
 
-def test_grantable_excludes_three_sensitive_codes():
+def test_grantable_excludes_sensitive_codes():
     grantable = grantable_permissions()
-    for code in ("user:write", INVENTORY_ADJUST_WRITE, INVENTORY_COST_READ):
+    for code in (
+        "user:write",
+        INVENTORY_ADJUST_WRITE,
+        INVENTORY_COST_READ,
+        PRODUCT_WRITE,
+        PART_WRITE,
+        PRODUCT_LINE_WRITE,
+    ):
         assert code not in grantable
     # 其余 9 个库存码仍可临时授予
     assert INVENTORY_CODES - {INVENTORY_ADJUST_WRITE, INVENTORY_COST_READ} <= grantable

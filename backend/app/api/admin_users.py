@@ -28,6 +28,7 @@ from app.models import (
     User,
     UserPermissionGrant,
     UserProductLine,
+    UserRole,
 )
 from app.schemas.common import ErrorBody, SuccessResponse
 from app.schemas.user import (
@@ -62,6 +63,7 @@ def _to_item(user: User, active_grant_count: int = 0) -> UserListItem:
         username=user.username,
         real_name=user.real_name,
         role=user.role,
+        roles=user.role_values,
         is_active=user.is_active,
         active_grant_count=active_grant_count,
         last_login_at=user.last_login_at,
@@ -142,14 +144,34 @@ def _replace_lines(db: Session, user: User, assignments: list[ProductLineAssignm
     )
 
 
+def _replace_roles(user: User, roles: list[str]) -> None:
+    """整体替换角色集合；按差集增删，避免复合主键先插后删冲突。"""
+    wanted = set(roles)
+    for item in list(user.roles):
+        if item.role not in wanted:
+            user.roles.remove(item)
+    existing = {item.role for item in user.roles}
+    for role in roles:
+        if role not in existing:
+            user.roles.append(UserRole(role=role))
+
+
 def _ensure_other_super_admin(db: Session, user_id: int) -> None:
-    # 锁全部在用超管行再计数：ORDER BY id 保证并发时锁顺序一致，避免互相锁对方
+    # 角色已独立成表：锁 user_roles 行再统计，避免两个事务同时降级最后两名超管。
+    # ORDER BY 保证并发时锁顺序一致，避免互相锁对方。
+    super_admin_ids = set(
+        db.scalars(
+            select(UserRole.user_id)
+            .where(UserRole.role == "super_admin")
+            .order_by(UserRole.user_id)
+            .with_for_update()
+        ).all()
+    )
     active_ids = set(
         db.scalars(
             select(User.id)
-            .where(User.role == "super_admin", User.is_active.is_(True))
+            .where(User.id.in_(super_admin_ids), User.is_active.is_(True))
             .order_by(User.id)
-            .with_for_update()
         ).all()
     )
     if len(active_ids - {user_id}) == 0:
@@ -167,11 +189,12 @@ def list_users(
     _: User = Depends(require(USER_READ)),
 ) -> UserPage:
     stmt = select(User).options(
-        selectinload(User.product_lines).selectinload(UserProductLine.line)
+        selectinload(User.roles),
+        selectinload(User.product_lines).selectinload(UserProductLine.line),
     )
     conditions = []
     if role:
-        conditions.append(User.role == role)
+        conditions.append(User.id.in_(select(UserRole.user_id).where(UserRole.role == role)))
     if is_active is not None:
         conditions.append(User.is_active.is_(is_active))
     if keyword and keyword.strip():
@@ -218,15 +241,15 @@ def create_user(
         "username": actor.username,
         "user_id": actor.id,
         "target_name": payload.username[:200],
-        "detail": {"role": payload.role},
+        "detail": {"roles": payload.roles},
     }
     _ensure_lines_exist(db, payload.product_lines)
     user = User(
         username=payload.username,
         real_name=payload.real_name,
         password_hash=hash_password(payload.password),
-        role=payload.role,
     )
+    _replace_roles(user, payload.roles)
     db.add(user)
     try:
         db.flush()
@@ -240,7 +263,10 @@ def create_user(
     db.refresh(user)
     user = db.scalar(
         select(User)
-        .options(selectinload(User.product_lines).selectinload(UserProductLine.line))
+        .options(
+            selectinload(User.roles),
+            selectinload(User.product_lines).selectinload(UserProductLine.line),
+        )
         .where(User.id == user.id)
     )
     request.state.audit["target_id"] = str(user.id)
@@ -265,7 +291,7 @@ def update_user(
         "target_id": str(user_id),
         "target_name": user.username,
     }
-    before_role, before_active = user.role, user.is_active
+    before_roles, before_active = user.role_values, user.is_active
 
     data = {
         key: value
@@ -275,14 +301,24 @@ def update_user(
     if user_id == actor.id:
         if "is_active" in data and data["is_active"] is False:
             raise BusinessError("SELF_DISABLE", "不能停用自己", 400)
-        if "role" in data and data["role"] != actor.role:
+        if "roles" in data and set(data["roles"]) != set(actor.role_values):
             raise BusinessError("SELF_ROLE_CHANGE", "不能修改自己的角色", 400)
 
-    demoting = data.get("role") not in (None, "super_admin") and user.role == "super_admin"
-    disabling = data.get("is_active") is False and user.is_active and user.role == "super_admin"
+    demoting = (
+        "roles" in data
+        and "super_admin" not in data["roles"]
+        and "super_admin" in before_roles
+    )
+    disabling = (
+        data.get("is_active") is False
+        and user.is_active
+        and "super_admin" in before_roles
+    )
     if (demoting or disabling) and user.is_active:
         _ensure_other_super_admin(db, user.id)
 
+    if "roles" in data:
+        _replace_roles(user, data.pop("roles"))
     for field, value in data.items():
         setattr(user, field, value)
     user.updated_at = datetime.now(timezone.utc)
@@ -296,14 +332,18 @@ def update_user(
     db.refresh(user)
     user = db.scalar(
         select(User)
-        .options(selectinload(User.product_lines).selectinload(UserProductLine.line))
+        .options(
+            selectinload(User.roles),
+            selectinload(User.product_lines).selectinload(UserProductLine.line),
+        )
         .where(User.id == user.id)
     )
     # 角色/启停是「越权」类问题的核心证据，只记真正变化的字段
     changes: dict[str, object] = {}
-    if user.role != before_role:
-        changes["role_from"] = before_role
-        changes["role_to"] = user.role
+    after_roles = user.role_values
+    if set(after_roles) != set(before_roles):
+        changes["role_from"] = before_roles
+        changes["role_to"] = after_roles
     if user.is_active != before_active:
         changes["is_active_from"] = before_active
         changes["is_active_to"] = user.is_active
@@ -501,7 +541,10 @@ def replace_product_lines(
     db.commit()
     user = db.scalar(
         select(User)
-        .options(selectinload(User.product_lines).selectinload(UserProductLine.line))
+        .options(
+            selectinload(User.roles),
+            selectinload(User.product_lines).selectinload(UserProductLine.line),
+        )
         .where(User.id == user_id)
     )
     return _to_item(user, _active_grant_counts(db, [user.id]).get(user.id, 0))

@@ -1,4 +1,4 @@
-"""SQLAlchemy 模型（20 张业务表；另有 schema_migrations 由迁移器维护）。
+"""SQLAlchemy 模型（21 张业务表；另有 schema_migrations 由迁移器维护）。
 
 与 `deploy/schema.sql` 一一对应；全新库由 schema.sql 直接建到最新结构，
 已有库由 `deploy/migrations` 迁移。模型只负责读写映射，
@@ -23,7 +23,7 @@ from app.models.product import Product
 from app.models.product_line import ProductLine
 from app.models.query_log import QueryLog
 from app.models.ticket import Ticket, TicketStatusLog
-from app.models.user import User, UserPermissionGrant, UserProductLine
+from app.models.user import User, UserPermissionGrant, UserProductLine, UserRole
 
 __all__ = [
     "AuditLog",
@@ -46,4 +46,5 @@ __all__ = [
     "User",
     "UserPermissionGrant",
     "UserProductLine",
+    "UserRole",
 ]

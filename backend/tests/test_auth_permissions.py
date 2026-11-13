@@ -1,4 +1,5 @@
 from app.core.permissions import TICKET_READ, TICKET_WRITE
+from app.models import UserRole
 from tests.conftest import auth_headers, login, make_user
 
 
@@ -14,7 +15,7 @@ def test_me_returns_live_permissions(client, db):
     user = make_user(db, username="agent1", role="agent")
     headers = auth_headers(login(client, "agent1")["access_token"])
 
-    user.role = "supervisor"
+    user.roles.append(UserRole(role="supervisor"))
     db.commit()
 
     body = client.get("/api/auth/me", headers=headers).json()

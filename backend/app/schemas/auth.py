@@ -40,7 +40,8 @@ class UserOut(BaseModel):
     id: int
     username: str
     real_name: str
-    role: str
+    role: str = Field(description="派生的主角色，仅作兼容展示")
+    roles: list[str] = Field(default_factory=list, description="账号的全部角色")
 
 
 class LoginResponse(BaseModel):

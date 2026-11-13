@@ -83,6 +83,31 @@ describe('进销存 5 个页面冒烟', () => {
     expect(wrapper.text()).toContain('新建 SKU')
   })
 
+  it('产品档案为空时提示联系产品计划岗', async () => {
+    inv.inventoryRefProducts.mockResolvedValue([])
+    wrapper = mount(SkuList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    await flushPromises()
+
+    const create = wrapper.findAll('button').find((b) => b.text().includes('新建 SKU'))
+    await create.trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('请联系产品/计划岗')
+  })
+
+  it('产品列表加载失败时提示重试，不误报档案为空', async () => {
+    inv.inventoryRefProducts.mockRejectedValue(new Error('network'))
+    wrapper = mount(SkuList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    await flushPromises()
+
+    const create = wrapper.findAll('button').find((b) => b.text().includes('新建 SKU'))
+    await create.trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('产品列表加载失败')
+    expect(document.body.textContent).not.toContain('暂无产品档案')
+  })
+
   it('InboundList 渲染标题', async () => {
     wrapper = mount(InboundList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
     await flushPromises()

@@ -22,15 +22,16 @@ vi.mock('../../../utils/clipboard', () => ({
 }))
 
 import {
-  adminListGrants, adminListGrantablePermissions, adminListProductLines, adminListUsers,
+  adminCreateUser, adminListGrants, adminListGrantablePermissions, adminListProductLines, adminListUsers,
   adminReplaceUserLines, adminResetPassword, adminUpdateUser
 } from '../../../api/admin'
 import { copyText } from '../../../utils/clipboard'
 import { ROLE_VALUES } from '../../../utils/roles'
 
 function makeUser(overrides = {}) {
+  const role = overrides.role || 'agent'
   return {
-    id: 1, username: 'wangwei', real_name: '王伟', role: 'agent', is_active: true,
+    id: 1, username: 'wangwei', real_name: '王伟', role, roles: [role], is_active: true,
     last_login_at: null, created_at: '2026-10-01T09:00:00+08:00',
     active_grant_count: 0,
     product_lines: [{ id: 1, name: '扫地机', expires_at: null }],
@@ -47,6 +48,7 @@ beforeEach(() => {
   // 授权下拉的唯一来源是后端；测试里给一份最小清单
   adminListGrantablePermissions.mockResolvedValue(['ticket:read', 'inventory:sku:read'])
   adminUpdateUser.mockResolvedValue({})
+  adminCreateUser.mockResolvedValue({})
   copyText.mockResolvedValue(true)
 })
 
@@ -86,6 +88,61 @@ describe('UserList', () => {
     expect(wrapper.text()).toContain('wangwei')
     expect(wrapper.text()).toContain('一线客服')
     expect(wrapper.text()).toContain('扫地机')
+  })
+
+  it('多角色在列表展示全部中文名，编辑回填并随保存提交 roles 数组', async () => {
+    adminListUsers.mockResolvedValue({
+      total: 1,
+      page: 1,
+      page_size: 20,
+      items: [makeUser({ roles: ['supervisor', 'warehouse_clerk'] })]
+    })
+    const wrapper = mountUserList()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('售后主管')
+    expect(wrapper.text()).toContain('仓管录入员')
+
+    const state = wrapper.vm.$.setupState
+    state.openEdit(state.rows[0])
+    await flushPromises()
+    expect(state.form.roles).toEqual(['supervisor', 'warehouse_clerk'])
+    // 含售后线角色 → 产品线分配保留
+    expect(state.showProductLines).toBe(true)
+
+    await state.onSubmit()
+    await flushPromises()
+
+    expect(adminUpdateUser).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ roles: ['supervisor', 'warehouse_clerk'] })
+    )
+  })
+
+  it('新建仓管账号不会默认叠加一线客服角色', async () => {
+    const wrapper = mountUserList()
+    await flushPromises()
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('新建用户'))
+    await btn.trigger('click')
+    await flushPromises()
+
+    const state = wrapper.vm.$.setupState
+    expect(state.form.roles).toEqual([])
+
+    Object.assign(state.form, {
+      username: 'clerk1',
+      real_name: '仓管一',
+      password: 'Init@12345',
+      confirm_password: 'Init@12345',
+      roles: ['warehouse_clerk']
+    })
+    await state.onSubmit()
+    await flushPromises()
+
+    expect(adminCreateUser).toHaveBeenCalledTimes(1)
+    const payload = adminCreateUser.mock.calls[0][0]
+    expect(payload.roles).toEqual(['warehouse_clerk'])
+    expect(payload.roles).not.toContain('agent')
   })
 
   it('生效临时授权数量显示在角色下方，点标签打开授权面板', async () => {
@@ -203,7 +260,7 @@ describe('UserList', () => {
     const state = wrapper.vm.$.setupState
     state.openEdit(state.rows[0])
     await flushPromises()
-    state.form.role = 'auditor'
+    state.form.roles = ['auditor']
 
     const confirm = vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue(new Error('cancel'))
     await state.onSubmit()
@@ -218,9 +275,9 @@ describe('UserList', () => {
     confirm.mockRestore()
   })
 
-  // 6 个角色平铺时「售后主管 / 仓管主管」极易选错，按业务线分区后一眼可辨。
+  // 7 个角色平铺时「售后主管 / 仓管主管 / 产品计划」极易选错，按职责分区后一眼可辨。
   // 断言到 value 而不只是组名：分组成员写错会让角色从下拉里"消失"。
-  it('角色下拉按系统 / 售后 / 仓管分区，且分组不漏角色', async () => {
+  it('角色下拉按系统 / 主数据 / 售后 / 仓管分区，且分组不漏角色', async () => {
     const wrapper = mountUserList()
     await flushPromises()
 
@@ -233,16 +290,22 @@ describe('UserList', () => {
       label: g.props('label'),
       values: g.findAllComponents({ name: 'ElOption' }).map((o) => o.props('value'))
     }))
-    const dialogGroups = groups.slice(0, 3)
-    expect(dialogGroups.map((g) => g.label)).toEqual(['系统管理', '售后角色', '仓管角色'])
-    expect(dialogGroups[1].values).toEqual(['supervisor', 'agent', 'auditor'])
-    expect(dialogGroups[2].values).toEqual(['warehouse_clerk', 'warehouse_manager'])
+    const dialogGroups = groups.slice(0, 4)
+    expect(dialogGroups.map((g) => g.label)).toEqual([
+      '系统管理',
+      '主数据',
+      '售后角色',
+      '仓管角色'
+    ])
+    expect(dialogGroups[1].values).toEqual(['product_planner'])
+    expect(dialogGroups[2].values).toEqual(['supervisor', 'agent', 'auditor'])
+    expect(dialogGroups[3].values).toEqual(['warehouse_clerk', 'warehouse_manager'])
     // 并集必须等于全部角色：漏登记会让该角色彻底选不到
     expect(dialogGroups.flatMap((g) => g.values).sort()).toEqual([...ROLE_VALUES].sort())
   })
 
-  // 产品线只作用于工单数据范围，属售后线概念；仓管与超管不该看到这个字段
-  it('仓管与超管隐藏产品线分配，售后角色保留', async () => {
+  // 产品线只作用于工单数据范围，属售后线概念；仓管、超管、产品计划不该看到这个字段
+  it('仓管 / 超管 / 产品计划隐藏产品线分配，售后角色保留', async () => {
     const wrapper = mountUserList()
     await flushPromises()
     const btn = wrapper.findAll('button').find((b) => b.text().includes('新建用户'))
@@ -252,14 +315,25 @@ describe('UserList', () => {
     const state = wrapper.vm.$.setupState
     const formLabels = () =>
       wrapper.findAllComponents({ name: 'ElFormItem' }).map((c) => c.props('label'))
-    expect(formLabels()).toContain('产品线') // 默认 role=agent
+    // 新建默认不预选角色：产品线分配也先隐藏，避免多选叠加出意外的 agent
+    expect(state.form.roles).toEqual([])
+    expect(formLabels()).not.toContain('产品线')
 
-    for (const role of ['warehouse_clerk', 'warehouse_manager', 'super_admin']) {
-      state.form.role = role
+    state.form.roles = ['agent']
+    await flushPromises()
+    expect(formLabels()).toContain('产品线')
+
+    for (const role of [
+      'warehouse_clerk',
+      'warehouse_manager',
+      'super_admin',
+      'product_planner'
+    ]) {
+      state.form.roles = [role]
       await flushPromises()
       expect(formLabels(), `${role} 不该显示产品线`).not.toContain('产品线')
     }
-    state.form.role = 'supervisor'
+    state.form.roles = ['supervisor']
     await flushPromises()
     expect(formLabels()).toContain('产品线')
   })
@@ -338,7 +412,7 @@ describe('UserList 行点击', () => {
     expect(state.grantableOptions).toEqual(['ticket:read', 'inventory:sku:read'])
   })
 
-  it('新建用户弹窗的角色下拉有 6 个选项（曾因模板引用已删除的常量而变成空列表）', async () => {
+  it('新建用户弹窗的角色下拉有 7 个选项（曾因模板引用已删除的常量而变成空列表）', async () => {
     const wrapper = mountList()
     await flushPromises()
 
@@ -346,15 +420,15 @@ describe('UserList 行点击', () => {
     await btn.trigger('click')
     await flushPromises()
 
-    // 六角色：super_admin / supervisor / agent / auditor / warehouse_clerk / warehouse_manager
+    // 七角色：super_admin / supervisor / product_planner / agent / auditor / warehouse_clerk / warehouse_manager
     // 「仓管」限定词不可省：supervisor 是售后主管，裸写「主管」两者分不清
-    const roles = ['超级管理员', '售后主管', '一线客服', '只读审计', '仓管录入员', '仓管主管']
+    const roles = ['超级管理员', '产品计划', '售后主管', '一线客服', '只读审计', '仓管录入员', '仓管主管']
     const labels = wrapper
       .findAllComponents({ name: 'ElOption' })
       .map((c) => c.props('label'))
       .filter((l) => roles.includes(l))
-    // 顶部筛选 + 弹窗各 6 个；弹窗为空列表时这里只有 6 → 立刻红
-    expect(labels.length).toBe(12)
+    // 顶部筛选 + 弹窗各 7 个；弹窗为空列表时这里只有 7 → 立刻红
+    expect(labels.length).toBe(14)
   })
 
   // 回归：ROLE_KEYS 曾写成 warehouseClerk / warehouseManager 驼峰，

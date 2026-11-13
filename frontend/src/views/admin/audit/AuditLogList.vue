@@ -296,6 +296,7 @@ const FIELD_KEYS = {
   assignee_to: 'admin.audit.field.assigneeTo',
   remark_updated: 'admin.audit.field.remarkUpdated',
   role: 'admin.audit.field.role',
+  roles: 'admin.audit.field.role',
   role_from: 'admin.audit.field.roleFrom',
   role_to: 'admin.audit.field.roleTo',
   is_active_from: 'admin.audit.field.isActiveFrom',
@@ -361,9 +362,10 @@ function fieldValue(key, value) {
     const mapped = STATUS_KEYS[value]
     return mapped ? t(mapped) : String(value)
   }
-  // 角色变更记的是 users.role 原值（warehouse_clerk），不翻译就是英文原文
-  if (key === 'role' || key === 'role_from' || key === 'role_to') {
-    return roleLabel(t, value)
+  // 角色变更记的是角色原值（warehouse_clerk）；多角色是数组，逐个翻译
+  if (key === 'role' || key === 'roles' || key === 'role_from' || key === 'role_to') {
+    const values = Array.isArray(value) ? value : [value]
+    return values.map((item) => roleLabel(t, item)).join(' / ')
   }
   if (typeof value === 'boolean') return value ? '✓' : '—'
   if (typeof value === 'object') return JSON.stringify(value)
@@ -375,7 +377,7 @@ function fieldValue(key, value) {
 const FIELD_ORDER = [
   'reason', 'identity_verified', 'error_class', 'title_from', 'title_to',
   'from_status', 'to_status', 'assignee_from', 'assignee_to', 'remark_updated',
-  'role', 'role_from', 'role_to', 'is_active_from', 'is_active_to', 'username_changed',
+  'role', 'roles', 'role_from', 'role_to', 'is_active_from', 'is_active_to', 'username_changed',
   'permission', 'expires_at', 'grant_id',
   'line_id', 'product_id', 'line_count', 'query', 'error_code'
 ]

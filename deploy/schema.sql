@@ -1,7 +1,7 @@
 -- ============================================================
 -- 售后自助故障诊断系统 - 数据库建表脚本
 -- PostgreSQL 15+
--- 修订：v1.4  2026-11-13（进销存：分类主数据、仓管角色拆分、改单权限）
+-- 修订：v1.6  2026-11-13（多角色：user_roles 唯一来源）
 --   v1.1 变更：删假哈希、加 need_on_site、RESTRICT、TIMESTAMPTZ、
 --             ticket_status_logs 替 attachments、去无效 GIN 索引
 --   v1.2 变更：
@@ -30,6 +30,15 @@
 --        inventory_sku_products 三张表；inventory_skus 去掉自由文本 category
 --     3) 新增权限码 inventory:doc:edit（仅 warehouse_manager 具备）
 --     4) 登记迁移版本 006_warehouse_roles / 007_inventory_categories
+--   v1.5 变更（与 deploy/migrations/008_product_planner.sql 同步）：
+--     1) users.role 增加 'product_planner'（产品计划）
+--     2) 该角色是产品/零件/产品线主数据的唯一常规写者，
+--        售后与物资只读引用；主数据写权限不进入临时授权
+--     3) 登记迁移版本 008_product_planner
+--   v1.6 变更（与 deploy/migrations/009_multi_role.sql 同步）：
+--     1) 新增 user_roles(user_id, role)，作为账号角色的唯一来源
+--     2) 删除 users.role 单角色列，权限与数据范围按多角色并集计算
+--     3) 登记迁移版本 009_multi_role
 --
 -- ⚠ 本脚本仅在数据卷为空时由 initdb 执行一次，直接建到最新结构；
 --    已有环境的升级由 deploy/migrations 下的迁移文件完成（migrate.py 按版本执行）。
@@ -57,8 +66,6 @@ CREATE TABLE users (
     username      VARCHAR(50) NOT NULL UNIQUE,
     password_hash VARCHAR(200) NOT NULL,
     real_name     VARCHAR(50) NOT NULL,
-    role          VARCHAR(20) NOT NULL DEFAULT 'agent'
-                  CHECK (role IN ('super_admin', 'supervisor', 'agent', 'auditor', 'warehouse_clerk', 'warehouse_manager')),
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     token_version INT NOT NULL DEFAULT 0,
     last_login_at TIMESTAMPTZ,
@@ -68,6 +75,15 @@ CREATE TABLE users (
 CREATE UNIQUE INDEX idx_users_username_lower ON users (LOWER(username));
 -- 说明：账号可界面维护，init_admin.py 与运维 SQL 保留为兜底入口；
 --       「修改自己密码」走 API 完成。
+
+-- 1.1 用户角色（一人可多岗；角色是权限与数据范围的唯一来源）
+CREATE TABLE user_roles (
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role    VARCHAR(20) NOT NULL
+            CHECK (role IN ('super_admin', 'supervisor', 'product_planner', 'agent', 'auditor', 'warehouse_clerk', 'warehouse_manager')),
+    PRIMARY KEY (user_id, role)
+);
+CREATE INDEX idx_user_roles_role ON user_roles(role);
 
 -- ------------------------------------------------------------
 -- 2. 产品线表（客服数据范围按产品线划分）
@@ -470,3 +486,5 @@ CREATE TRIGGER trg_stock_movements_no_truncate
 INSERT INTO schema_migrations (version) VALUES ('005_inventory');
 INSERT INTO schema_migrations (version) VALUES ('006_warehouse_roles');
 INSERT INTO schema_migrations (version) VALUES ('007_inventory_categories');
+INSERT INTO schema_migrations (version) VALUES ('008_product_planner');
+INSERT INTO schema_migrations (version) VALUES ('009_multi_role');

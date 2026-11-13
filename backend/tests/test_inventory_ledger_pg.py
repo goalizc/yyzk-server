@@ -28,6 +28,7 @@ from app.models import (
     InventoryWarehouse,
     StockMovement,
     User,
+    UserRole,
 )
 from app.services.inventory import (
     DocumentInput,
@@ -85,7 +86,7 @@ def _seed(engine) -> tuple[int, int, int]:
             username="ledger_op",
             password_hash="x",
             real_name="对账",
-            role="super_admin",
+            roles=[UserRole(role="super_admin")],
         )
         warehouse = InventoryWarehouse(code="DEFAULT", name="默认仓")
         db.add_all([user, warehouse])

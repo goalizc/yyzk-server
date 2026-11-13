@@ -65,13 +65,14 @@ async function fillForm(state, { oldPassword, newPassword, confirmPassword }) {
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
-  localStorage.setItem('user', JSON.stringify({ username: 'admin', real_name: '超级管理员', role: 'super_admin' }))
+  localStorage.setItem('user', JSON.stringify({ username: 'admin', real_name: '超级管理员', role: 'super_admin', roles: ['super_admin'] }))
   setPermissions(['ticket:read'])
+  fetchMe.mockResolvedValue({ permissions: ['ticket:read'] })
   changePassword.mockResolvedValue({})
 })
 
 describe('Layout', () => {
-  it('侧栏菜单按「作业 → 分析 → 配置 → 管理」排序，基础数据三项连续', async () => {
+  it('侧栏菜单按「主数据 → 售后 → 进销存 → 系统」排序，主数据三项连续', async () => {
     // 全权限账号：顺序断言必须看到全部项，缺一项就说明被权限过滤干扰了
     const ALL = [
       'ticket:read', 'fault:read', 'stats:read', 'product_line:read',
@@ -86,14 +87,14 @@ describe('Layout', () => {
     const { wrapper } = await mountLayout()
     const labels = wrapper.vm.$.setupState.navItems.map((item) => item.label)
 
-    // 顺序被锁死是故意的：新增菜单要落到正确的分区，而不是往数组尾部追加
+    // 顺序被锁死是故意的：主数据是售后与仓管的上级，放在最前
     expect(labels).toEqual([
-      '工单管理',
-      '故障知识库',
-      '数据看板',
       '产品线',
       '产品管理',
       '零件管理',
+      '工单管理',
+      '故障知识库',
+      '数据看板',
       '物资分类',
       '物资 SKU',
       '入库单',
@@ -108,6 +109,34 @@ describe('Layout', () => {
     expect(labels.slice(start, start + 3)).toEqual(['产品线', '产品管理', '零件管理'])
     // 物资分类必须先于物资 SKU：分类是 SKU 的从属主数据，先建分类再建物资
     expect(labels.indexOf('物资分类')).toBe(labels.indexOf('物资 SKU') - 1)
+  })
+
+  it('侧栏按主数据 / 售后 / 进销存 / 系统分组，主数据三项连续', async () => {
+    const ALL = [
+      'ticket:read', 'fault:read', 'stats:read', 'product_line:read',
+      'product:read', 'part:read',
+      'inventory:sku:read', 'inventory:inbound:read', 'inventory:outbound:read',
+      'inventory:movement:read', 'inventory:adjust:write',
+      'user:read', 'audit:read'
+    ]
+    setPermissions(ALL)
+    fetchMe.mockResolvedValue({ permissions: ALL })
+
+    const { wrapper } = await mountLayout()
+    const groups = wrapper.vm.$.setupState.navGroups
+
+    expect(groups.map((group) => group.label)).toEqual([
+      '主数据',
+      '售后业务',
+      '进销存',
+      '系统管理'
+    ])
+    expect(groups[0].items.map((item) => item.label)).toEqual([
+      '产品线',
+      '产品管理',
+      '零件管理'
+    ])
+    expect(groups.flatMap((group) => group.items)).toHaveLength(14)
   })
 
   it('编辑故障页仍高亮侧边栏"故障知识库"', async () => {
@@ -140,6 +169,39 @@ describe('Layout', () => {
     const { wrapper } = await mountLayout()
     expect(wrapper.text()).toContain('超级管理员')
     expect(wrapper.text()).toContain('管理员')
+  })
+
+  it('顶栏按 roles 展示全部角色标签', async () => {
+    localStorage.setItem('user', JSON.stringify({
+      username: 'multi', real_name: '多岗员工', role: 'supervisor',
+      roles: ['supervisor', 'warehouse_clerk']
+    }))
+    const { wrapper } = await mountLayout()
+
+    expect(wrapper.text()).toContain('售后主管')
+    expect(wrapper.text()).toContain('仓管录入员')
+  })
+
+  it('外部修改角色后顶栏随 /me 刷新并回写本地缓存', async () => {
+    localStorage.setItem('user', JSON.stringify({
+      username: 'multi', real_name: '多岗员工', role: 'agent', roles: ['agent']
+    }))
+    fetchMe.mockResolvedValue({
+      permissions: ['ticket:read'],
+      user: {
+        username: 'multi', real_name: '多岗员工', role: 'supervisor',
+        roles: ['supervisor', 'warehouse_clerk']
+      }
+    })
+    const { wrapper } = await mountLayout()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('售后主管')
+    expect(wrapper.text()).toContain('仓管录入员')
+    expect(JSON.parse(localStorage.getItem('user')).roles).toEqual([
+      'supervisor',
+      'warehouse_clerk'
+    ])
   })
 
   it('新旧密码相同时前端拦下，不发请求', async () => {

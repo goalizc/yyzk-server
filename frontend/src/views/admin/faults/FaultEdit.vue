@@ -33,6 +33,9 @@
             />
           </el-select>
           <span v-else class="readonly">{{ productSummary }}</span>
+          <span v-if="canWrite && !products.length && !loadingProducts && !productsLoadFailed" class="hint">
+            {{ $t('admin.fault.edit.noProductsHint') }}
+          </span>
         </el-form-item>
         <el-form-item :label="$t('admin.fault.edit.part')" prop="part_id">
           <el-select
@@ -54,7 +57,7 @@
             />
           </el-select>
           <span v-else class="readonly">{{ partSummary }}</span>
-          <span v-if="canWrite && !parts.length && form.product_id && !loadingParts" class="hint">
+          <span v-if="canWrite && !parts.length && form.product_id && !loadingParts && !partsLoadFailed" class="hint">
             {{ $t('admin.fault.edit.noPartsHint') }}
           </span>
         </el-form-item>
@@ -189,6 +192,8 @@ const products = ref([])
 const parts = ref([])
 const loadingProducts = ref(false)
 const loadingParts = ref(false)
+const productsLoadFailed = ref(false)
+const partsLoadFailed = ref(false)
 
 // 步骤行需要一个稳定的 key：后端只认 step/text/image_url，
 // uid 仅用于前端列表渲染，提交前会剥掉
@@ -266,10 +271,12 @@ function formatSize(size) {
 
 async function loadProducts() {
   loadingProducts.value = true
+  productsLoadFailed.value = false
   try {
     const data = await adminListProducts({ page: 1, page_size: 100 })
     products.value = data.items
   } catch (e) {
+    productsLoadFailed.value = true
     ElMessage.error(errorMessage(e, { fallbackKey: 'admin.fault.edit.productLoadFailed' }))
   } finally {
     loadingProducts.value = false
@@ -280,14 +287,17 @@ async function loadParts(productId) {
   // 没有零件读权限时不要发请求（只读用户连下拉都不渲染）
   if (!hasPermission('part:read') || !productId) {
     parts.value = []
+    partsLoadFailed.value = false
     return
   }
   loadingParts.value = true
+  partsLoadFailed.value = false
   try {
     const data = await adminListParts({ product_id: productId, page: 1, page_size: 100 })
     parts.value = data.items
   } catch (e) {
     parts.value = []
+    partsLoadFailed.value = true
     ElMessage.error(errorMessage(e, { fallbackKey: 'admin.fault.edit.partLoadFailed' }))
   } finally {
     loadingParts.value = false

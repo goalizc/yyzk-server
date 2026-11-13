@@ -19,7 +19,7 @@ def test_create_list_update_user(client, db):
             "username": "wangwei",
             "real_name": "王伟",
             "password": "Init@12345",
-            "role": "agent",
+            "roles": ["agent"],
             "product_lines": [],
         },
         headers=headers,
@@ -32,18 +32,155 @@ def test_create_list_update_user(client, db):
 
     updated = client.put(
         f"/api/admin/users/{user_id}",
-        json={"real_name": "王伟伟", "role": "supervisor"},
+        json={"real_name": "王伟伟", "roles": ["supervisor"]},
         headers=headers,
     )
     assert updated.status_code == 200
     assert updated.json()["role"] == "supervisor"
+    assert updated.json()["roles"] == ["supervisor"]
+
+
+def test_product_planner_role_can_be_created_and_assigned(client, db):
+    headers = _headers(client, db)
+
+    created = client.post(
+        "/api/admin/users",
+        json={
+            "username": "planner1",
+            "real_name": "计划员",
+            "password": "Init@12345",
+            "roles": ["product_planner"],
+            "product_lines": [],
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["roles"] == ["product_planner"]
+    assert created.json()["role"] == "product_planner"
+
+    agent = client.post(
+        "/api/admin/users",
+        json={
+            "username": "agent_for_planner",
+            "real_name": "客服",
+            "password": "Init@12345",
+            "roles": ["agent"],
+            "product_lines": [],
+        },
+        headers=headers,
+    ).json()
+    updated = client.put(
+        f"/api/admin/users/{agent['id']}",
+        json={"roles": ["product_planner"]},
+        headers=headers,
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["roles"] == ["product_planner"]
+
+
+def test_multi_role_user_created_filtered_and_replaced(client, db):
+    headers = _headers(client, db)
+    created = client.post(
+        "/api/admin/users",
+        json={
+            "username": "multi_role",
+            "real_name": "多岗员工",
+            "password": "Init@12345",
+            "roles": ["supervisor", "warehouse_clerk"],
+            "product_lines": [],
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["roles"] == ["supervisor", "warehouse_clerk"]
+    # 派生主角色按管理职责优先级取一个，仅供旧接口兼容展示
+    assert body["role"] == "supervisor"
+
+    # 用次级角色筛选也必须命中
+    listed = client.get(
+        "/api/admin/users", params={"role": "warehouse_clerk"}, headers=headers
+    ).json()
+    assert any(item["id"] == body["id"] for item in listed["items"])
+
+    updated = client.put(
+        f"/api/admin/users/{body['id']}",
+        json={"roles": ["agent"]},
+        headers=headers,
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["roles"] == ["agent"]
+    assert updated.json()["role"] == "agent"
+
+    listed = client.get(
+        "/api/admin/users", params={"role": "warehouse_clerk"}, headers=headers
+    ).json()
+    assert all(item["id"] != body["id"] for item in listed["items"])
+
+
+def test_create_user_requires_roles_field(client, db):
+    headers = _headers(client, db)
+
+    response = client.post(
+        "/api/admin/users",
+        json={
+            "username": "missing_roles",
+            "real_name": "缺角色",
+            "password": "Init@12345",
+            "product_lines": [],
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "VALIDATION_ERROR"
+
+
+def test_multi_role_output_uses_priority_order(client, db):
+    headers = _headers(client, db)
+
+    created = client.post(
+        "/api/admin/users",
+        json={
+            "username": "role_order",
+            "real_name": "顺序测试",
+            "password": "Init@12345",
+            # 故意逆序传入：输出必须按角色优先级，而不是字母序
+            "roles": ["product_planner", "supervisor"],
+            "product_lines": [],
+        },
+        headers=headers,
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["roles"] == ["supervisor", "product_planner"]
+    assert created.json()["role"] == "supervisor"
+
+
+def test_create_user_requires_at_least_one_role(client, db):
+    headers = _headers(client, db)
+
+    response = client.post(
+        "/api/admin/users",
+        json={
+            "username": "no_role",
+            "real_name": "无角色",
+            "password": "Init@12345",
+            "roles": [],
+            "product_lines": [],
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "VALIDATION_ERROR"
 
 
 def test_duplicate_username(client, db):
     headers = _headers(client, db)
     payload = {
         "username": "wangwei", "real_name": "王伟", "password": "Init@12345",
-        "role": "agent", "product_lines": [],
+        "roles": ["agent"], "product_lines": [],
     }
     client.post("/api/admin/users", json=payload, headers=headers)
 
@@ -58,7 +195,7 @@ def test_update_username_normalized_and_usable_for_login(client, db):
     created = client.post(
         "/api/admin/users",
         json={"username": "wangwei", "real_name": "王伟", "password": "Init@12345",
-              "role": "agent", "product_lines": []},
+              "roles": ["agent"], "product_lines": []},
         headers=headers,
     ).json()
 
@@ -82,13 +219,13 @@ def test_update_username_conflict_keeps_original(client, db):
     first = client.post(
         "/api/admin/users",
         json={"username": "a", "real_name": "甲", "password": "Init@12345",
-              "role": "agent", "product_lines": []},
+              "roles": ["agent"], "product_lines": []},
         headers=headers,
     ).json()
     second = client.post(
         "/api/admin/users",
         json={"username": "b", "real_name": "乙", "password": "Init@12345",
-              "role": "agent", "product_lines": []},
+              "roles": ["agent"], "product_lines": []},
         headers=headers,
     ).json()
     assert first["username"] == "a"
@@ -110,7 +247,7 @@ def test_update_username_blank_rejected(client, db):
     created = client.post(
         "/api/admin/users",
         json={"username": "wangwei", "real_name": "王伟", "password": "Init@12345",
-              "role": "agent", "product_lines": []},
+              "roles": ["agent"], "product_lines": []},
         headers=headers,
     ).json()
 
@@ -145,7 +282,7 @@ def test_username_is_case_insensitive(client, db):
     created = client.post(
         "/api/admin/users",
         json={"username": "WangWei", "real_name": "王伟", "password": "Init@12345",
-              "role": "agent", "product_lines": []},
+              "roles": ["agent"], "product_lines": []},
         headers=headers,
     )
     assert created.status_code == 201, created.text
@@ -154,7 +291,7 @@ def test_username_is_case_insensitive(client, db):
     duplicated = client.post(
         "/api/admin/users",
         json={"username": "wangwei", "real_name": "王伟", "password": "Init@12345",
-              "role": "agent", "product_lines": []},
+              "roles": ["agent"], "product_lines": []},
         headers=headers,
     )
     assert duplicated.status_code == 409
@@ -171,7 +308,7 @@ def test_duplicate_product_line_rejected(client, db):
             "username": "wangwei",
             "real_name": "王伟",
             "password": "Init@12345",
-            "role": "agent",
+            "roles": ["agent"],
             "product_lines": [{"line_id": line.id}, {"line_id": line.id}],
         },
         headers=headers,
@@ -190,7 +327,7 @@ def test_cannot_disable_or_demote_self(client, db):
         f"/api/admin/users/{me['id']}", json={"is_active": False}, headers=headers
     ).status_code == 400
     assert client.put(
-        f"/api/admin/users/{me['id']}", json={"role": "agent"}, headers=headers
+        f"/api/admin/users/{me['id']}", json={"roles": ["agent"]}, headers=headers
     ).status_code == 400
 
 
@@ -213,7 +350,7 @@ def test_reset_password_returns_once_and_works(client, db):
     created = client.post(
         "/api/admin/users",
         json={"username": "wangwei", "real_name": "王伟", "password": "Init@12345",
-              "role": "agent", "product_lines": []},
+              "roles": ["agent"], "product_lines": []},
         headers=headers,
     ).json()
 
@@ -228,7 +365,7 @@ def test_reset_password_revokes_old_token(client, db):
     created = client.post(
         "/api/admin/users",
         json={"username": "wangwei", "real_name": "王伟", "password": "Init@12345",
-              "role": "agent", "product_lines": []},
+              "roles": ["agent"], "product_lines": []},
         headers=headers,
     ).json()
     old_token = login(client, "wangwei", "Init@12345")["access_token"]
@@ -250,7 +387,7 @@ def test_list_users_includes_active_grant_count(client, db):
     created = client.post(
         "/api/admin/users",
         json={"username": "wangwei", "real_name": "王伟", "password": "Init@12345",
-              "role": "agent", "product_lines": []},
+              "roles": ["agent"], "product_lines": []},
         headers=headers,
     ).json()
     assert created["active_grant_count"] == 0
@@ -279,7 +416,7 @@ def test_auditor_cannot_create_user(client, db):
     response = client.post(
         "/api/admin/users",
         json={"username": "x", "real_name": "x", "password": "Init@12345",
-              "role": "agent", "product_lines": []},
+              "roles": ["agent"], "product_lines": []},
         headers=headers,
     )
 

@@ -180,6 +180,12 @@
           >
             <el-option v-for="p in productOptions" :key="p.id" :label="p.name" :value="p.id" />
           </el-select>
+          <div v-if="productLoaded && !productOptions.length && !productLoadError" class="field-hint">
+            {{ $t('admin.inventory.sku.productMissingHint') }}
+          </div>
+          <div v-else-if="productLoadError" class="field-hint">
+            {{ $t('admin.inventory.sku.productsLoadFailed') }}
+          </div>
         </el-form-item>
         <el-form-item :label="$t('admin.inventory.sku.fieldPart')">
           <el-select
@@ -193,6 +199,12 @@
           >
             <el-option v-for="p in partOptions" :key="p.id" :label="p.label" :value="p.id" />
           </el-select>
+          <div v-if="partOptionsLoaded && !partOptions.length && !partLoadError" class="field-hint">
+            {{ $t('admin.inventory.sku.partMissingHint') }}
+          </div>
+          <div v-else-if="partLoadError" class="field-hint">
+            {{ $t('admin.inventory.sku.partsLoadFailed') }}
+          </div>
         </el-form-item>
         <el-form-item :label="$t('admin.inventory.sku.fieldMinStock')">
           <el-input-number v-model="form.min_stock" :min="0" :max="999999" controls-position="right" />
@@ -371,37 +383,46 @@ async function loadCategoryOptions() {
 /** 产品下拉：库存域引用端点（只读），仓管也有权限；关联可选、不强制。
  *  不能改用 `/admin/products`——那要 product:read，仓管没有，下拉会恒为空。 */
 async function loadProductOptions() {
+  productLoadError.value = false
   try {
     productOptions.value = (await inventoryRefProducts()) || []
   } catch {
     productOptions.value = []
+    productLoadError.value = true
+  } finally {
+    productLoaded.value = true
   }
 }
 
 /** 零件下拉：省略 product_id 一次取回全部零件（含产品名），避免按产品 N+1 请求。
  *  首次展开下拉时再加载，挂载即拉会拖慢首屏。 */
 const partLoading = ref(false)
-let partOptionsLoaded = false
+const partOptionsLoaded = ref(false)
+const partLoadError = ref(false)
+const productLoaded = ref(false)
+const productLoadError = ref(false)
 
 async function loadPartOptions() {
   if (partLoading.value) return
   partLoading.value = true
+  partLoadError.value = false
   try {
     const parts = (await inventoryRefParts()) || []
     partOptions.value = parts.map((part) => ({
       id: part.id,
       label: `${part.product_name || ''} / ${part.name}`
     }))
-    partOptionsLoaded = true
+    partOptionsLoaded.value = true
   } catch {
     partOptions.value = []
+    partLoadError.value = true
   } finally {
     partLoading.value = false
   }
 }
 
 function onPartVisibleChange(visible) {
-  if (visible && !partOptionsLoaded) loadPartOptions()
+  if (visible && !partOptionsLoaded.value) loadPartOptions()
 }
 
 function resetForm() {

@@ -1,6 +1,7 @@
 """权限码、角色模板、数据范围与生效权限。
 
-权限是代码行为的一部分，不建数据库表；角色固定六种（含进销存录入员/主管）。
+权限是代码行为的一部分，不建数据库表；用户角色存 `user_roles`（可多角色），
+权限与数据范围按全部角色的并集计算。
 """
 
 from __future__ import annotations
@@ -93,6 +94,7 @@ ALL_PERMISSIONS = frozenset(
 ROLE_NAMES = {
     "super_admin": "超级管理员",
     "supervisor": "售后主管",
+    "product_planner": "产品计划",
     "warehouse_clerk": "仓管录入员",
     "warehouse_manager": "仓管主管",
     "agent": "一线客服",
@@ -129,9 +131,31 @@ _AUDITOR_INVENTORY = frozenset(
     }
 )
 
+# 主数据唯一业务写者：产品/零件/产品线。售后与物资只读引用。
+# super_admin 仍保留全部权限作为 break-glass，不在此集合内。
+_PRODUCT_MASTER = frozenset(
+    {
+        PRODUCT_READ,
+        PRODUCT_WRITE,
+        PART_READ,
+        PART_WRITE,
+        PRODUCT_LINE_READ,
+        PRODUCT_LINE_WRITE,
+    }
+)
+
 _ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "super_admin": ALL_PERMISSIONS,
-    "supervisor": ALL_PERMISSIONS - {USER_READ, USER_WRITE},
+    # 售后主管保留主数据只读，不再写产品/零件/产品线
+    "supervisor": ALL_PERMISSIONS
+    - {
+        USER_READ,
+        USER_WRITE,
+        PRODUCT_WRITE,
+        PART_WRITE,
+        PRODUCT_LINE_WRITE,
+    },
+    "product_planner": _PRODUCT_MASTER,
     "warehouse_clerk": _INVENTORY_CLERK,
     "warehouse_manager": _INVENTORY_MANAGER,
     "agent": frozenset({TICKET_READ, TICKET_WRITE, FAULT_READ}),
@@ -155,6 +179,7 @@ _ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
 _DATA_SCOPE: dict[str, str] = {
     "super_admin": ALL,
     "supervisor": ALL,
+    "product_planner": ALL,
     "warehouse_clerk": ALL,
     "warehouse_manager": ALL,
     "agent": LINES,
@@ -221,7 +246,11 @@ def role_scope(role: str) -> str:
 
 
 def data_scope(user: User) -> str:
-    return role_scope(user.role)
+    """多角色取最宽范围：任一角色为 ALL 即 ALL。"""
+    if not user.roles:
+        return LINES
+    scopes = {role_scope(item.role) for item in user.roles}
+    return ALL if ALL in scopes else LINES
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -243,19 +272,31 @@ def active_grants(db: Session, user_id: int) -> list[str]:
 def effective_permissions(db: Session, user: User) -> frozenset[str]:
     if not user.is_active:
         return frozenset()
-    return expand(role_permissions(user.role) | set(active_grants(db, user.id)))
+    role_permissions_union: set[str] = set()
+    for item in user.roles:
+        role_permissions_union |= role_permissions(item.role)
+    return expand(role_permissions_union | set(active_grants(db, user.id)))
 
 
 def grantable_permissions() -> frozenset[str]:
     """可临时授予的权限。
 
-    永远排除三类：
+    永远排除：
     - `user:write`：临时授权会变成提权入口，可直接改角色；
     - `inventory:adjust:write`：冲正能凭空改账，不应带 expires_at / reason 临时发放；
-    - `inventory:cost:read`：L1 只登记不启用、无端点使用，避免出现没有实际功能的选项
-      （同定案稿 §6.3「不预先登记 review 码」的理由）。
+    - `inventory:cost:read`：L1 只登记不启用、无端点使用，避免出现没有实际功能的选项；
+    - `product:write` / `part:write` / `product_line:write`：
+      主数据单写者，常规只能由 product_planner 角色持有；
+      super_admin 的 break-glass 权限不通过临时授权转授。
     """
-    return ALL_PERMISSIONS - {USER_WRITE, INVENTORY_ADJUST_WRITE, INVENTORY_COST_READ}
+    return ALL_PERMISSIONS - {
+        USER_WRITE,
+        INVENTORY_ADJUST_WRITE,
+        INVENTORY_COST_READ,
+        PRODUCT_WRITE,
+        PART_WRITE,
+        PRODUCT_LINE_WRITE,
+    }
 
 
 def current_permissions(user: User, db: Session) -> list[str]:

@@ -88,14 +88,22 @@ def cmd_init(args) -> int:
         ).fetchone()
 
         if row is None:
-            conn.execute(
+            user_id = conn.execute(
                 text(
                     """
-                    INSERT INTO users (username, password_hash, real_name, role, is_active)
-                    VALUES (:u, :p, :r, 'super_admin', TRUE)
+                    INSERT INTO users (username, password_hash, real_name, is_active)
+                    VALUES (:u, :p, :r, TRUE)
+                    RETURNING id
                     """
                 ),
                 {"u": username, "p": password_hash, "r": real_name},
+            ).scalar_one()
+            conn.execute(
+                text(
+                    "INSERT INTO user_roles (user_id, role) VALUES (:id, 'super_admin') "
+                    "ON CONFLICT DO NOTHING"
+                ),
+                {"id": user_id},
             )
             print(f"[init_admin] 已创建管理员 {username}（初始密码见 ADMIN_INIT_PASSWORD）")
         elif args.reset_password:
@@ -126,21 +134,26 @@ def cmd_user(args) -> int:
             rows = conn.execute(
                 text(
                     """
-                    SELECT username, real_name, role, is_active, last_login_at, created_at
-                    FROM users ORDER BY is_active DESC, username
+                    SELECT u.username, u.real_name,
+                           COALESCE(string_agg(ur.role, ',' ORDER BY ur.role), ''),
+                           u.is_active, u.last_login_at, u.created_at
+                    FROM users u
+                    LEFT JOIN user_roles ur ON ur.user_id = u.id
+                    GROUP BY u.id
+                    ORDER BY u.is_active DESC, u.username
                     """
                 )
             ).fetchall()
         if not rows:
             print("[init_admin] 没有任何账号")
             return 0
-        print(f"{'账号':<16}{'姓名':<14}{'角色':<8}{'状态':<6}{'最近登录'}")
-        print("-" * 66)
+        print(f"{'账号':<16}{'姓名':<14}{'角色':<20}{'状态':<6}{'最近登录'}")
+        print("-" * 78)
         for u, name, role, active, last_login, _ in rows:
             state = "启用" if active else "已停用"
             # last_login 为 None 时 IS NULL 判断要显式，不能靠格式化兜底
             last = last_login.strftime("%Y-%m-%d %H:%M") if last_login else "从未登录"
-            print(f"{u:<16}{name or '':<14}{role:<8}{state:<6}{last}")
+            print(f"{u:<16}{name or '':<14}{role:<20}{state:<6}{last}")
         print(f"\n共 {len(rows)} 个账号，其中启用 {sum(1 for r in rows if r[3])} 个")
         return 0
 
@@ -162,19 +175,26 @@ def cmd_user(args) -> int:
             if len(password) < 8:
                 print("[init_admin] 密码至少 8 位", file=sys.stderr)
                 return 2
-            conn.execute(
+            user_id = conn.execute(
                 text(
                     """
-                    INSERT INTO users (username, password_hash, real_name, role, is_active)
-                    VALUES (:u, :p, :r, :role, TRUE)
+                    INSERT INTO users (username, password_hash, real_name, is_active)
+                    VALUES (:u, :p, :r, TRUE)
+                    RETURNING id
                     """
                 ),
                 {
                     "u": username,
                     "p": pwd_context.hash(password),
                     "r": args.real_name or username,
-                    "role": args.role,
                 },
+            ).scalar_one()
+            conn.execute(
+                text(
+                    "INSERT INTO user_roles (user_id, role) VALUES (:id, :role) "
+                    "ON CONFLICT DO NOTHING"
+                ),
+                {"id": user_id, "role": args.role},
             )
             print(f"[init_admin] 已创建账号 {username}（角色 {args.role}）")
             if not args.password:
@@ -245,8 +265,16 @@ def main() -> int:
     p_user.add_argument(
         "--role",
         default="agent",
-        choices=["super_admin", "supervisor", "agent", "auditor"],
-        help="角色，默认 agent",
+        choices=[
+            "super_admin",
+            "supervisor",
+            "product_planner",
+            "agent",
+            "auditor",
+            "warehouse_clerk",
+            "warehouse_manager",
+        ],
+        help="角色，默认 agent（多角色请在界面维护）",
     )
 
     args = parser.parse_args()
