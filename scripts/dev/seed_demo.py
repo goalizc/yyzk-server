@@ -11,7 +11,12 @@
     python scripts/dev/seed_demo.py --reset --activity   # 全量重建（换机型时用这个）
 
 --reset / --activity / --via-sql 走 docker compose exec psql（db 端口未映射到宿主机），
-所以需要在能执行 docker compose 的机器上跑，且 deploy/.env 存在。
+所以需要在能执行 docker compose 的机器上跑。
+默认读 deploy/.env；测试栈可指定：
+  SEED_ENV_FILE=deploy/.env.test SEED_COMPOSE_PROJECT=fault-test \
+  SEED_COMPOSE_ENV_FILE=deploy/.env.test \
+  ADMIN_INIT_PASSWORD=<测试管理员口令> \
+  python scripts/dev/seed_demo.py --reset --activity --base-url http://127.0.0.1:8080
 --via-sql 会跳过附件上传（上传必须走 API 拿文件路径）。
 """
 
@@ -33,19 +38,30 @@ from demo_data import MISS_QUERIES, PRODUCT_LINES, PRODUCTS, TICKET_DESCRIPTIONS
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_DIR = REPO_ROOT / "deploy"
 COMPOSE_FILE = DEPLOY_DIR / "docker-compose.yml"
+SEED_ENV_FILE = Path(os.getenv("SEED_ENV_FILE", str(DEPLOY_DIR / ".env")))
+COMPOSE_PROJECT = os.getenv("SEED_COMPOSE_PROJECT", "")
+COMPOSE_ENV_FILE = os.getenv("SEED_COMPOSE_ENV_FILE", "")
 
 
 def read_env() -> dict[str, str]:
-    """读 deploy/.env：数据库账号与管理员初始密码都从这里取，不额外要环境变量。"""
-    text = (DEPLOY_DIR / ".env").read_text(encoding="utf-8")
+    """读 SEED_ENV_FILE（默认 deploy/.env）：数据库账号与管理员初始密码。"""
+    text = SEED_ENV_FILE.read_text(encoding="utf-8")
     return dict(re.findall(r"^([A-Z_]+)=(.*)$", text, re.M))
+
+
+def _compose_cmd() -> list[str]:
+    cmd = ["docker", "compose", "-f", str(COMPOSE_FILE)]
+    if COMPOSE_PROJECT:
+        cmd += ["-p", COMPOSE_PROJECT]
+    if COMPOSE_ENV_FILE:
+        cmd += ["--env-file", str(Path(COMPOSE_ENV_FILE).resolve())]
+    return cmd
 
 
 def psql(sql: str, fetch: bool = False) -> str:
     """在 db 容器里执行 SQL。fetch=True 时返回 `|` 分隔、无表头的纯文本，方便解析。"""
     env = read_env()
-    cmd = [
-        "docker", "compose", "-f", str(COMPOSE_FILE),
+    cmd = _compose_cmd() + [
         "exec", "-T", "db",
         "psql", "-v", "ON_ERROR_STOP=1",
         "-U", env["DB_USER"], "-d", env["DB_NAME"],
@@ -76,7 +92,7 @@ def login(base: str) -> str:
 
     with api(base) as client:
         resp = client.post("/api/auth/login", json={"username": "admin", "password": password})
-        if resp.status_code != 200:
+        if resp.status_code not in (200, 201):
             print(f"[seed] 登录失败：{resp.status_code} {resp.text[:120]}", file=sys.stderr)
             raise SystemExit(1)
         return resp.json()["access_token"]
@@ -87,8 +103,12 @@ def login(base: str) -> str:
 # 注意：CASCADE 会连带清空 user_product_lines（账号的产品线归属），
 # 所以重建后要按「用户名 + 产品线名」把归属恢复回去，见 restore_assignments()。
 SQL_RESET = """
+BEGIN;
+ALTER TABLE stock_movements DISABLE TRIGGER USER;
 TRUNCATE ticket_status_logs, tickets, query_logs, faults, parts, products, product_lines
 RESTART IDENTITY CASCADE;
+ALTER TABLE stock_movements ENABLE TRIGGER USER;
+COMMIT;
 """
 
 SQL_FETCH_ASSIGNMENTS = """
@@ -320,7 +340,7 @@ def upload_demo_pdf(client: httpx.Client) -> str | None:
     pdf = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
     files = {"file": ("3WWDZ-16A 作业手册.pdf", pdf, "application/pdf")}
     resp = client.post("/api/admin/upload", files=files)
-    if resp.status_code != 200:
+    if resp.status_code not in (200, 201):
         print(f"[seed] 附件上传失败（跳过附件）：{resp.status_code} {resp.text[:100]}")
         return None
     return resp.json()
@@ -333,7 +353,7 @@ def ensure_lines(client: httpx.Client) -> dict[str, int]:
         name = spec["name"]
         if name not in existing:
             resp = client.post("/api/admin/product-lines", json=spec)
-            if resp.status_code != 200:
+            if resp.status_code not in (200, 201):
                 print(f"[seed] 产品线「{name}」创建失败：{resp.status_code} {resp.text[:200]}", file=sys.stderr)
                 raise SystemExit(1)
             existing[name] = resp.json()
@@ -367,7 +387,7 @@ def create_faults(client: httpx.Client, product: dict, part_ids: dict[str, int],
             "needs_professional": fault["needs_professional"],
         }
         resp = client.post("/api/admin/faults", json=payload)
-        if resp.status_code != 200:
+        if resp.status_code not in (200, 201):
             print(
                 f"[seed] 故障「{fault['title']}」创建失败：{resp.status_code} {resp.text[:300]}",
                 file=sys.stderr,
@@ -403,7 +423,7 @@ def seed_via_api(base_url: str, skip_attachment: bool = False) -> dict[str, int]
                     "sort_order": spec["sort_order"],
                 },
             )
-            if resp.status_code != 200:
+            if resp.status_code not in (200, 201):
                 print(f"[seed] 产品 {spec['model']} 创建失败：{resp.status_code} {resp.text[:200]}", file=sys.stderr)
                 raise SystemExit(1)
             product = resp.json()
@@ -412,7 +432,7 @@ def seed_via_api(base_url: str, skip_attachment: bool = False) -> dict[str, int]
             part_ids: dict[str, int] = {}
             for part in spec["parts"]:
                 resp = client.post("/api/admin/parts", json={"product_id": product["id"], **part})
-                if resp.status_code != 200:
+                if resp.status_code not in (200, 201):
                     print(f"[seed] 零件「{part['name']}」创建失败：{resp.status_code} {resp.text[:200]}", file=sys.stderr)
                     raise SystemExit(1)
                 part_ids[part["name"]] = resp.json()["id"]

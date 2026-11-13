@@ -1,0 +1,17 @@
+# 测试栈资源覆盖：与生产同机部署时避免抢生产资源。
+# 用法（必须同时指定生产 compose 作为基础文件）：
+#   docker compose -p fault-test --env-file .env.test \
+#     -f docker-compose.yml -f docker-compose.test.yml up -d
+services:
+  db:
+    mem_limit: 512m
+    cpus: 1.0
+  backend:
+    mem_limit: 256m
+    cpus: 0.5
+  frontend:
+    mem_limit: 64m
+    cpus: 0.1
+  nginx:
+    mem_limit: 64m
+    cpus: 0.1

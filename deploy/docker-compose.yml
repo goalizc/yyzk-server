@@ -15,7 +15,7 @@ services:
   # -------------------- 数据库 --------------------
   db:
     image: postgres:15-alpine
-    container_name: fault-db
+    container_name: ${STACK_PREFIX:-fault}-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-fault}
@@ -30,7 +30,7 @@ services:
       - "-c"
       - "pg_stat_statements.track=all"
     volumes:
-      - ./data/pg:/var/lib/postgresql/data
+      - ${DATA_DIR:-./data}/pg:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-fault} -d ${DB_NAME:-fault_db}"]
@@ -67,7 +67,7 @@ services:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-pypi.org}
         # 与下面的 cpus 联动：1 核配 1 worker 最快（详见 Dockerfile 里的压测数据）
         UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
-    container_name: fault-backend
+    container_name: ${STACK_PREFIX:-fault}-backend
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg2://${DB_USER:-fault}:${DB_PASSWORD}@db:5432/${DB_NAME:-fault_db}
@@ -94,7 +94,7 @@ services:
       # 属主不对时上传会失败（真机出过一次：PermissionError Errno 13，报 500）。
       # 起服前务必执行一次（幂等，可重复跑）：
       #   sudo ./scripts/prepare-storage.sh
-      - ./data/uploads:/data/uploads
+      - ${DATA_DIR:-./data}/uploads:/data/uploads
     # 资源上限：4 核机器上 backend 1 核（db 2.5 / nginx 0.5 / frontend 0.5）。
     # 压测实测（100 并发、10 分钟，见 05-评估审查/12-性能压测报告.md）：
     #   backend 1 核 = CPU 打满，但请求时间主要耗在等 db，不是自身算力不足。
@@ -129,7 +129,7 @@ services:
         NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
         NGINX_IMAGE: ${NGINX_IMAGE:-nginx:1.25-alpine}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-    container_name: fault-frontend
+    container_name: ${STACK_PREFIX:-fault}-frontend
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ >/dev/null || exit 1"]
@@ -145,18 +145,18 @@ services:
   # -------------------- Nginx 统一入口 --------------------
   nginx:
     image: nginx:1.25-alpine
-    container_name: fault-nginx
+    container_name: ${STACK_PREFIX:-fault}-nginx
     restart: unless-stopped
     environment:
       # 访问日志用本地时间；不设就是 UTC，排查时和后端日志的 +08:00 差 8 小时
       TZ: ${TZ:-Asia/Shanghai}
     ports:
-      - "80:80"
+      - "${HTTP_PORT:-80}:80"
       # 配好证书后再开放 443（见 deploy/nginx-https.conf.example）
       # - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./data/uploads:/data/uploads:ro
+      - ${DATA_DIR:-./data}/uploads:/data/uploads:ro
       # 启用 HTTPS 时取消下一行注释，并把证书放到 ./certs/
       # - ./certs:/etc/nginx/certs:ro
       # - /var/www/certbot:/var/www/certbot:ro

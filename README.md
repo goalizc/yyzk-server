@@ -112,6 +112,22 @@ cd deploy && docker compose build frontend && docker compose up -d frontend
 
 详细说明与手动部署兜底流程见 `docs/04-运维与运营/运维手册.md`。
 
+### 测试栈：与生产同机，8080
+
+生产继续占用 80；测试栈使用独立数据库、上传目录和 JWT 密钥，互不影响：
+
+```bash
+cd deploy && ./deploy-test.sh
+```
+
+- 访问：`http://<本机IP>:8080/`
+- 数据目录：`deploy/data-test/`
+- 环境变量：`deploy/.env.test`（已 gitignore）
+- 容器：`fault-test-db/backend/frontend/nginx`
+- 停止：`cd deploy && docker compose -p fault-test --env-file .env.test -f docker-compose.yml -f docker-compose.test.yml down`（数据保留）
+
+测试栈首次启动会建空库并初始化管理员；演示数据按需重建，命令与生产相同，只需把 `--base-url` 指向 `http://127.0.0.1:8080`，并按 `scripts/dev/seed_demo.py`、`scripts/dev/demo_inventory.py` 头部注释设置 `SEED_*` 环境变量。
+
 ### 本地开发
 
 ```bash

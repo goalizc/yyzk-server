@@ -12,6 +12,12 @@
     2. 已跑过 seed_demo.py（本脚本要关联现有 parts；缺零件会明确报错）
     3. deploy/.env 存在（psql 取 DB 账号、登录口令兜底）
 
+测试栈（8080）：
+    SEED_ENV_FILE=deploy/.env.test SEED_COMPOSE_PROJECT=fault-test \
+    SEED_COMPOSE_ENV_FILE=deploy/.env.test \
+    ADMIN_PASSWORD=<测试管理员口令> \
+    .venv/bin/python scripts/dev/demo_inventory.py --reset --base-url http://127.0.0.1:8080
+
 口令：优先 ADMIN_PASSWORD 环境变量 → deploy/.env 的 ADMIN_INIT_PASSWORD。
       deploy/.env 里的口令可能与库中实际 admin 口令不一致（本地库历史原因），
       此时用 ADMIN_PASSWORD=真实口令 覆盖，不要在仓库里硬编码口令。
@@ -41,6 +47,9 @@ import httpx
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_DIR = REPO_ROOT / "deploy"
 COMPOSE_FILE = DEPLOY_DIR / "docker-compose.yml"
+SEED_ENV_FILE = Path(os.getenv("SEED_ENV_FILE", str(DEPLOY_DIR / ".env")))
+COMPOSE_PROJECT = os.getenv("SEED_COMPOSE_PROJECT", "")
+COMPOSE_ENV_FILE = os.getenv("SEED_COMPOSE_ENV_FILE", "")
 API = "/api/admin/inventory"
 
 # ---------------------------------------------------------------- 数据本体
@@ -143,16 +152,24 @@ SELECT
 
 
 def read_env() -> dict[str, str]:
-    """读 deploy/.env：DB 账号与管理员口令兜底都从这里取，不额外要环境变量。"""
-    text = (DEPLOY_DIR / ".env").read_text(encoding="utf-8")
+    """读 SEED_ENV_FILE（默认 deploy/.env）：DB 账号与管理员口令兜底。"""
+    text = SEED_ENV_FILE.read_text(encoding="utf-8")
     return dict(re.findall(r"^([A-Z_]+)=(.*)$", text, re.M))
+
+
+def _compose_cmd() -> list[str]:
+    cmd = ["docker", "compose", "-f", str(COMPOSE_FILE)]
+    if COMPOSE_PROJECT:
+        cmd += ["-p", COMPOSE_PROJECT]
+    if COMPOSE_ENV_FILE:
+        cmd += ["--env-file", str(Path(COMPOSE_ENV_FILE).resolve())]
+    return cmd
 
 
 def psql(sql: str, fetch: bool = False) -> str:
     """在 db 容器里执行 SQL（db 端口未映射到宿主机）。fetch=True 返回纯文本。"""
     env = read_env()
-    cmd = [
-        "docker", "compose", "-f", str(COMPOSE_FILE),
+    cmd = _compose_cmd() + [
         "exec", "-T", "db",
         "psql", "-v", "ON_ERROR_STOP=1",
         "-U", env["DB_USER"], "-d", env["DB_NAME"],
