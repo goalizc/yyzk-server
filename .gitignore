@@ -33,8 +33,7 @@ frontend/.e2e-run/
 #     入库后新 clone 不必先跑一次 dev/build 才能 lint
 
 # 运行期数据（部署目录内生成）
-deploy/data/
-deploy/data-test/
+deploy/data*/
 deploy/backups/
 deploy/certs/
 

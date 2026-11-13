@@ -117,12 +117,14 @@ cd deploy && docker compose build frontend && docker compose up -d frontend
 生产继续占用 80；测试栈使用独立数据库、上传目录和 JWT 密钥，互不影响：
 
 ```bash
+cd deploy && cp -n .env.test.example .env.test
+# 修改 .env.test 里的数据库密码、JWT_SECRET、ADMIN_INIT_PASSWORD
 cd deploy && ./deploy-test.sh
 ```
 
-- 访问：`http://<本机IP>:8080/`
+- 访问：`http://127.0.0.1:8080/`（默认只监听本机；需要局域网访问时把 `.env.test` 的 `HTTP_BIND` 改成 `0.0.0.0`）
 - 数据目录：`deploy/data-test/`
-- 环境变量：`deploy/.env.test`（已 gitignore）
+- 环境变量：`deploy/.env.test`（已 gitignore，模板见 `deploy/.env.test.example`）
 - 容器：`fault-test-db/backend/frontend/nginx`
 - 停止：`cd deploy && docker compose -p fault-test --env-file .env.test -f docker-compose.yml -f docker-compose.test.yml down`（数据保留）
 

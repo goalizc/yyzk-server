@@ -21,9 +21,13 @@
 set -euo pipefail
 
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# 与 compose 的 DATA_DIR 保持一致；测试栈用 DATA_DIR=data-test 调用
+# 与 compose 的 DATA_DIR 保持一致；支持相对与绝对路径
 DATA_DIR="${DATA_DIR:-data}"
-UPLOAD_DIR="$DEPLOY_DIR/$DATA_DIR/uploads"
+case "$DATA_DIR" in
+  /*)   UPLOAD_DIR="$DATA_DIR/uploads" ;;
+  ./*)  UPLOAD_DIR="$DEPLOY_DIR/${DATA_DIR#./}/uploads" ;;
+  *)    UPLOAD_DIR="$DEPLOY_DIR/$DATA_DIR/uploads" ;;
+esac
 
 # 与 backend/Dockerfile 里的 uid/gid 保持一致，改一处要同步另一处
 BACKEND_UID=10001

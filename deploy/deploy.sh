@@ -35,6 +35,24 @@ set -euo pipefail
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DEPLOY_DIR"
 
+# 部署标识：与 compose 共用 .env，避免脚本与编排各写死一套
+read_env_value() {
+  local file=".env"
+  [[ -f "$file" ]] || file=".env.example"
+  grep -E "^$1=" "$file" 2>/dev/null | head -1 | sed -E "s/^$1=//" | sed -E 's/[[:space:]]+$//' | tr -d "\"'" || true
+}
+STACK_PREFIX="$(read_env_value STACK_PREFIX)"
+STACK_PREFIX="${STACK_PREFIX:-fault}"
+HTTP_PORT="$(read_env_value HTTP_PORT)"
+HTTP_PORT="${HTTP_PORT:-80}"
+DATA_DIR="$(read_env_value DATA_DIR)"
+DATA_DIR="${DATA_DIR:-./data}"
+case "$DATA_DIR" in
+  /*)   DATA_PATH="$DATA_DIR" ;;
+  ./*)  DATA_PATH="$DEPLOY_DIR/${DATA_DIR#./}" ;;
+  *)    DATA_PATH="$DEPLOY_DIR/$DATA_DIR" ;;
+esac
+
 # 与 backend/Dockerfile 保持一致，改一处要同步另一处
 BACKEND_UID=10001
 BACKEND_GID=10001
@@ -113,18 +131,18 @@ else
   ok "磁盘可用 $(( AVAIL_KB / 1024 / 1024 ))G"
 fi
 
-# 端口占用：80 被别的服务占着是首次部署最常见的失败点
+# 端口占用：默认 80；若 .env 改了 HTTP_PORT，按实际端口检查
 if command -v ss >/dev/null 2>&1; then
-  if ss -ltn 2>/dev/null | grep -qE ':80\s'; then
+  if ss -ltn 2>/dev/null | grep -qE ":${HTTP_PORT}\s"; then
     # 如果占用者就是本项目的 nginx，那属于重复部署，是正常的
-    if ! docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -q "fault-nginx.*:80->"; then
-      die "端口 80 已被其他程序占用。
+    if ! docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -q "${STACK_PREFIX}-nginx.*:${HTTP_PORT}->"; then
+      die "端口 ${HTTP_PORT} 已被其他程序占用。
 
-  查看占用者：sudo ss -ltnp | grep ':80'
-  停掉它，或改本项目的端口（deploy/docker-compose.yml 里 nginx 的 ports）。"
+  查看占用者：sudo ss -ltnp | grep ':${HTTP_PORT}'
+  停掉它，或在 .env 里改 HTTP_PORT。"
     fi
   fi
-  ok "端口 80 可用"
+  ok "端口 ${HTTP_PORT} 可用"
 fi
 
 if [[ "$(id -u)" == "0" ]]; then
@@ -151,14 +169,9 @@ else
   ok "已生成随机 JWT_SECRET / DB_PASSWORD / ADMIN_INIT_PASSWORD"
 fi
 
-# 读一个键（不 source，避免值里的特殊字符被执行 —— harden.sh 踩过这个坑）
-get_env() {
-  grep -E "^$1=" .env 2>/dev/null | head -1 | sed -E "s/^$1=//" | sed -E 's/[[:space:]]+$//' | tr -d "\"'" || true
-}
-
-ADMIN_USER=$(get_env ADMIN_USERNAME)
+ADMIN_USER=$(read_env_value ADMIN_USERNAME)
 ADMIN_USER="${ADMIN_USER:-admin}"
-ADMIN_PW=$(get_env ADMIN_INIT_PASSWORD)
+ADMIN_PW=$(read_env_value ADMIN_INIT_PASSWORD)
 ADMIN_PW_DEFAULTED=0
 if [[ -z "$ADMIN_PW" ]]; then
   die "ADMIN_INIT_PASSWORD 为空。本项目没有默认口令，请在 .env 里设置一个再执行。"
@@ -172,8 +185,8 @@ fi
 
 step "准备数据目录"
 
-mkdir -p data/pg data/uploads
-ok "data/pg、data/uploads 已就绪"
+mkdir -p "$DATA_PATH/pg" "$DATA_PATH/uploads"
+ok "${DATA_DIR}/pg、${DATA_DIR}/uploads 已就绪"
 
 if [[ "$MODE" == "check" ]]; then
   echo
@@ -231,7 +244,7 @@ step "修正上传目录属主"
 # backend 镜像里有 chown 命令，挂载的 /data/uploads 就是宿主机目录，
 # 容器内 root 改属主等价于宿主机 root —— 但不要求调用者本身是 root。
 if [[ "$MODE" == "check" ]]; then
-  OWNER=$(docker run --rm -v "$PWD/data/uploads:/data/uploads:ro" --entrypoint stat alpine:3 2>/dev/null \
+  OWNER=$(docker run --rm -v "$DATA_PATH/uploads:/data/uploads:ro" --entrypoint stat alpine:3 2>/dev/null \
     -c '%u:%g' /data/uploads 2>/dev/null || echo "")
   info "跳过修正（--check 模式）"
 else
@@ -240,7 +253,7 @@ else
     ok "已修正为 $BACKEND_UID:$BACKEND_GID（容器内执行，无需宿主机 sudo）"
   else
     warn "自动修正失败。若上传仍报 503，在宿主机执行："
-    warn "  sudo chown -R $BACKEND_UID:$BACKEND_GID $PWD/data/uploads"
+    warn "  sudo chown -R $BACKEND_UID:$BACKEND_GID $DATA_PATH/uploads"
   fi
 fi
 
@@ -262,7 +275,7 @@ else
   fi
 
   DB_DEADLINE=$(( SECONDS + 120 ))
-  until docker compose ps --format '{{.Name}} {{.Health}}' 2>/dev/null | grep -q "^fault-db healthy"; do
+  until docker compose ps --format '{{.Name}} {{.Health}}' 2>/dev/null | grep -q "^${STACK_PREFIX}-db healthy"; do
     if (( SECONDS >= DB_DEADLINE )); then
       docker compose logs --tail=50 db
       die "数据库未在 120 秒内就绪"
@@ -308,8 +321,8 @@ else
     die "启动服务失败，详见上面的输出。
 
   常见原因：
-    - 端口 80 被占用：sudo ss -ltnp | grep ':80'
-    - data/pg 属主不对：sudo chown -R 1000:1000 data/pg
+    - 端口 ${HTTP_PORT} 被占用：sudo ss -ltnp | grep ':${HTTP_PORT}'
+    - 数据目录 ${DATA_DIR}/pg 属主不对：sudo chown -R 1000:1000 ${DATA_PATH}/pg
     - 内存不足（需 ≥ 2G）：free -h"
   fi
   rm -f /tmp/deploy_up.log
@@ -321,13 +334,13 @@ else
   READY=0
   while (( SECONDS < DEADLINE )); do
     HEALTH=$(docker compose ps --format '{{.Name}} {{.Health}}' 2>/dev/null || true)
-    if echo "$HEALTH" | grep -q "^fault-db healthy" && echo "$HEALTH" | grep -q "^fault-backend healthy"; then
+    if echo "$HEALTH" | grep -q "^${STACK_PREFIX}-db healthy" && echo "$HEALTH" | grep -q "^${STACK_PREFIX}-backend healthy"; then
       READY=1
       break
     fi
     DB_S="启动中"; BE_S="启动中"
-    echo "$HEALTH" | grep -q "^fault-db healthy" && DB_S="就绪" || true
-    echo "$HEALTH" | grep -q "^fault-backend healthy" && BE_S="就绪" || true
+    echo "$HEALTH" | grep -q "^${STACK_PREFIX}-db healthy" && DB_S="就绪" || true
+    echo "$HEALTH" | grep -q "^${STACK_PREFIX}-backend healthy" && BE_S="就绪" || true
     printf '\r  \033[36m·\033[0m 等待服务就绪：db %s / backend %s（已等 %ds）   ' \
       "$DB_S" "$BE_S" "$(( 180 - (DEADLINE - SECONDS) ))"
     sleep 3
@@ -345,7 +358,7 @@ else
     docker compose logs --tail=50 db       # 数据库报什么错
 
   常见原因：
-    - data/pg 属主不对（曾用 root 跑过）→ sudo chown -R 1000:1000 data/pg
+    - 数据目录 ${DATA_DIR}/pg 属主不对（曾用 root 跑过）→ sudo chown -R 1000:1000 ${DATA_PATH}/pg
     - 内存不足（需 ≥ 2G）：free -h"
   fi
   ok "db / backend 已 healthy"
