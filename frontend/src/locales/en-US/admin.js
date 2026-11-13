@@ -3,7 +3,7 @@ export default {
   nav: {
     groupService: 'After-sales',
     groupMaster: 'Product master',
-    groupInventory: 'Inventory',
+    groupInventory: 'Warehouse',
     groupSystem: 'System',
     tickets: 'Tickets',
     faults: 'Fault Library',

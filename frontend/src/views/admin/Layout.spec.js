@@ -72,7 +72,7 @@ beforeEach(() => {
 })
 
 describe('Layout', () => {
-  it('侧栏菜单按「主数据 → 售后 → 进销存 → 系统」排序，主数据三项连续', async () => {
+  it('侧栏菜单按「主数据 → 售后 → 仓库管理 → 系统」排序，主数据三项连续', async () => {
     // 全权限账号：顺序断言必须看到全部项，缺一项就说明被权限过滤干扰了
     const ALL = [
       'ticket:read', 'fault:read', 'stats:read', 'product_line:read',
@@ -111,7 +111,7 @@ describe('Layout', () => {
     expect(labels.indexOf('物资分类')).toBe(labels.indexOf('物资 SKU') - 1)
   })
 
-  it('侧栏按主数据 / 售后 / 进销存 / 系统分组，主数据三项连续', async () => {
+  it('侧栏按主数据 / 售后 / 仓库管理 / 系统分组，主数据三项连续', async () => {
     const ALL = [
       'ticket:read', 'fault:read', 'stats:read', 'product_line:read',
       'product:read', 'part:read',
@@ -128,7 +128,7 @@ describe('Layout', () => {
     expect(groups.map((group) => group.label)).toEqual([
       '主数据',
       '售后业务',
-      '进销存',
+      '仓库管理',
       '系统管理'
     ])
     expect(groups[0].items.map((item) => item.label)).toEqual([

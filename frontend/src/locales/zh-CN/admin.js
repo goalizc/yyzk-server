@@ -5,7 +5,7 @@ export default {
   nav: {
     groupService: '售后业务',
     groupMaster: '主数据',
-    groupInventory: '进销存',
+    groupInventory: '仓库管理',
     groupSystem: '系统管理',
     tickets: '工单管理',
     faults: '故障知识库',
