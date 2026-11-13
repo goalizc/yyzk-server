@@ -15,5 +15,16 @@ export default {
   userWrite: '维护用户',
   productLineRead: '查看产品线',
   auditRead: '查看操作日志',
-  productLineWrite: '维护产品线'
+  productLineWrite: '维护产品线',
+  inventorySkuRead: '查看库存物资',
+  inventorySkuWrite: '维护库存物资',
+  inventoryInboundRead: '查看入库单',
+  inventoryInboundWrite: '登记入库',
+  inventoryOutboundRead: '查看出库单',
+  inventoryOutboundWrite: '登记出库',
+  inventoryMovementRead: '查看库存流水',
+  inventoryAdjustWrite: '盘点与冲正',
+  inventoryExport: '导出库存台账',
+  inventoryCostRead: '查看成本单价（未启用）',
+  inventoryDocEdit: '修改已生效单据'
 }

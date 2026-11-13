@@ -13,7 +13,8 @@ request.interceptors.request.use((config) => {
 })
 
 request.interceptors.response.use(
-  (response) => response.data,
+  // fullResponse：下载类接口需要读响应头（如导出截断标记），其余仍只返回 data
+  (response) => (response.config?.fullResponse ? response : response.data),
   (error) => {
     const code = error.response?.data?.code
     // 契约 §0.3：只有 AUTH_TOKEN_EXPIRED 才清 token 跳登录，

@@ -75,7 +75,10 @@ describe('Layout', () => {
     // 全权限账号：顺序断言必须看到全部项，缺一项就说明被权限过滤干扰了
     const ALL = [
       'ticket:read', 'fault:read', 'stats:read', 'product_line:read',
-      'product:read', 'part:read', 'user:read', 'audit:read'
+      'product:read', 'part:read',
+      'inventory:sku:read', 'inventory:inbound:read', 'inventory:outbound:read',
+      'inventory:movement:read', 'inventory:adjust:write',
+      'user:read', 'audit:read'
     ]
     setPermissions(ALL)
     fetchMe.mockResolvedValue({ permissions: ALL })
@@ -91,12 +94,20 @@ describe('Layout', () => {
       '产品线',
       '产品管理',
       '零件管理',
+      '物资分类',
+      '物资 SKU',
+      '入库单',
+      '出库单',
+      '库存流水',
+      '盘点调整',
       '用户管理',
       '操作日志'
     ])
     // 产品线 → 产品 → 零件 是数据层级（从粗到细），中间不许插别的项
     const start = labels.indexOf('产品线')
     expect(labels.slice(start, start + 3)).toEqual(['产品线', '产品管理', '零件管理'])
+    // 物资分类必须先于物资 SKU：分类是 SKU 的从属主数据，先建分类再建物资
+    expect(labels.indexOf('物资分类')).toBe(labels.indexOf('物资 SKU') - 1)
   })
 
   it('编辑故障页仍高亮侧边栏"故障知识库"', async () => {

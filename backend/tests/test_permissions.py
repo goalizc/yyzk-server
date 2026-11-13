@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 from app.core.permissions import (
     ALL_PERMISSIONS,
+    INVENTORY_ADJUST_WRITE,
+    INVENTORY_COST_READ,
     LINES,
     TICKET_ASSIGN,
     TICKET_READ,
@@ -17,7 +19,7 @@ from tests.conftest import make_user
 
 
 def test_role_matrix_is_closed():
-    for role in ("super_admin", "supervisor", "agent", "auditor"):
+    for role in ("super_admin", "supervisor", "warehouse_clerk", "agent", "auditor"):
         assert role_permissions(role) == expand(role_permissions(role))
 
 
@@ -74,8 +76,15 @@ def test_revoked_grant_is_ignored(db):
     assert "stats:read" not in effective_permissions(db, user)
 
 
-def test_user_write_not_grantable():
+def test_sensitive_permissions_not_grantable():
     from app.core.permissions import grantable_permissions
 
-    assert USER_WRITE not in grantable_permissions()
-    assert grantable_permissions() == ALL_PERMISSIONS - {USER_WRITE}
+    grantable = grantable_permissions()
+    assert USER_WRITE not in grantable
+    assert INVENTORY_ADJUST_WRITE not in grantable
+    assert INVENTORY_COST_READ not in grantable
+    assert grantable == ALL_PERMISSIONS - {
+        USER_WRITE,
+        INVENTORY_ADJUST_WRITE,
+        INVENTORY_COST_READ,
+    }

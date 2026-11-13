@@ -4,6 +4,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import AuditLogList from './AuditLogList.vue'
 import { setPermissions } from '../../../utils/permissions'
+import zhAudit from '../../../locales/zh-CN/admin-audit'
+import enAudit from '../../../locales/en-US/admin-audit'
 
 vi.mock('../../../api/audit', () => ({
   adminListAuditLogs: vi.fn(),
@@ -184,6 +186,23 @@ describe('AuditLogList', () => {
     expect(values).toContain('处理中')
   })
 
+  it('角色变更显示中文名，不把 warehouse_clerk 原样丢给用户', async () => {
+    // 审计 detail 里存的是 users.role 原值；不翻译就是英文原文
+    adminGetAuditLog.mockResolvedValue({
+      ...LOGS[0],
+      action: 'user.update',
+      detail: { role_from: 'warehouse_clerk', role_to: 'warehouse_manager' }
+    })
+    const wrapper = await mountPage()
+
+    await wrapper.find('.el-table__row').trigger('click')
+    await flushPromises()
+
+    const values = wrapper.vm.$.setupState.extraFields.map((item) => item.value)
+    expect(values).toContain('仓管录入员')
+    expect(values).toContain('仓管主管')
+  })
+
   it('汇总条展示近 7 天失败数与多 IP 提示', async () => {
     const wrapper = await mountPage()
 
@@ -225,6 +244,27 @@ describe('AuditLogList', () => {
     const mapped = Object.keys(wrapper.vm.$.setupState.FIELD_KEYS)
     for (const key of BACKEND_DETAIL_KEYS) {
       expect(mapped, `缺少字段映射：${key}`).toContain(key)
+    }
+  })
+
+  it('进销存 11 个审计动作都有双语文案映射，不落到「其他操作」', async () => {
+    // 来源：backend/app/services/audit.py 的 _RULES（inventory.* 分组）。
+    // 漏一个的症状是审计列表与筛选下拉显示「其他操作」，中英文界面都一样。
+    const INVENTORY_ACTIONS = [
+      'inventory.sku.create', 'inventory.sku.update', 'inventory.sku.disable',
+      'inventory.category.create', 'inventory.category.update',
+      'inventory.inbound.create', 'inventory.outbound.create',
+      'inventory.adjust.create', 'inventory.document.reverse',
+      'inventory.document.edit', 'inventory.export'
+    ]
+    const wrapper = await mountPage()
+    const keys = wrapper.vm.$.setupState.ACTION_KEYS
+    for (const action of INVENTORY_ACTIONS) {
+      const key = keys[action]
+      expect(key, `缺少动作映射：${action}`).toBeTruthy()
+      const leaf = key.split('.').pop()
+      expect(zhAudit.action[leaf], `缺少中文文案：${action}`).toBeTruthy()
+      expect(enAudit.action[leaf], `缺少英文文案：${action}`).toBeTruthy()
     }
   })
 

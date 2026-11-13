@@ -4,7 +4,8 @@
 // 单测里既慢又容易被网络层干扰。函数本身是纯的，规则错了这里就会红；
 // 接入点是否正确由 e2e/admin-entry.spec.js 端到端兜住。
 import { beforeEach, describe, expect, it } from 'vitest'
-import { idleRedirect, loggedInRedirect } from './index'
+import { idleRedirect, loggedInRedirect, firstAccessibleAdminPath } from './index'
+import { setPermissions } from '../utils/permissions'
 
 const b64url = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url')
 const jwt = (payload) => `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}.sig`
@@ -106,5 +107,32 @@ describe('idleRedirect', () => {
     loginWith(nowSeconds() + 3600)
     idleMinutesAgo(60)
     expect(idleRedirect({ path: '/admin/tickets', query: {} })).not.toBeNull()
+  })
+})
+
+describe('firstAccessibleAdminPath', () => {
+  it('super_admin（含 ticket:read）→ 默认落在工单列表', () => {
+    setPermissions(['ticket:read', 'fault:read', 'product:read', 'part:read', 'stats:read', 'user:read', 'inventory:sku:read'])
+    expect(firstAccessibleAdminPath()).toBe('/admin/tickets')
+  })
+
+  it('warehouse（仅进销存权限）→ 落在第一个库存页，不卡死', () => {
+    // 回归：曾经写死 /admin/faults 兜底，warehouse 无 fault:read 会无限重定向。
+    setPermissions([
+      'inventory:sku:read',
+      'inventory:sku:write',
+      'inventory:inbound:read',
+      'inventory:inbound:write',
+      'inventory:outbound:read',
+      'inventory:outbound:write',
+      'inventory:movement:read',
+      'inventory:export'
+    ])
+    expect(firstAccessibleAdminPath()).toBe('/admin/inventory/skus')
+  })
+
+  it('无任何后台权限 → 安全网回登录页', () => {
+    setPermissions([])
+    expect(firstAccessibleAdminPath()).toBe('/admin/login')
   })
 })

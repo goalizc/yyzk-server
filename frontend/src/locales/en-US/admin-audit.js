@@ -70,6 +70,17 @@ export default {
     auditExport: 'Exported the audit log',
     uploadCreate: 'Uploaded a file',
     uploadDelete: 'Deleted an uploaded file',
+    inventorySkuCreate: 'Created an inventory SKU',
+    inventorySkuUpdate: 'Updated an inventory SKU',
+    inventorySkuDisable: 'Disabled an inventory SKU',
+    inventoryCategoryCreate: 'Created an item category',
+    inventoryCategoryUpdate: 'Updated an item category',
+    inventoryInboundCreate: 'Created a stock-in document',
+    inventoryOutboundCreate: 'Created a stock-out document',
+    inventoryAdjustCreate: 'Created a stock adjustment',
+    inventoryDocumentReverse: 'Reversed an inventory document',
+    inventoryDocumentEdit: 'Edited a confirmed document',
+    inventoryExport: 'Exported inventory data',
     unknown: 'Other action'
   },
 

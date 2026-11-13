@@ -1,5 +1,5 @@
 // TicketList.vue：筛选参数拼装（日期区间透传）、脱敏列渲染、详情面板局部刷新
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import TicketList from './TicketList.vue'
@@ -30,14 +30,33 @@ const ROWS = [
   }
 ]
 
+// el-table / 详情面板的 teleport 都挂到 body。挂载后不卸载会逐条堆积，
+// DOM 越来越重、渲染越来越慢，最终稳定触发 5s 超时（与 UserList.spec.js 同源）。
+// 统一从这里挂载，afterEach 里集中卸载并清空 body。
+const mountedWrappers = []
+
 async function mountList() {
   const wrapper = mount(TicketList, {
     global: { plugins: [ElementPlus] },
     attachTo: document.body
   })
+  mountedWrappers.push(wrapper)
   await flushPromises()
   return wrapper
 }
+
+afterEach(() => {
+  for (const wrapper of mountedWrappers.splice(0)) {
+    try {
+      wrapper.unmount()
+    } catch {
+      // 测试内已卸载过：忽略
+    }
+  }
+  document.body.innerHTML = ''
+  // 超时失败的用例可能来不及跑自身的 restore，这里兜底防 spy 泄漏
+  vi.restoreAllMocks()
+})
 
 beforeEach(() => {
   vi.clearAllMocks()

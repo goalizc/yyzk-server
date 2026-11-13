@@ -7,7 +7,9 @@
           <div class="head-actions">
             <el-input v-model="filters.keyword" :placeholder="$t('admin.user.list.searchPlaceholder')" clearable class="kw" @input="onKeywordInput" @clear="reload" />
             <el-select v-model="filters.role" :placeholder="$t('admin.user.list.allRoles')" clearable class="role" @change="reload">
-              <el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" />
+              <el-option-group v-for="group in roleGroups" :key="group.key" :label="$t(group.key)">
+                <el-option v-for="item in group.options" :key="item.value" :label="item.label" :value="item.value" />
+              </el-option-group>
             </el-select>
             <el-select v-model="filters.isActive" :placeholder="$t('admin.user.list.allStatuses')" clearable class="status" @change="reload">
               <el-option :label="$t('admin.user.list.enabled')" :value="true" />
@@ -26,9 +28,9 @@
             <div class="sub">{{ row.real_name }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="$t('admin.user.list.colRole')" width="140">
+        <el-table-column :label="$t('admin.user.list.colRole')" min-width="140">
           <template #default="{ row }">
-            <div>{{ roleLabel(row.role) }}</div>
+            <div>{{ roleName(row.role) }}</div>
             <el-tag
               v-if="row.active_grant_count > 0"
               type="warning"
@@ -45,7 +47,9 @@
             <el-tag v-for="line in row.product_lines" :key="line.id" size="small" class="tag">
               {{ line.name }}{{ line.expires_at ? $t('admin.user.list.temporary') : '' }}
             </el-tag>
-            <span v-if="!row.product_lines.length" class="sub">{{ $t('admin.user.list.noLines') }}</span>
+            <span v-if="!row.product_lines.length" class="sub">
+              {{ usesProductLines(row.role) ? $t('admin.user.list.noLines') : $t('admin.user.list.linesNotApplicable') }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column :label="$t('admin.user.list.colStatus')" width="110" align="center">
@@ -110,10 +114,12 @@
         </el-form-item>
         <el-form-item :label="$t('admin.user.form.role')" prop="role">
           <el-select v-model="form.role">
-            <el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" />
+            <el-option-group v-for="group in roleGroups" :key="group.key" :label="$t(group.key)">
+              <el-option v-for="item in group.options" :key="item.value" :label="item.label" :value="item.value" />
+            </el-option-group>
           </el-select>
         </el-form-item>
-        <el-form-item :label="$t('admin.user.form.productLines')">
+        <el-form-item v-if="showProductLines" :label="$t('admin.user.form.productLines')">
           <div class="assignments">
             <div v-for="(item, index) in form.product_lines" :key="index" class="assignment-row">
               <el-select v-model="item.line_id" :placeholder="$t('admin.user.form.selectLine')" class="line-select">
@@ -203,8 +209,9 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  adminCreateGrant, adminCreateUser, adminListGrants, adminListProductLines,
-  adminListUsers, adminReplaceUserLines, adminResetPassword, adminRevokeGrant, adminUpdateUser
+  adminCreateGrant, adminCreateUser, adminListGrantablePermissions, adminListGrants,
+  adminListProductLines, adminListUsers, adminReplaceUserLines, adminResetPassword,
+  adminRevokeGrant, adminUpdateUser
 } from '../../../api/admin'
 import DetailPanel from '../../../components/DetailPanel.vue'
 import ErrorState from '../../../components/ErrorState.vue'
@@ -214,29 +221,25 @@ import { copyText } from '../../../utils/clipboard'
 import { formatDateTime } from '../../../utils/format'
 import { permissionLabel } from '../../../utils/permissionLabels'
 import { hasPermission } from '../../../utils/permissions'
+import { ROLE_GROUPS, roleLabel, usesProductLines } from '../../../utils/roles'
 import { useNarrow } from '../../../utils/viewport'
 import { useFormLabelWidth } from '../../../utils/formLabel'
 
-// key 用字面量而不是 `common.role.${value}` 拼接：扫描脚本与键完整性检查都依赖字面量
-const ROLE_KEYS = {
-  super_admin: 'common.role.super_admin',
-  supervisor: 'common.role.supervisor',
-  agent: 'common.role.agent',
-  auditor: 'common.role.auditor'
-}
-const ROLE_VALUES = Object.keys(ROLE_KEYS)
-// 可临时发放的权限码：不包含 user:write，避免通过临时授权绕过用户管理
-const GRANTABLE = [
-  'ticket:read', 'ticket:write', 'ticket:assign',
-  'product:read', 'product:write', 'part:read', 'part:write',
-  'fault:read', 'fault:write', 'upload:write', 'stats:read',
-  'user:read', 'product_line:read', 'product_line:write'
-]
+// 角色映射集中在 utils/roles.js（key 即后端 users.role 取值，snake_case），
+// 同时被新建/编辑弹窗的 role 提交值与列表展示复用，别再本地复制一份。
+// 可临时发放的权限码由后端 grantable_permissions() 单一来源提供，前端不再硬编码
+// （曾出现前后端清单漂移：audit:read 只在后端可授予）。
 
 const { t } = useI18n()
-const roleOptions = computed(() =>
-  ROLE_VALUES.map((value) => ({ value, label: t(ROLE_KEYS[value]) }))
+// 分区下拉：售后线 / 仓管线是两套独立权限体系，平铺 6 项容易选错。
+// 分组与成员真源在 utils/roles.js，这里只把 key 翻成当前语言。
+const roleGroups = computed(() =>
+  ROLE_GROUPS.map((group) => ({
+    key: group.key,
+    options: group.roles.map((value) => ({ value, label: roleLabel(t, value) }))
+  }))
 )
+
 
 // 英文最长标签 "Confirm password"，130px 实测折行
 const formLabelWidth = useFormLabelWidth('90px', '150px')
@@ -274,6 +277,8 @@ const form = reactive({
   role: 'agent',
   product_lines: []
 })
+// 产品线只对售后线有意义（工单数据范围），仓管与超管表单里不显示
+const showProductLines = computed(() => usesProductLines(form.role))
 
 const passwordVisible = ref(false)
 const resetPassword = ref('')
@@ -311,12 +316,10 @@ const grantRules = computed(() => ({
   reason: [{ required: true, message: t('admin.user.grant.ruleReason'), trigger: 'blur' }]
 }))
 
-const grantableOptions = computed(() => GRANTABLE)
+const grantableOptions = ref([])
 
-function roleLabel(value) {
-  const key = ROLE_KEYS[value]
-  return key ? t(key) : value
-}
+// utils/roles.js 的 roleLabel 需要 t，这里包一层省得模板里到处传
+const roleName = (value) => roleLabel(t, value)
 
 let keywordTimer = null
 
@@ -427,8 +430,8 @@ async function onSubmit() {
       await ElMessageBox.confirm(
         t('admin.user.role.changeConfirm', {
           name: form.real_name,
-          from: roleLabel(originalRole.value),
-          to: roleLabel(form.role)
+          from: roleName(originalRole.value),
+          to: roleName(form.role)
         }),
         t('admin.user.role.changeTitle'),
         { type: 'warning', confirmButtonText: t('admin.user.role.confirmChange'), cancelButtonText: t('common.action.cancel') }
@@ -438,9 +441,13 @@ async function onSubmit() {
     }
   }
 
-  const assignments = form.product_lines
-    .filter((item) => item.line_id)
-    .map((item) => ({ line_id: item.line_id, expires_at: toExpiresAt(item.expires_at) }))
+  // 仓管 / 超管不参与产品线分配：既不显示也不改写，
+  // 避免"打开一次编辑就把历史分配清空"（这些角色本来就不读 product_lines）
+  const assignments = showProductLines.value
+    ? form.product_lines
+      .filter((item) => item.line_id)
+      .map((item) => ({ line_id: item.line_id, expires_at: toExpiresAt(item.expires_at) }))
+    : null
 
   submitting.value = true
   try {
@@ -450,14 +457,14 @@ async function onSubmit() {
         real_name: form.real_name.trim(),
         role: form.role
       })
-      await adminReplaceUserLines(editingId.value, assignments)
+      if (assignments) await adminReplaceUserLines(editingId.value, assignments)
     } else {
       await adminCreateUser({
         username: form.username.trim(),
         real_name: form.real_name.trim(),
         password: form.password,
         role: form.role,
-        product_lines: assignments
+        product_lines: assignments || []
       })
     }
     ElMessage.success(t('admin.user.form.saved'))
@@ -535,6 +542,15 @@ async function loadGrants() {
   }
 }
 
+async function loadGrantablePermissions() {
+  try {
+    grantableOptions.value = await adminListGrantablePermissions()
+  } catch {
+    // 拉不到清单时授权下拉为空，但不会误发不在白名单里的权限
+    grantableOptions.value = []
+  }
+}
+
 async function onCreateGrant() {
   const valid = await grantFormRef.value?.validate().catch(() => false)
   if (!valid) return
@@ -562,7 +578,10 @@ async function onRevoke(row) {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadLines()])
+  const tasks = [load(), loadLines()]
+  // 只读账号没有授权入口，不必为其多发一次 403 请求
+  if (canWrite.value) tasks.push(loadGrantablePermissions())
+  await Promise.all(tasks)
 })
 onBeforeUnmount(() => clearTimeout(keywordTimer))
 </script>

@@ -78,6 +78,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { changePassword, fetchMe } from '../../api/auth'
 import { hasPermission, setPermissions } from '../../utils/permissions'
+import { roleLabel as roleLabelOf } from '../../utils/roles'
 import { clearAuthLocal } from '../../utils/session'
 import { startIdleWatch } from '../../utils/idle'
 import { errorCode } from '../../utils/admin'
@@ -108,7 +109,9 @@ const user = computed(() => {
 const displayName = computed(
   () => user.value.real_name || user.value.username || t('admin.topbar.loggedIn')
 )
-const roleLabel = computed(() => (user.value.role ? t(`common.role.${user.value.role}`) : ''))
+// 走 utils/roles.js 而不是拼 `common.role.${role}`：拼字符串在漏登记时会
+// 把 "common.role.warehouse_clerk" 直接显示在顶栏上。
+const roleLabel = computed(() => roleLabelOf(t, user.value.role))
 
 
 const pageTitle = computed(() => {
@@ -145,6 +148,15 @@ const NAV_ITEMS = [
   { path: '/admin/product-lines', labelKey: 'admin.nav.productLines', permission: 'product_line:read' },
   { path: '/admin/products', labelKey: 'admin.nav.products', permission: 'product:read' },
   { path: '/admin/parts', labelKey: 'admin.nav.parts', permission: 'part:read' },
+  // 进销存是独立内部台账，单独成组：放在基础数据之后、系统管理之前，
+  // 不打断「产品线 → 产品 → 零件」的从粗到细层级。
+  // 分类是 SKU 的从属主数据（先建分类，再建物资），故排在 SKU 之前。
+  { path: '/admin/inventory/categories', labelKey: 'admin.nav.inventoryCategories', permission: 'inventory:sku:read' },
+  { path: '/admin/inventory/skus', labelKey: 'admin.nav.inventorySkus', permission: 'inventory:sku:read' },
+  { path: '/admin/inventory/inbound', labelKey: 'admin.nav.inventoryInbound', permission: 'inventory:inbound:read' },
+  { path: '/admin/inventory/outbound', labelKey: 'admin.nav.inventoryOutbound', permission: 'inventory:outbound:read' },
+  { path: '/admin/inventory/movements', labelKey: 'admin.nav.inventoryMovements', permission: 'inventory:movement:read' },
+  { path: '/admin/inventory/adjustments', labelKey: 'admin.nav.inventoryAdjustments', permission: 'inventory:adjust:write' },
   { path: '/admin/users', labelKey: 'admin.nav.users', permission: 'user:read' },
   // 审计放最后：它属于「事后追查」，不是日常作业入口
   { path: '/admin/audit-logs', labelKey: 'admin.nav.auditLogs', permission: 'audit:read' }

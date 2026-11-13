@@ -50,7 +50,8 @@ const routes = [
   {
     path: '/admin',
     component: () => import('../views/admin/Layout.vue'),
-    redirect: '/admin/tickets',
+    // 不写死默认 redirect：登录落地由守卫按角色权限动态决定
+    // （见 firstAccessibleAdminPath），避免无售后权限的角色陷入重定向死循环。
     children: [
       {
         path: 'tickets',
@@ -102,6 +103,46 @@ const routes = [
         component: () => import('../views/admin/users/UserList.vue'),
         meta: { titleKey: 'admin.page.users', permission: 'user:read' }
       },
+      // 进销存：独立内部台账，与售后业务不互通。路径统一带 inventory 前缀，
+      // 每个页面挂自己的静态权限码（调整页用高危的 inventory:adjust:write）。
+      {
+        path: 'inventory/categories',
+        name: 'admin-inventory-categories',
+        component: () => import('../views/admin/inventory/CategoryList.vue'),
+        // home:false —— 分类是 SKU 的从属主数据，虽然排在菜单第一项（先建分类再建物资），
+        // 但不该成为仓管登录后的落地页：他的日常主战场是物资 SKU 列表。
+        meta: { titleKey: 'admin.page.inventoryCategories', permission: 'inventory:sku:read', home: false }
+      },
+      {
+        path: 'inventory/skus',
+        name: 'admin-inventory-skus',
+        component: () => import('../views/admin/inventory/SkuList.vue'),
+        meta: { titleKey: 'admin.page.inventorySkus', permission: 'inventory:sku:read' }
+      },
+      {
+        path: 'inventory/inbound',
+        name: 'admin-inventory-inbound',
+        component: () => import('../views/admin/inventory/InboundList.vue'),
+        meta: { titleKey: 'admin.page.inventoryInbound', permission: 'inventory:inbound:read' }
+      },
+      {
+        path: 'inventory/outbound',
+        name: 'admin-inventory-outbound',
+        component: () => import('../views/admin/inventory/OutboundList.vue'),
+        meta: { titleKey: 'admin.page.inventoryOutbound', permission: 'inventory:outbound:read' }
+      },
+      {
+        path: 'inventory/movements',
+        name: 'admin-inventory-movements',
+        component: () => import('../views/admin/inventory/MovementList.vue'),
+        meta: { titleKey: 'admin.page.inventoryMovements', permission: 'inventory:movement:read' }
+      },
+      {
+        path: 'inventory/adjustments',
+        name: 'admin-inventory-adjustments',
+        component: () => import('../views/admin/inventory/AdjustmentList.vue'),
+        meta: { titleKey: 'admin.page.inventoryAdjustments', permission: 'inventory:adjust:write' }
+      },
       {
         path: 'audit-logs',
         name: 'admin-audit-logs',
@@ -118,6 +159,34 @@ const routes = [
     meta: { public: true, titleKey: 'common.notFound.title' }
   }
 ]
+
+/**
+ * 后台"首页"候选：按路由定义顺序，用作登录落地与无权限兜底。
+ *
+ * 为什么不能写死 /admin/tickets 或 /admin/faults：
+ * 不同角色权限不同——典型如 warehouse 只有进销存权限、没有任何售后模块权限。
+ * 一旦默认页 / 兜底页本身需要该角色没有的权限，守卫就会把用户又弹回同一个页，
+ * 形成"重定向到自己"的死循环，表现为登录后浏览器卡死。
+ * 这里动态取当前用户第一个真正可见的页面，兜底目标自身一定有权限，循环不成立。
+ *
+ * 排除带动态段（如 faults/edit/:id?）的路径：编辑页不适合做落地首页。
+ */
+// 登录后的落地页候选：按路由声明顺序取第一个有权限的页面。
+// meta.home === false 的页面只进菜单、不当落地页（目前只有物资分类：
+// 它排在 SKU 前面，但仓管登录应该直接看到物资列表而不是分类主数据）。
+const ADMIN_HOME_CANDIDATES = routes
+  .find((r) => r.path === '/admin')
+  .children.filter((r) => r.meta?.permission && !r.path.includes(':') && r.meta.home !== false)
+  .map((r) => ({ path: `/admin/${r.path}`, permission: r.meta.permission }))
+
+// 独立导出便于单测（见 router/guard.spec.js）。
+export function firstAccessibleAdminPath() {
+  for (const c of ADMIN_HOME_CANDIDATES) {
+    if (hasPermission(c.permission)) return c.path
+  }
+  // 安全网：角色必带权限，走到这里说明配置异常，退回登录页
+  return '/admin/login'
+}
 
 const router = createRouter({
   history: createWebHistory(),
@@ -202,11 +271,20 @@ router.beforeEach(async (to) => {
     }
   }
 
+  // 根路径 /admin：按角色权限落地到第一个可见页面。
+  // 不能写死 /admin/tickets——warehouse 等无售后权限角色会陷入
+  // "重定向到自己"的死循环（登录后浏览器卡死）。
+  if (to.path === '/admin') {
+    return { path: firstAccessibleAdminPath() }
+  }
+
+  // 目标页无权限：回退到当前角色第一个可见页面（同样是动态取的，
+  // 保证回退目标自身一定有权限，不会二次触发 403 死循环）。
   if (to.meta.permission && !hasPermission(to.meta.permission)) {
-    return { path: '/admin/faults' }
+    return { path: firstAccessibleAdminPath() }
   }
   if (to.meta.requires && !to.meta.requires.every(hasPermission)) {
-    return { path: '/admin/faults' }
+    return { path: firstAccessibleAdminPath() }
   }
   return true
 })

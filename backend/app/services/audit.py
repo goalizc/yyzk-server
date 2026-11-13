@@ -23,6 +23,9 @@ from app.database import new_session
 from app.models import (
     AuditLog,
     Fault,
+    InventoryCategory,
+    InventoryDocument,
+    InventorySku,
     Part,
     Product,
     ProductLine,
@@ -62,6 +65,18 @@ _RULES: tuple[tuple[str, str, str, str | None, str | None], ...] = (
     (r"GET", r"^/api/admin/audit-logs/export$", "audit.export", "audit", None),
     (r"POST", r"^/api/admin/upload$", "upload.create", "upload", None),
     (r"DELETE", r"^/api/admin/upload$", "upload.delete", "upload", None),
+    # 进销存（PRD §9）：写操作 + CSV 导出全部留痕；列表/明细等 GET 不记，避免噪声
+    (r"POST", r"^/api/admin/inventory/skus$", "inventory.sku.create", "inventory_sku", None),
+    (r"PUT", r"^/api/admin/inventory/skus/(?P<id>\d+)$", "inventory.sku.update", "inventory_sku", "id"),
+    (r"DELETE", r"^/api/admin/inventory/skus/(?P<id>\d+)$", "inventory.sku.disable", "inventory_sku", "id"),
+    (r"POST", r"^/api/admin/inventory/categories$", "inventory.category.create", "inventory_category", None),
+    (r"PUT", r"^/api/admin/inventory/categories/(?P<id>\d+)$", "inventory.category.update", "inventory_category", "id"),
+    (r"POST", r"^/api/admin/inventory/inbound-orders$", "inventory.inbound.create", "inventory_document", None),
+    (r"POST", r"^/api/admin/inventory/outbound-orders$", "inventory.outbound.create", "inventory_document", None),
+    (r"POST", r"^/api/admin/inventory/adjustments$", "inventory.adjust.create", "inventory_document", None),
+    (r"POST", r"^/api/admin/inventory/documents/(?P<id>\d+)/reverse$", "inventory.document.reverse", "inventory_document", "id"),
+    (r"PUT", r"^/api/admin/inventory/documents/(?P<id>\d+)$", "inventory.document.edit", "inventory_document", "id"),
+    (r"GET", r"^/api/admin/inventory/export$", "inventory.export", "inventory", None),
 )
 
 
@@ -90,7 +105,8 @@ def known_actions() -> list[str]:
     return sorted({rule[2] for rule in _RULES})
 
 
-# target_type → (模型, 用于展示的字段)。上传没有业务表，故不在表内。
+# target_type → (模型, 用于展示的字段)。上传 / inventory.export 没有对应业务表，故不在表内；
+# 路径带 id 的 inventory 规则靠这张表兜底取名字（router 未提供 target_name 时）。
 _NAME_FIELDS: dict[str, tuple[type, str]] = {
     "fault": (Fault, "title"),
     "part": (Part, "name"),
@@ -98,6 +114,9 @@ _NAME_FIELDS: dict[str, tuple[type, str]] = {
     "product_line": (ProductLine, "name"),
     "ticket": (Ticket, "ticket_no"),
     "user": (User, "username"),
+    "inventory_sku": (InventorySku, "name"),
+    "inventory_category": (InventoryCategory, "name"),
+    "inventory_document": (InventoryDocument, "doc_no"),
 }
 
 

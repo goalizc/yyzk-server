@@ -14,5 +14,16 @@ export default {
   userWrite: 'Manage users',
   productLineRead: 'View product lines',
   auditRead: 'View audit log',
-  productLineWrite: 'Manage product lines'
+  productLineWrite: 'Manage product lines',
+  inventorySkuRead: 'View inventory items',
+  inventorySkuWrite: 'Manage inventory items',
+  inventoryInboundRead: 'View inbound orders',
+  inventoryInboundWrite: 'Record inbound orders',
+  inventoryOutboundRead: 'View outbound orders',
+  inventoryOutboundWrite: 'Record outbound orders',
+  inventoryMovementRead: 'View stock movements',
+  inventoryAdjustWrite: 'Stock adjustments and reversals',
+  inventoryExport: 'Export inventory data',
+  inventoryCostRead: 'View unit cost (not enabled)',
+  inventoryDocEdit: 'Edit confirmed documents'
 }

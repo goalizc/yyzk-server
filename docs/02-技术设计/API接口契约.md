@@ -114,9 +114,9 @@
 
 ### 0.3 鉴权与授权
 
-> **权限模型**：`users.role` 取值为 `super_admin` / `supervisor` / `agent` / `auditor`，角色对应固定权限码集合；接口按权限码校验（`require("资源:动作")`），不按角色名硬编码。生效权限 = 角色模板权限 ∪ 未过期且未收回的临时授权，并按依赖闭包补齐。数据范围只作用于工单：`ALL` 不受限，`LINES` 仅被授权产品线。
+> **权限模型**：`users.role` 取值为 `super_admin` / `supervisor` / `agent` / `auditor` / `warehouse_clerk` / `warehouse_manager`，角色对应固定权限码集合；接口按权限码校验（`require("资源:动作")`），不按角色名硬编码。生效权限 = 角色模板权限 ∪ 未过期且未收回的临时授权，并按依赖闭包补齐。数据范围只作用于工单：`ALL` 不受限，`LINES` 仅被授权产品线。
 
-权限码共 16 个（v1.5 新增 `audit:read`）：`ticket:read/write/assign`、`product:read/write`、`part:read/write`、`fault:read/write`、`upload:write`、`stats:read`、`user:read/write`、`product_line:read/write`、`audit:read`。
+权限码共 27 个：`ticket:read/write/assign`、`product:read/write`、`part:read/write`、`fault:read/write`、`upload:write`、`stats:read`、`user:read/write`、`product_line:read/write`、`audit:read`，以及进销存 11 个 `inventory:*`（详见 PRD §6）。
 
 未带 token、token 非法或过期，一律返回：
 
@@ -943,6 +943,17 @@ Response 200:
 
 > 明文**只在本次响应返回一次**，不落库、不可再次查看。重置后该用户已登录会话仍有效直到 token 过期（与改密契约一致）；停用则下一个请求立即被拒。
 
+### GET /api/admin/permissions/grantable
+
+**权限 `user:write`**。可临时授予的权限码清单，前端授权下拉的**唯一来源**（避免与后端 `grantable_permissions()` 双真源漂移）。
+
+Response 200:
+```json
+["audit:read", "fault:read", "inventory:sku:read", "..."]
+```
+
+> 已排除 `user:write`（提权入口）、`inventory:adjust:write`（冲正可凭空改账）、`inventory:cost:read`（L1 未启用）。排序为字典序。
+
 ### GET /api/admin/users/{id}/grants
 
 **权限 `user:read`**。临时授权列表，含已过期与已收回记录。
@@ -1164,6 +1175,10 @@ Response 200:
 | 400 | `ASSIGNEE_OUT_OF_SCOPE` | 改派目标看不到该工单产品线 | 只选同产品线客服或主管 |
 | 400 | `LINE_INACTIVE` | 产品线已停用，不能用于产品 | 选择启用中的产品线 |
 | 400 | `LINE_DUPLICATED` | 同一用户重复分配同一产品线 | 提示该产品线已授权，去掉重复项 |
+| 400 | `INSUFFICIENT_STOCK` | 出库/盘亏后余额为负（进销存） | 明细行内联报错，显示当前余额，刷新余额 |
+| 400 | `INVENTORY_ITEM_EMPTY` | 单据无明细行（进销存） | 高亮明细表格 |
+| 400 | `INVENTORY_SKU_INACTIVE` | 明细包含已停用 SKU（进销存） | 提示移除该行 |
+| 400 | `DOCUMENT_ALREADY_VOIDED` | 单据已冲正，不可重复操作（进销存） | 刷新详情 |
 | 401 | `AUTH_INVALID_CREDENTIALS` | 用户名或密码错误 | 提示，**不跳转** |
 | 401 | `AUTH_TOKEN_EXPIRED` | 未登录 / token 过期 | 清 token 跳登录页 |
 | 403 | `AUTH_USER_DISABLED` | 账号已停用 | 提示联系管理员 |
@@ -1173,8 +1188,11 @@ Response 200:
 | 409 | `MODEL_DUPLICATED` | 产品型号重复（POST 与 PUT 均可能） | 表单内联报错 |
 | 409 | `USERNAME_DUPLICATED` | 用户名重复（POST 与 PUT 均可能，大小写不敏感） | 用户名输入框内联报错 |
 | 409 | `LINE_NAME_DUPLICATED` | 产品线名称重复 | 名称输入框内联报错 |
+| 409 | `CATEGORY_NAME_DUPLICATED` | 物资分类名称重复（进销存，POST 与 PUT 均可能） | 名称输入框内联报错 |
 | 409 | `DELETE_BLOCKED` | 存在关联数据，禁止删除 | 展示 `detail` 中的引用统计 |
 | 409 | `UPLOAD_IN_USE` | 上传文件仍被故障方案引用，不可删除 | **静默忽略**（文件留给孤儿清理回收） |
+| 409 | `SKU_NO_DUPLICATED` | SKU 编码重复（进销存） | 编码输入框内联报错 |
+| 409 | `SKU_IN_USE` | SKU 被单据引用，不可停用（进销存） | 展示 `detail` 中的引用统计 |
 | 413 | `UPLOAD_TOO_LARGE` | 文件超过 20MB | 提示压缩后重试 |
 | 422 | `VALIDATION_ERROR` | 字段级校验失败（Pydantic，类型/长度/必填） | 取首条 message 展示 |
 | 429 | `RATE_LIMITED` | 触发限流 | 提示稍后再试 |
@@ -1203,19 +1221,19 @@ Error 503:
 
 ---
 
-## 10. 端点总览（49 个）
+## 10. 端点总览（50 个）
 
 | 分组 | 数量 | 明细 |
 |---|---|---|
 | 鉴权 | 3 | `POST /auth/login`、`GET /auth/me`、`PUT /auth/password` |
 | 公开接口 | 7 | 产品列表、零件级联、故障列表、故障详情、反馈、日志上报、工单提交 |
 | 后台内容管理 | 17 | 产品 4 + 零件 4 + 故障 5 + 工单 3 + 上传 1 |
-| 用户管理与临时授权 | 9 | 用户列表、候选人、新建、修改、重置密码、授权列表、发放、收回、产品线分配 |
+| 用户管理与临时授权 | 10 | 用户列表、候选人、新建、修改、重置密码、授权列表、可授予清单、发放、收回、产品线分配 |
 | 产品线 | 4 | 列表、新建、修改、删除 |
 | 统计 | 3 | overview / top-faults / missed |
 | 操作审计 | 5 | 列表、详情、动作清单、按人汇总、导出 CSV |
 | 运维 | 1 | health |
-| **合计** | **49** | 其中需鉴权 **40 个**（内容 17 + 用户 9 + 产品线 4 + 统计 3 + 审计 5 + `/auth/me` + 改密） |
+| **合计** | **50** | 其中需鉴权 **41 个**（内容 17 + 用户 10 + 产品线 4 + 统计 3 + 审计 5 + `/auth/me` + 改密） |
 
 > 所有响应保持 `{"detail": string, "code": string}` 结构；`detail` 面向用户可直接展示（中文、无技术细节）。
 

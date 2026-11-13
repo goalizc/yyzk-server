@@ -70,6 +70,17 @@ export default {
     auditExport: '导出审计日志',
     uploadCreate: '上传文件',
     uploadDelete: '删除上传文件',
+    inventorySkuCreate: '新建物资 SKU',
+    inventorySkuUpdate: '修改物资 SKU',
+    inventorySkuDisable: '停用物资 SKU',
+    inventoryCategoryCreate: '新建物资分类',
+    inventoryCategoryUpdate: '修改物资分类',
+    inventoryInboundCreate: '登记入库单',
+    inventoryOutboundCreate: '登记出库单',
+    inventoryAdjustCreate: '登记盘点调整',
+    inventoryDocumentReverse: '冲正库存单据',
+    inventoryDocumentEdit: '修改已生效单据',
+    inventoryExport: '导出库存台账',
     unknown: '其他操作'
   },
 

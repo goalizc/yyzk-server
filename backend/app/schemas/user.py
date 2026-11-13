@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.core.security import BCRYPT_MAX_BYTES
 from app.schemas.common import AppDateTime
 
-ROLE_VALUES = ("super_admin", "supervisor", "agent", "auditor")
+ROLE_VALUES = ("super_admin", "supervisor", "agent", "auditor", "warehouse_clerk", "warehouse_manager")
 
 
 def _validate_password(value: str) -> str:

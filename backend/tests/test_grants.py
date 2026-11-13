@@ -118,6 +118,30 @@ def test_existing_inactive_line_can_be_kept(client, db):
     assert response.status_code == 200, response.text
 
 
+def test_grantable_permissions_endpoint_is_single_source(client, db):
+    """审查 S3：前端授权下拉必须走后端清单，避免与 grantable_permissions() 漂移。"""
+    headers = _admin_headers(client, db)
+    response = client.get("/api/admin/permissions/grantable", headers=headers)
+
+    assert response.status_code == 200, response.text
+    codes = response.json()
+    assert codes == sorted(codes)
+    assert "audit:read" in codes
+    assert "inventory:doc:edit" in codes
+    for hidden in ("user:write", "inventory:adjust:write", "inventory:cost:read"):
+        assert hidden not in codes
+
+
+def test_grantable_permissions_requires_user_write(client, db):
+    _make_agent(db)
+    headers = auth_headers(login(client, "agent1")["access_token"])
+
+    response = client.get("/api/admin/permissions/grantable", headers=headers)
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "PERMISSION_DENIED"
+
+
 def test_replace_product_lines(client, db):
     headers = _admin_headers(client, db)
     agent = _make_agent(db)

@@ -7,6 +7,12 @@ export default {
     productLines: 'Product Lines',
     products: 'Products',
     parts: 'Parts',
+    inventorySkus: 'Item SKUs',
+    inventoryCategories: 'Categories',
+    inventoryInbound: 'Stock-in',
+    inventoryOutbound: 'Stock-out',
+    inventoryMovements: 'Movements',
+    inventoryAdjustments: 'Adjustments',
     users: 'Users',
     auditLogs: 'Audit log'
   },
@@ -53,6 +59,12 @@ export default {
     faults: 'Fault Library',
     faultEdit: 'Edit fault',
     stats: 'Dashboard',
+    inventorySkus: 'Item SKUs',
+    inventoryCategories: 'Categories',
+    inventoryInbound: 'Stock-in',
+    inventoryOutbound: 'Stock-out',
+    inventoryMovements: 'Movements',
+    inventoryAdjustments: 'Adjustments',
     users: 'Users',
     auditLogs: 'Audit log'
   }

@@ -12,6 +12,8 @@ export default {
     activeGrants: '临时授权 {count}',
     colLines: '产品线',
     noLines: '未分配',
+    // 仓管 / 超管不参与产品线分配，「未分配」会被误读成"漏配"
+    linesNotApplicable: '不适用',
     colStatus: '状态',
     colLastLogin: '最近登录',
     neverLoggedIn: '从未登录',

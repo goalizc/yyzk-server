@@ -8,11 +8,14 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from app import models  # noqa: F401  确保 7 张表的模型注册到 Base.metadata
+from app import models  # noqa: F401  确保 20 张业务表的模型注册到 Base.metadata
 from app.api import (
     admin,
     admin_audit,
     admin_faults,
+    admin_inventory_documents,
+    admin_inventory_movements,
+    admin_inventory_skus,
     admin_product_lines,
     admin_tickets,
     admin_users,
@@ -58,3 +61,12 @@ app.include_router(admin_tickets.router, prefix="/api/admin", tags=["后台"])
 app.include_router(admin_users.router, prefix="/api/admin", tags=["后台"])
 app.include_router(stats.router, prefix="/api/admin/stats", tags=["统计"])
 app.include_router(admin_audit.router, prefix="/api/admin", tags=["审计"])
+app.include_router(
+    admin_inventory_skus.router, prefix="/api/admin/inventory", tags=["进销存"]
+)
+app.include_router(
+    admin_inventory_documents.router, prefix="/api/admin/inventory", tags=["进销存"]
+)
+app.include_router(
+    admin_inventory_movements.router, prefix="/api/admin/inventory", tags=["进销存"]
+)

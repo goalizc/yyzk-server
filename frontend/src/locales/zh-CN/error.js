@@ -7,7 +7,7 @@
  *      VALIDATION_ERROR）服务端 detail 更精确。它们也列在 DETAIL_FIRST 里：
  *      中文环境用服务端原文（保持现有提示不变），其它语言用这里的通用文案。
  *
- * 新增错误码时：先加进 API 契约 §7，再补本文件 + en-US/error.js。
+ * 新增错误码时：先加进 API 契约 §8，再补本文件 + en-US/error.js。
  * `src/locales/locale.spec.js` 会扫描后端的 BusinessError 码与这里比对，漏一个就红。
  */
 export default {
@@ -17,9 +17,14 @@ export default {
   AUTH_INVALID_CREDENTIALS: '用户名或密码错误',
   AUTH_TOKEN_EXPIRED: '登录已过期，请重新登录',
   AUTH_USER_DISABLED: '账号已停用',
+  CATEGORY_NAME_DUPLICATED: '分类名称已存在',
   DELETE_BLOCKED: '仍被其它数据引用，请先处理关联数据',
+  DOCUMENT_ALREADY_VOIDED: '单据已冲正，不可重复操作',
+  INSUFFICIENT_STOCK: '库存不足，当前余额不足以完成本次出库',
   INTERNAL_ERROR: '服务器内部错误，请稍后重试',
   INVALID_PERMISSION: '该权限不可临时授予',
+  INVENTORY_ITEM_EMPTY: '单据至少需要一条明细',
+  INVENTORY_SKU_INACTIVE: '明细包含已停用的 SKU，请移除该行',
   LAST_SUPER_ADMIN: '系统至少需要保留一个在用超级管理员',
   LINE_DUPLICATED: '同一产品线不能重复授权',
   LINE_INACTIVE: '产品线已停用，不能新授权',
@@ -35,7 +40,9 @@ export default {
   RATE_LIMITED: '操作过于频繁，请稍后再试',
   SELF_DISABLE: '不能停用自己',
   SELF_ROLE_CHANGE: '不能修改自己的角色',
-  SERVICE_UNAVAILABLE: '服务暂时不可用，请稍后重试',
+  SERVICE_UNAVAILABLE: '服务暂时不可用，请稍后再试',
+  SKU_IN_USE: '该 SKU 已被单据引用，不可停用',
+  SKU_NO_DUPLICATED: 'SKU 编码已存在',
   TICKET_STATUS_INVALID: '该状态流转不被允许',
   UPLOAD_IN_USE: '该文件正在被方案引用，请先移除引用',
   UPLOAD_TOO_LARGE: '文件超过 20MB 限制',

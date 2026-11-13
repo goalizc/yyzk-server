@@ -11,6 +11,7 @@ export default {
     activeGrants: 'Grants: {count}',
     colLines: 'Product lines',
     noLines: 'Not assigned',
+    linesNotApplicable: 'N/A',
     colStatus: 'Status',
     colLastLogin: 'Last login',
     neverLoggedIn: 'Never',

@@ -50,9 +50,19 @@ export default {
     resolved: '已解决',
     closed: '已关闭'
   },
+  roleGroup: {
+    system: '系统管理',
+    service: '售后角色',
+    warehouse: '仓管角色'
+  },
   role: {
+    // key 必须与后端 users.role 的取值逐字一致（ROLE_VALUES / users_role_check），
+    // 曾因写成 warehouseClerk 驼峰，查不到中文名而把 warehouse_clerk 原样显示给用户。
     super_admin: '超级管理员',
     supervisor: '售后主管',
+    // 「录入员」「主管」单独出现会有歧义（售后也有主管），统一加「仓管」限定词
+    warehouse_clerk: '仓管录入员',
+    warehouse_manager: '仓管主管',
     agent: '一线客服',
     auditor: '只读审计'
   },

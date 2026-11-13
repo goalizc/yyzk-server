@@ -225,6 +225,7 @@ import DetailPanel from '../../../components/DetailPanel.vue'
 import ErrorState from '../../../components/ErrorState.vue'
 import { errorMessage } from '../../../utils/error'
 import { formatDateTime } from '../../../utils/format'
+import { roleLabel } from '../../../utils/roles'
 
 const { t } = useI18n()
 
@@ -269,7 +270,18 @@ const ACTION_KEYS = {
   'user.set_product_lines': 'admin.audit.action.userSetProductLines',
   'audit.export': 'admin.audit.action.auditExport',
   'upload.create': 'admin.audit.action.uploadCreate',
-  'upload.delete': 'admin.audit.action.uploadDelete'
+  'upload.delete': 'admin.audit.action.uploadDelete',
+  'inventory.sku.create': 'admin.audit.action.inventorySkuCreate',
+  'inventory.sku.update': 'admin.audit.action.inventorySkuUpdate',
+  'inventory.sku.disable': 'admin.audit.action.inventorySkuDisable',
+  'inventory.category.create': 'admin.audit.action.inventoryCategoryCreate',
+  'inventory.category.update': 'admin.audit.action.inventoryCategoryUpdate',
+  'inventory.inbound.create': 'admin.audit.action.inventoryInboundCreate',
+  'inventory.outbound.create': 'admin.audit.action.inventoryOutboundCreate',
+  'inventory.adjust.create': 'admin.audit.action.inventoryAdjustCreate',
+  'inventory.document.reverse': 'admin.audit.action.inventoryDocumentReverse',
+  'inventory.document.edit': 'admin.audit.action.inventoryDocumentEdit',
+  'inventory.export': 'admin.audit.action.inventoryExport'
 }
 
 const FIELD_KEYS = {
@@ -348,6 +360,10 @@ function fieldValue(key, value) {
   if (key === 'from_status' || key === 'to_status') {
     const mapped = STATUS_KEYS[value]
     return mapped ? t(mapped) : String(value)
+  }
+  // 角色变更记的是 users.role 原值（warehouse_clerk），不翻译就是英文原文
+  if (key === 'role' || key === 'role_from' || key === 'role_to') {
+    return roleLabel(t, value)
   }
   if (typeof value === 'boolean') return value ? '✓' : '—'
   if (typeof value === 'object') return JSON.stringify(value)

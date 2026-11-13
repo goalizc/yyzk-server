@@ -51,9 +51,17 @@ export default {
     resolved: 'Resolved',
     closed: 'Closed'
   },
+  roleGroup: {
+    system: 'System',
+    service: 'After-sales roles',
+    warehouse: 'Warehouse roles'
+  },
   role: {
+    // key 与后端 users.role 取值逐字一致，勿改驼峰
     super_admin: 'Super Admin',
     supervisor: 'Service Supervisor',
+    warehouse_clerk: 'Stock Clerk',
+    warehouse_manager: 'Stock Manager',
     agent: 'Support Agent',
     auditor: 'Auditor'
   },

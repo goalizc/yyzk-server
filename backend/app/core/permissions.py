@@ -1,6 +1,6 @@
 """权限码、角色模板、数据范围与生效权限。
 
-权限是代码行为的一部分，不建数据库表；角色固定四种。
+权限是代码行为的一部分，不建数据库表；角色固定六种（含进销存录入员/主管）。
 """
 
 from __future__ import annotations
@@ -40,6 +40,22 @@ PRODUCT_LINE_WRITE = "product_line:write"
 # 审计日志：含他人 IP 与操作轨迹，只给管理岗与只读审计岗
 AUDIT_READ = "audit:read"
 
+# 进销存：独立账域，按 inventory:<资源>:<动作> 组织
+INVENTORY_SKU_READ = "inventory:sku:read"
+INVENTORY_SKU_WRITE = "inventory:sku:write"
+INVENTORY_INBOUND_READ = "inventory:inbound:read"
+INVENTORY_INBOUND_WRITE = "inventory:inbound:write"
+INVENTORY_OUTBOUND_READ = "inventory:outbound:read"
+INVENTORY_OUTBOUND_WRITE = "inventory:outbound:write"
+INVENTORY_MOVEMENT_READ = "inventory:movement:read"
+# 盘点/冲正能凭空改账，单独拆出高危码，且不允许临时授权
+INVENTORY_ADJUST_WRITE = "inventory:adjust:write"
+INVENTORY_EXPORT = "inventory:export"
+# L1 只登记不启用：没有端点 require 它，等做金额账时再接读路径
+INVENTORY_COST_READ = "inventory:cost:read"
+# 主管改已生效入库/出库单（数量、种类）：录入员不含，仅 warehouse_manager 具备
+INVENTORY_DOC_EDIT = "inventory:doc:edit"
+
 ALL_PERMISSIONS = frozenset(
     {
         TICKET_READ,
@@ -58,19 +74,66 @@ ALL_PERMISSIONS = frozenset(
         PRODUCT_LINE_READ,
         PRODUCT_LINE_WRITE,
         AUDIT_READ,
+        INVENTORY_SKU_READ,
+        INVENTORY_SKU_WRITE,
+        INVENTORY_INBOUND_READ,
+        INVENTORY_INBOUND_WRITE,
+        INVENTORY_OUTBOUND_READ,
+        INVENTORY_OUTBOUND_WRITE,
+        INVENTORY_MOVEMENT_READ,
+        INVENTORY_ADJUST_WRITE,
+        INVENTORY_EXPORT,
+        INVENTORY_COST_READ,
+        INVENTORY_DOC_EDIT,
     }
 )
 
+# 角色中文名（仅文档/运维速查用；界面展示以 frontend/src/locales/*/common.js 为准）。
+# 「仓管」限定词不能省：supervisor 是售后主管，裸写「主管」两个角色分不清。
 ROLE_NAMES = {
     "super_admin": "超级管理员",
     "supervisor": "售后主管",
+    "warehouse_clerk": "仓管录入员",
+    "warehouse_manager": "仓管主管",
     "agent": "一线客服",
     "auditor": "只读审计",
 }
 
+# 录入员：对售后模块零权限的纯库存角色；盘点/冲正不在其内。
+# 注意别为了「建 SKU 时能选关联产品/零件」给它 product:read / part:read——
+# 那会让它落地页变成产品目录、侧边栏冒出售后菜单。库存域改用
+# /admin/inventory/refs/* 两个只读引用端点（挂 inventory:sku:read）。
+_INVENTORY_CLERK = frozenset(
+    {
+        INVENTORY_SKU_READ,
+        INVENTORY_SKU_WRITE,
+        INVENTORY_INBOUND_READ,
+        INVENTORY_INBOUND_WRITE,
+        INVENTORY_OUTBOUND_READ,
+        INVENTORY_OUTBOUND_WRITE,
+        INVENTORY_MOVEMENT_READ,
+        INVENTORY_EXPORT,
+    }
+)
+# 主管：录入员全部权限 + 改已生效入库/出库单（数量、种类）
+_INVENTORY_MANAGER = _INVENTORY_CLERK | frozenset({INVENTORY_DOC_EDIT})
+
+# 只读审计：台账与流水全域只读，可导出；不含任何写码，也不含成本码
+_AUDITOR_INVENTORY = frozenset(
+    {
+        INVENTORY_SKU_READ,
+        INVENTORY_INBOUND_READ,
+        INVENTORY_OUTBOUND_READ,
+        INVENTORY_MOVEMENT_READ,
+        INVENTORY_EXPORT,
+    }
+)
+
 _ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "super_admin": ALL_PERMISSIONS,
     "supervisor": ALL_PERMISSIONS - {USER_READ, USER_WRITE},
+    "warehouse_clerk": _INVENTORY_CLERK,
+    "warehouse_manager": _INVENTORY_MANAGER,
     "agent": frozenset({TICKET_READ, TICKET_WRITE, FAULT_READ}),
     "auditor": frozenset(
         {
@@ -83,12 +146,17 @@ _ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             PRODUCT_LINE_READ,
             AUDIT_READ,
         }
-    ),
+    )
+    | _AUDITOR_INVENTORY,
 }
 
+# 库存域统一 ALL：SKU 的 part_id 可空，纯物资没有产品线可判，
+# 继承 LINES 会导致谁都看不见。service 层显式写死，勿复用 apply_ticket_scope。
 _DATA_SCOPE: dict[str, str] = {
     "super_admin": ALL,
     "supervisor": ALL,
+    "warehouse_clerk": ALL,
+    "warehouse_manager": ALL,
     "agent": LINES,
     "auditor": ALL,
 }
@@ -101,6 +169,32 @@ _DEPENDENCIES: dict[str, frozenset[str]] = {
     PART_WRITE: frozenset({PART_READ, PRODUCT_READ}),
     PRODUCT_LINE_WRITE: frozenset({PRODUCT_LINE_READ}),
     USER_WRITE: frozenset({USER_READ}),
+    INVENTORY_SKU_WRITE: frozenset({INVENTORY_SKU_READ}),
+    INVENTORY_INBOUND_READ: frozenset({INVENTORY_SKU_READ}),
+    INVENTORY_INBOUND_WRITE: frozenset({INVENTORY_INBOUND_READ}),
+    INVENTORY_OUTBOUND_READ: frozenset({INVENTORY_SKU_READ}),
+    INVENTORY_OUTBOUND_WRITE: frozenset({INVENTORY_OUTBOUND_READ}),
+    INVENTORY_MOVEMENT_READ: frozenset({INVENTORY_SKU_READ}),
+    INVENTORY_ADJUST_WRITE: frozenset(
+        {INVENTORY_MOVEMENT_READ, INVENTORY_INBOUND_READ, INVENTORY_OUTBOUND_READ}
+    ),
+    INVENTORY_EXPORT: frozenset(
+        {
+            INVENTORY_SKU_READ,
+            INVENTORY_INBOUND_READ,
+            INVENTORY_OUTBOUND_READ,
+            INVENTORY_MOVEMENT_READ,
+        }
+    ),
+    INVENTORY_COST_READ: frozenset({INVENTORY_SKU_READ}),
+    INVENTORY_DOC_EDIT: frozenset(
+        {
+            INVENTORY_INBOUND_READ,
+            INVENTORY_INBOUND_WRITE,
+            INVENTORY_OUTBOUND_READ,
+            INVENTORY_OUTBOUND_WRITE,
+        }
+    ),
 }
 
 
@@ -153,8 +247,15 @@ def effective_permissions(db: Session, user: User) -> frozenset[str]:
 
 
 def grantable_permissions() -> frozenset[str]:
-    """可临时授予的权限：user:write 会变成提权入口，永远排除。"""
-    return ALL_PERMISSIONS - {USER_WRITE}
+    """可临时授予的权限。
+
+    永远排除三类：
+    - `user:write`：临时授权会变成提权入口，可直接改角色；
+    - `inventory:adjust:write`：冲正能凭空改账，不应带 expires_at / reason 临时发放；
+    - `inventory:cost:read`：L1 只登记不启用、无端点使用，避免出现没有实际功能的选项
+      （同定案稿 §6.3「不预先登记 review 码」的理由）。
+    """
+    return ALL_PERMISSIONS - {USER_WRITE, INVENTORY_ADJUST_WRITE, INVENTORY_COST_READ}
 
 
 def current_permissions(user: User, db: Session) -> list[str]:

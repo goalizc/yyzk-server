@@ -345,6 +345,17 @@ def reset_password(
     return ResetPasswordResponse(password=password)
 
 
+@router.get(
+    "/permissions/grantable",
+    response_model=list[str],
+    summary="可临时授予的权限码（前端授权下拉的唯一来源）",
+)
+def list_grantable_permissions(
+    _: User = Depends(require(USER_WRITE)),
+) -> list[str]:
+    return sorted(grantable_permissions())
+
+
 @router.get("/users/{user_id}/grants", response_model=list[GrantOut], summary="临时授权列表")
 def list_grants(
     user_id: int,

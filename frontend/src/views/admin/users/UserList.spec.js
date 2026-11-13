@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus, { ElMessageBox } from 'element-plus'
 import UserList from './UserList.vue'
@@ -11,6 +11,7 @@ vi.mock('../../../api/admin', () => ({
   adminUpdateUser: vi.fn(),
   adminResetPassword: vi.fn(),
   adminListGrants: vi.fn(),
+  adminListGrantablePermissions: vi.fn(),
   adminCreateGrant: vi.fn(),
   adminRevokeGrant: vi.fn(),
   adminReplaceUserLines: vi.fn()
@@ -21,9 +22,11 @@ vi.mock('../../../utils/clipboard', () => ({
 }))
 
 import {
-  adminListGrants, adminListProductLines, adminListUsers, adminResetPassword, adminUpdateUser
+  adminListGrants, adminListGrantablePermissions, adminListProductLines, adminListUsers,
+  adminReplaceUserLines, adminResetPassword, adminUpdateUser
 } from '../../../api/admin'
 import { copyText } from '../../../utils/clipboard'
+import { ROLE_VALUES } from '../../../utils/roles'
 
 function makeUser(overrides = {}) {
   return {
@@ -41,13 +44,42 @@ beforeEach(() => {
   adminListUsers.mockResolvedValue({ total: 1, page: 1, page_size: 20, items: [makeUser()] })
   adminListProductLines.mockResolvedValue({ items: [] })
   adminListGrants.mockResolvedValue([])
+  // 授权下拉的唯一来源是后端；测试里给一份最小清单
+  adminListGrantablePermissions.mockResolvedValue(['ticket:read', 'inventory:sku:read'])
   adminUpdateUser.mockResolvedValue({})
   copyText.mockResolvedValue(true)
 })
 
+// el-dialog / ElMessageBox 都 teleport 到 body。挂载后不卸载会逐条堆积，
+// DOM 越来越重、渲染越来越慢，最终稳定触发 5s 超时（既有基线失败的根因）。
+// 统一从这里挂载，afterEach 里集中卸载并清空 body。
+const mountedWrappers = []
+
+function mountUserList() {
+  const wrapper = mount(UserList, {
+    global: { plugins: [ElementPlus] },
+    attachTo: document.body
+  })
+  mountedWrappers.push(wrapper)
+  return wrapper
+}
+
+afterEach(() => {
+  for (const wrapper of mountedWrappers.splice(0)) {
+    try {
+      wrapper.unmount()
+    } catch {
+      // 测试内已卸载过：忽略
+    }
+  }
+  document.body.innerHTML = ''
+  // 超时失败的用例可能来不及跑 confirm.mockRestore()，这里兜底防 spy 泄漏
+  vi.restoreAllMocks()
+})
+
 describe('UserList', () => {
   it('加载并渲染用户、角色与产品线', async () => {
-    const wrapper = mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    const wrapper = mountUserList()
     await flushPromises()
 
     expect(adminListUsers).toHaveBeenCalled()
@@ -61,7 +93,7 @@ describe('UserList', () => {
       total: 1, page: 1, page_size: 20,
       items: [makeUser({ active_grant_count: 2 })]
     })
-    const wrapper = mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    const wrapper = mountUserList()
     await flushPromises()
 
     expect(wrapper.text()).toContain('临时授权 2')
@@ -81,7 +113,7 @@ describe('UserList', () => {
         granted_by_name: '李工'
       }
     ])
-    const wrapper = mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    const wrapper = mountUserList()
     await flushPromises()
 
     const state = wrapper.vm.$.setupState
@@ -94,7 +126,7 @@ describe('UserList', () => {
   })
 
   it('新建用户表单包含确认密码字段', async () => {
-    const wrapper = mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    const wrapper = mountUserList()
     await flushPromises()
 
     const addBtn = wrapper.findAll('button').find((b) => b.text().includes('新建用户'))
@@ -107,7 +139,7 @@ describe('UserList', () => {
 
   it('停用账号前二次确认，取消则不发请求', async () => {
     const confirm = vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue(new Error('cancel'))
-    const wrapper = mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    const wrapper = mountUserList()
     await flushPromises()
 
     const state = wrapper.vm.$.setupState
@@ -127,7 +159,7 @@ describe('UserList', () => {
     const password = 'Xy9#password'
     adminResetPassword.mockResolvedValue({ password })
     const confirm = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm')
-    const wrapper = mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    const wrapper = mountUserList()
     await flushPromises()
 
     const state = wrapper.vm.$.setupState
@@ -147,7 +179,7 @@ describe('UserList', () => {
   })
 
   it('编辑用户时可修改账号并随保存提交', async () => {
-    const wrapper = mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    const wrapper = mountUserList()
     await flushPromises()
 
     const state = wrapper.vm.$.setupState
@@ -165,7 +197,7 @@ describe('UserList', () => {
   })
 
   it('角色变更保存前二次确认，取消则不提交', async () => {
-    const wrapper = mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    const wrapper = mountUserList()
     await flushPromises()
 
     const state = wrapper.vm.$.setupState
@@ -185,6 +217,73 @@ describe('UserList', () => {
     expect(adminUpdateUser).not.toHaveBeenCalled()
     confirm.mockRestore()
   })
+
+  // 6 个角色平铺时「售后主管 / 仓管主管」极易选错，按业务线分区后一眼可辨。
+  // 断言到 value 而不只是组名：分组成员写错会让角色从下拉里"消失"。
+  it('角色下拉按系统 / 售后 / 仓管分区，且分组不漏角色', async () => {
+    const wrapper = mountUserList()
+    await flushPromises()
+
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('新建用户'))
+    await btn.trigger('click')
+    await flushPromises()
+
+    // 顶部筛选 + 弹窗各一套分组，组件树里先出现的是筛选
+    const groups = wrapper.findAllComponents({ name: 'ElOptionGroup' }).map((g) => ({
+      label: g.props('label'),
+      values: g.findAllComponents({ name: 'ElOption' }).map((o) => o.props('value'))
+    }))
+    const dialogGroups = groups.slice(0, 3)
+    expect(dialogGroups.map((g) => g.label)).toEqual(['系统管理', '售后角色', '仓管角色'])
+    expect(dialogGroups[1].values).toEqual(['supervisor', 'agent', 'auditor'])
+    expect(dialogGroups[2].values).toEqual(['warehouse_clerk', 'warehouse_manager'])
+    // 并集必须等于全部角色：漏登记会让该角色彻底选不到
+    expect(dialogGroups.flatMap((g) => g.values).sort()).toEqual([...ROLE_VALUES].sort())
+  })
+
+  // 产品线只作用于工单数据范围，属售后线概念；仓管与超管不该看到这个字段
+  it('仓管与超管隐藏产品线分配，售后角色保留', async () => {
+    const wrapper = mountUserList()
+    await flushPromises()
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('新建用户'))
+    await btn.trigger('click')
+    await flushPromises()
+
+    const state = wrapper.vm.$.setupState
+    const formLabels = () =>
+      wrapper.findAllComponents({ name: 'ElFormItem' }).map((c) => c.props('label'))
+    expect(formLabels()).toContain('产品线') // 默认 role=agent
+
+    for (const role of ['warehouse_clerk', 'warehouse_manager', 'super_admin']) {
+      state.form.role = role
+      await flushPromises()
+      expect(formLabels(), `${role} 不该显示产品线`).not.toContain('产品线')
+    }
+    state.form.role = 'supervisor'
+    await flushPromises()
+    expect(formLabels()).toContain('产品线')
+  })
+
+  // 隐藏字段不能顺手把库里的历史分配清空：仓管被改回售后线时应能复用
+  it('编辑仓管用户时不调用产品线替换接口', async () => {
+    adminListUsers.mockResolvedValue({
+      total: 1,
+      page: 1,
+      page_size: 20,
+      items: [makeUser({ role: 'warehouse_manager', product_lines: [{ id: 1, name: '扫地机', expires_at: null }] })]
+    })
+    const wrapper = mountUserList()
+    await flushPromises()
+
+    const state = wrapper.vm.$.setupState
+    state.openEdit(state.rows[0])
+    await flushPromises()
+    await state.onSubmit()
+    await flushPromises()
+
+    expect(adminUpdateUser).toHaveBeenCalled()
+    expect(adminReplaceUserLines).not.toHaveBeenCalled()
+  })
 })
 
 // 一致性：其它列表都是"点行即编辑"，用户管理此前没有。
@@ -192,7 +291,7 @@ describe('UserList', () => {
 // 否则"点删除/点授权"会顺带弹出编辑窗。
 describe('UserList 行点击', () => {
   function mountList() {
-    return mount(UserList, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    return mountUserList()
   }
 
   it('点击行打开编辑弹窗并带上该行 id', async () => {
@@ -234,9 +333,12 @@ describe('UserList 行点击', () => {
     const state = wrapper.vm.$.setupState
     expect(state.grantsVisible).toBe(true)
     expect(state.dialogVisible).toBe(false)
+    // 可授予清单必须来自后端（S3：不再前端硬编码，避免与 grantable_permissions 漂移）
+    expect(adminListGrantablePermissions).toHaveBeenCalled()
+    expect(state.grantableOptions).toEqual(['ticket:read', 'inventory:sku:read'])
   })
 
-  it('新建用户弹窗的角色下拉有 4 个选项（曾因模板引用已删除的常量而变成空列表）', async () => {
+  it('新建用户弹窗的角色下拉有 6 个选项（曾因模板引用已删除的常量而变成空列表）', async () => {
     const wrapper = mountList()
     await flushPromises()
 
@@ -244,13 +346,56 @@ describe('UserList 行点击', () => {
     await btn.trigger('click')
     await flushPromises()
 
-    const roles = ['超级管理员', '售后主管', '一线客服', '只读审计']
+    // 六角色：super_admin / supervisor / agent / auditor / warehouse_clerk / warehouse_manager
+    // 「仓管」限定词不可省：supervisor 是售后主管，裸写「主管」两者分不清
+    const roles = ['超级管理员', '售后主管', '一线客服', '只读审计', '仓管录入员', '仓管主管']
     const labels = wrapper
       .findAllComponents({ name: 'ElOption' })
       .map((c) => c.props('label'))
       .filter((l) => roles.includes(l))
-    // 顶部筛选 + 弹窗各 4 个；弹窗为空列表时这里只有 4 → 立刻红
-    expect(labels.length).toBe(8)
+    // 顶部筛选 + 弹窗各 6 个；弹窗为空列表时这里只有 6 → 立刻红
+    expect(labels.length).toBe(12)
+  })
+
+  // 回归：ROLE_KEYS 曾写成 warehouseClerk / warehouseManager 驼峰，
+  // 与后端 ROLE_VALUES 的 snake_case 对不上 —— 列表里显示英文原文，
+  // 且把驼峰值提交给 POST /users 会 422。断言 value 而不只是 label 才能拦住。
+  it('角色下拉的 value 就是后端 users.role 的取值（snake_case）', async () => {
+    const wrapper = mountUserList()
+    await flushPromises()
+
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('新建用户'))
+    await btn.trigger('click')
+    await flushPromises()
+
+    const values = new Set(
+      wrapper.findAllComponents({ name: 'ElOption' }).map((c) => c.props('value'))
+    )
+    for (const role of ['warehouse_clerk', 'warehouse_manager']) {
+      expect(values.has(role), `缺少角色 ${role}`).toBe(true)
+    }
+    expect(values.has('warehouseClerk')).toBe(false)
+    expect(values.has('warehouseManager')).toBe(false)
+  })
+
+  it('列表里仓管角色显示中文名，不把 role 原值泄给用户', async () => {
+    adminListUsers.mockResolvedValue({
+      total: 2,
+      page: 1,
+      page_size: 20,
+      items: [
+        makeUser({ id: 1, username: 'clerk', role: 'warehouse_clerk' }),
+        makeUser({ id: 2, username: 'manager', role: 'warehouse_manager' })
+      ]
+    })
+    const wrapper = mountUserList()
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('仓管录入员')
+    expect(text).toContain('仓管主管')
+    expect(text).not.toContain('warehouse_clerk')
+    expect(text).not.toContain('warehouse_manager')
   })
 
   it('只读角色点行不打开弹窗', async () => {

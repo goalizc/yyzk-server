@@ -22,7 +22,18 @@ export const PERMISSION_LABEL_KEYS = {
   'user:write': 'permission.userWrite',
   'product_line:read': 'permission.productLineRead',
   'product_line:write': 'permission.productLineWrite',
-  'audit:read': 'permission.auditRead'
+  'audit:read': 'permission.auditRead',
+  'inventory:sku:read': 'permission.inventorySkuRead',
+  'inventory:sku:write': 'permission.inventorySkuWrite',
+  'inventory:inbound:read': 'permission.inventoryInboundRead',
+  'inventory:inbound:write': 'permission.inventoryInboundWrite',
+  'inventory:outbound:read': 'permission.inventoryOutboundRead',
+  'inventory:outbound:write': 'permission.inventoryOutboundWrite',
+  'inventory:movement:read': 'permission.inventoryMovementRead',
+  'inventory:adjust:write': 'permission.inventoryAdjustWrite',
+  'inventory:export': 'permission.inventoryExport',
+  'inventory:cost:read': 'permission.inventoryCostRead',
+  'inventory:doc:edit': 'permission.inventoryDocEdit'
 }
 
 export function permissionLabel(code) {

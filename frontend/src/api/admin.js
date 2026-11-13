@@ -138,6 +138,11 @@ export function adminListGrants(id) {
   return request.get(`/admin/users/${id}/grants`)
 }
 
+/** 可临时授予的权限码：唯一来源是后端 grantable_permissions() */
+export function adminListGrantablePermissions() {
+  return request.get('/admin/permissions/grantable')
+}
+
 export function adminCreateGrant(id, payload) {
   return request.post(`/admin/users/${id}/grants`, payload)
 }

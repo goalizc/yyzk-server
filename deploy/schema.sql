@@ -1,7 +1,7 @@
 -- ============================================================
 -- 售后自助故障诊断系统 - 数据库建表脚本
 -- PostgreSQL 15+
--- 修订：v1.2  2026-10-20（第二轮复审后修正）
+-- 修订：v1.4  2026-11-13（进销存：分类主数据、仓管角色拆分、改单权限）
 --   v1.1 变更：删假哈希、加 need_on_site、RESTRICT、TIMESTAMPTZ、
 --             ticket_status_logs 替 attachments、去无效 GIN 索引
 --   v1.2 变更：
@@ -15,6 +15,21 @@
 --     6) 补 (status, created_at) 与未命中表达式索引；删除与 UNIQUE 重复的
 --        idx_tickets_no
 --     7) 创建 pg_stat_statements 扩展（仅 preload 库不会自动建扩展）
+--   v1.3 变更（与 deploy/migrations/005_inventory.sql 同步）：
+--     1) users.role 的 CHECK 增加 'warehouse'（仓管）
+--     2) 新增 6 张表：inventory_warehouses / inventory_skus /
+--        inventory_balances / inventory_documents /
+--        inventory_document_items / stock_movements
+--     3) stock_movements 挂 append-only 触发器（UPDATE/DELETE/TRUNCATE 拒绝）
+--     4) 插入默认仓 DEFAULT；登记迁移版本 005_inventory
+--   v1.4 变更（与 deploy/migrations/006_warehouse_roles.sql、
+--     007_inventory_categories.sql 同步）：
+--     1) users.role 的 CHECK 由 'warehouse' 改为 'warehouse_clerk'（录入员）
+--        与 'warehouse_manager'（主管），原 warehouse 账号升级为主管
+--     2) 新增 inventory_categories / inventory_sku_categories /
+--        inventory_sku_products 三张表；inventory_skus 去掉自由文本 category
+--     3) 新增权限码 inventory:doc:edit（仅 warehouse_manager 具备）
+--     4) 登记迁移版本 006_warehouse_roles / 007_inventory_categories
 --
 -- ⚠ 本脚本仅在数据卷为空时由 initdb 执行一次，直接建到最新结构；
 --    已有环境的升级由 deploy/migrations 下的迁移文件完成（migrate.py 按版本执行）。
@@ -43,7 +58,7 @@ CREATE TABLE users (
     password_hash VARCHAR(200) NOT NULL,
     real_name     VARCHAR(50) NOT NULL,
     role          VARCHAR(20) NOT NULL DEFAULT 'agent'
-                  CHECK (role IN ('super_admin', 'supervisor', 'agent', 'auditor')),
+                  CHECK (role IN ('super_admin', 'supervisor', 'agent', 'auditor', 'warehouse_clerk', 'warehouse_manager')),
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     token_version INT NOT NULL DEFAULT 0,
     last_login_at TIMESTAMPTZ,
@@ -314,3 +329,144 @@ ORDER BY f.view_count DESC;
 
 INSERT INTO schema_migrations (version) VALUES ('001_user_permissions');
 INSERT INTO schema_migrations (version) VALUES ('002_token_version');
+
+-- ------------------------------------------------------------
+-- 进销存模块（v1.3，对应 deploy/migrations/005_inventory.sql）
+--     内部轻量库存台账：SKU 对 parts 为可空弱关联；流水只增不改。
+--     本脚本用于全新库，故不带 IF NOT EXISTS；已有库走 005 迁移。
+-- ------------------------------------------------------------
+CREATE TABLE inventory_warehouses (
+    id          SERIAL PRIMARY KEY,
+    code        VARCHAR(30) NOT NULL UNIQUE,
+    name        VARCHAR(50) NOT NULL,
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE inventory_skus (
+    id            SERIAL PRIMARY KEY,
+    sku_no        VARCHAR(50) NOT NULL UNIQUE,
+    name          VARCHAR(100) NOT NULL,
+    spec          VARCHAR(100),
+    unit          VARCHAR(20) NOT NULL DEFAULT '件',
+    part_id       INT REFERENCES parts(id) ON DELETE SET NULL,
+    warehouse_id  INT NOT NULL REFERENCES inventory_warehouses(id) ON DELETE RESTRICT,
+    min_stock     INT NOT NULL DEFAULT 0 CHECK (min_stock >= 0),
+    unit_cost     NUMERIC(12,2),
+    batch_no      VARCHAR(50),
+    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    remark        TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE inventory_balances (
+    sku_id        INT NOT NULL REFERENCES inventory_skus(id) ON DELETE CASCADE,
+    warehouse_id  INT NOT NULL REFERENCES inventory_warehouses(id) ON DELETE RESTRICT,
+    quantity      INT NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (sku_id, warehouse_id)
+);
+
+CREATE TABLE inventory_documents (
+    id             SERIAL PRIMARY KEY,
+    doc_no         VARCHAR(32) NOT NULL UNIQUE,
+    doc_type       VARCHAR(20) NOT NULL
+                   CHECK (doc_type IN ('inbound','outbound','adjust_in','adjust_out')),
+    warehouse_id   INT NOT NULL REFERENCES inventory_warehouses(id) ON DELETE RESTRICT,
+    status         VARCHAR(20) NOT NULL DEFAULT 'confirmed'
+                   CHECK (status IN ('confirmed','draft','pending','void')),
+    operator_id    INT REFERENCES users(id) ON DELETE SET NULL,
+    confirmed_at   TIMESTAMPTZ,
+    confirmed_by   INT REFERENCES users(id) ON DELETE SET NULL,
+    review_remark  TEXT,
+    remark         VARCHAR(500),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE inventory_document_items (
+    id            SERIAL PRIMARY KEY,
+    document_id   INT NOT NULL REFERENCES inventory_documents(id) ON DELETE CASCADE,
+    sku_id        INT NOT NULL REFERENCES inventory_skus(id) ON DELETE RESTRICT,
+    quantity      INT NOT NULL CHECK (quantity > 0),
+    unit_cost     NUMERIC(12,2),
+    remark        VARCHAR(200)
+);
+
+CREATE TABLE stock_movements (
+    id             BIGSERIAL PRIMARY KEY,
+    sku_id         INT NOT NULL REFERENCES inventory_skus(id) ON DELETE RESTRICT,
+    warehouse_id   INT NOT NULL REFERENCES inventory_warehouses(id) ON DELETE RESTRICT,
+    delta          INT NOT NULL CHECK (delta <> 0),
+    balance_after  INT NOT NULL CHECK (balance_after >= 0),
+    document_id    INT REFERENCES inventory_documents(id) ON DELETE SET NULL,
+    ref_type       VARCHAR(30),
+    ref_id         VARCHAR(50),
+    operator_id    INT REFERENCES users(id) ON DELETE SET NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_inv_skus_part
+    ON inventory_skus(part_id) WHERE part_id IS NOT NULL;
+CREATE INDEX idx_inv_skus_active
+    ON inventory_skus(warehouse_id, is_active);
+CREATE INDEX idx_inv_documents_type_time
+    ON inventory_documents(doc_type, created_at DESC);
+CREATE INDEX idx_inv_documents_status
+    ON inventory_documents(status, created_at DESC);
+CREATE INDEX idx_inv_items_doc
+    ON inventory_document_items(document_id);
+CREATE INDEX idx_inv_movements_sku_time
+    ON stock_movements(sku_id, created_at DESC);
+CREATE INDEX idx_inv_movements_doc
+    ON stock_movements(document_id);
+
+-- 物资分类主数据（数据表管理，录入时下拉多选）
+CREATE TABLE inventory_categories (
+    id          SERIAL PRIMARY KEY,
+    name        VARCHAR(50) NOT NULL UNIQUE,
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    remark      VARCHAR(200),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 物资 ↔ 分类（多对多：一个物资可属于多个分类）
+CREATE TABLE inventory_sku_categories (
+    sku_id       INT NOT NULL REFERENCES inventory_skus(id) ON DELETE CASCADE,
+    category_id  INT NOT NULL REFERENCES inventory_categories(id) ON DELETE CASCADE,
+    PRIMARY KEY (sku_id, category_id)
+);
+
+-- 物资 ↔ 产品（多对多：镜像零件↔产品，关联售后系统但不强制）
+CREATE TABLE inventory_sku_products (
+    sku_id      INT NOT NULL REFERENCES inventory_skus(id) ON DELETE CASCADE,
+    product_id  INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    PRIMARY KEY (sku_id, product_id)
+);
+
+CREATE INDEX idx_inv_sku_cat_cat ON inventory_sku_categories(category_id);
+CREATE INDEX idx_inv_sku_prod_prod ON inventory_sku_products(product_id);
+
+INSERT INTO inventory_warehouses (code, name) VALUES ('DEFAULT', '默认仓');
+
+CREATE OR REPLACE FUNCTION stock_movements_immutable() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION USING
+        MESSAGE = '库存流水为只追加（append-only），不允许修改或删除',
+        HINT = '如需更正请登记冲正单（反向单据）';
+END $$;
+
+CREATE TRIGGER trg_stock_movements_immutable
+    BEFORE UPDATE OR DELETE ON stock_movements
+    FOR EACH ROW EXECUTE FUNCTION stock_movements_immutable();
+
+CREATE TRIGGER trg_stock_movements_no_truncate
+    BEFORE TRUNCATE ON stock_movements
+    FOR EACH STATEMENT EXECUTE FUNCTION stock_movements_immutable();
+
+INSERT INTO schema_migrations (version) VALUES ('005_inventory');
+INSERT INTO schema_migrations (version) VALUES ('006_warehouse_roles');
+INSERT INTO schema_migrations (version) VALUES ('007_inventory_categories');
