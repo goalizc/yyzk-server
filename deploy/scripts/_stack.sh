@@ -47,6 +47,27 @@ STACK_PREFIX="${STACK_PREFIX:-fault}"
 DB_CONTAINER="${STACK_PREFIX}-db"
 BACKEND_CONTAINER="${STACK_PREFIX}-backend"
 
+# ---------- 目标栈自洽校验（宁可拒绝，也不静默回落生产项目）----------
+# 半指定（只给 env、不给 project）时 compose 会落到默认项目 deploy，也就是
+# 生产项目，而容器名/数据目录却来自测试栈 env：cleanup、cron、HTTPS 都会打错栈。
+STACK_ENV_BASENAME="$(basename "$STACK_ENV_FILE")"
+if [[ "$STACK_ENV_BASENAME" != ".env" && -z "$STACK_PROJECT" ]]; then
+  STACK_PROJECT="$STACK_PREFIX"
+  echo "[stack] 未指定 STACK_PROJECT，按容器前缀推导为 $STACK_PROJECT"
+fi
+if [[ -n "$STACK_PROJECT" && "$STACK_PROJECT" != "$STACK_PREFIX" && "$STACK_PROJECT" != "deploy" ]]; then
+  echo "[stack] 拒绝执行：STACK_PROJECT=$STACK_PROJECT 与 STACK_PREFIX=$STACK_PREFIX 不一致" >&2
+  exit 2
+fi
+if [[ "$STACK_PROJECT" == "deploy" && "$STACK_PREFIX" != "fault" ]]; then
+  echo "[stack] 拒绝执行：STACK_PROJECT=deploy 是生产项目，但 STACK_PREFIX=$STACK_PREFIX 指向非生产容器" >&2
+  exit 2
+fi
+if [[ -f "$STACK_ENV_PATH" && "$STACK_ENV_BASENAME" == *.test* && "$STACK_PREFIX" == "fault" ]]; then
+  echo "[stack] 拒绝执行：STACK_ENV_FILE=$STACK_ENV_FILE 是测试栈 env，但 STACK_PREFIX 仍是生产前缀 fault（漏改 STACK_PREFIX）" >&2
+  exit 2
+fi
+
 DATA_DIR="$(stack_env_value DATA_DIR)"
 DATA_DIR="${DATA_DIR:-./data}"
 case "$DATA_DIR" in
@@ -83,12 +104,17 @@ stack_banner() {
   echo "[stack] ${label}目标：env=$STACK_ENV_FILE | 项目=${STACK_PROJECT:-deploy(默认)} | 容器=${STACK_PREFIX}-* | DB容器=$DB_CONTAINER | 数据=$DATA_PATH"
 }
 
-# 破坏性操作确认：非交互执行（cron / CI）只打印目标栈，不阻塞。
+# 破坏性操作确认：交互终端要求输入 y；非交互（cron / CI / ssh -T）默认拒绝，
+# 必须显式 STACK_ASSUME_YES=1 才继续——静默放行等于没有确认。
 stack_confirm() {
   local label="${1:-操作}" ans
   if [[ ! -t 0 ]]; then
-    echo "[stack] 非交互执行，跳过交互确认（目标栈见上一行）" >&2
-    return 0
+    if [[ "${STACK_ASSUME_YES:-0}" == "1" ]]; then
+      echo "[stack] 非交互执行且显式 STACK_ASSUME_YES=1，继续「${label}」" >&2
+      return 0
+    fi
+    echo "[stack] 拒绝执行：非交互环境无法确认「${label}」（目标栈见上一行）。确认要执行请显式设 STACK_ASSUME_YES=1" >&2
+    exit 2
   fi
   read -r -p "[stack] 确认对以上目标栈执行「${label}」？(y/N) " ans
   [[ "$ans" =~ ^[Yy]$ ]] || { echo "[stack] 已取消" >&2; exit 1; }

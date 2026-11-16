@@ -127,16 +127,20 @@ s = p.read_text(encoding='utf-8')
 # "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:80"），映射行结尾统一是
 # `:80"`（容器端口），所以按行尾匹配而不是要求 `:80:80`（审查 M-01）。
 if not re.search(r'^\s*-\s*"[^"]*:443"\s*$', s, flags=re.M):
+    # 必须「保留 80 再追加 443」：443 只是新增入口，80 仍要承载
+    # HTTP→HTTPS 跳转与 certbot webroot 续期。整行替换会静默删掉 80 映射。
     s, n = re.subn(
         r'^(\s*)-\s*"[^"]*:80"\s*$',
-        r'\1- "${HTTPS_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:443"',
+        r'\g<0>\n\1- "${HTTPS_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:443"',
         s,
         count=1,
         flags=re.M,
     )
     if n == 0:
         sys.exit("[https] [ERROR] 在 compose 里找不到 ports 的 80 映射，请手工添加 443")
-    print("[https] compose 已开放 443")
+    if not re.search(r'^\s*-\s*"[^"]*:80"\s*$', s, flags=re.M):
+        sys.exit("[https] [ERROR] 写入 443 时丢失了 80 映射，已中止（未改文件）")
+    print("[https] compose 已开放 443（保留 80）")
 
 # 挂载证书目录（把注释行改成生效行）
 s = s.replace(

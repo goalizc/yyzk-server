@@ -15,9 +15,11 @@ cd "$DEPLOY_DIR"
 
 [[ -f .env.test ]] || { echo "[deploy-test] 缺少 .env.test" >&2; exit 2; }
 
-# 与 compose 共用 .env.test，避免脚本与编排各写死一套
+# 与 compose 共用 .env.test，避免脚本与编排各写死一套。
+# 取最后一行：compose 对重复键的语义是后者覆盖前者，用 head -1 会让
+# 「校验的是第一行、实际跑的是最后一行」，隔离校验可被绕过（审查 M-5）。
 env_value() {
-  grep -E "^$1=" .env.test 2>/dev/null | head -1 | sed -E "s/^$1=//" | sed -E 's/[[:space:]]+$//' | tr -d "\"'" || true
+  grep -E "^$1=" .env.test 2>/dev/null | tail -1 | sed -E "s/^$1=//" | sed -E 's/[[:space:]]+$//' | tr -d "\"'" || true
 }
 STACK_PREFIX="$(env_value STACK_PREFIX)"
 [[ -n "$STACK_PREFIX" ]] || { echo "[deploy-test] .env.test 缺少 STACK_PREFIX" >&2; exit 2; }
@@ -63,11 +65,19 @@ done
 # 与生产隔离：共用库名会直接连到生产库；共用 JWT 会让测试 token 在生产同样有效
 if [[ -f .env ]]; then
   prod_env() {
-    grep -E "^$1=" .env 2>/dev/null | head -1 | sed -E "s/^$1=//" \
+    grep -E "^$1=" .env 2>/dev/null | tail -1 | sed -E "s/^$1=//" \
       | sed -E 's/[[:space:]]+$//' | tr -d "\"'"
   }
   if [[ -n "$(prod_env DB_NAME)" && "$(env_value DB_NAME)" == "$(prod_env DB_NAME)" ]]; then
     echo "[deploy-test] .env.test 的 DB_NAME 与生产相同，测试栈会连到生产库" >&2
+    exit 2
+  fi
+  if [[ -n "$(prod_env DB_USER)" && "$(env_value DB_USER)" == "$(prod_env DB_USER)" ]]; then
+    echo "[deploy-test] .env.test 的 DB_USER 与生产相同，建议使用独立账号 fault_test" >&2
+    exit 2
+  fi
+  if [[ -n "$(prod_env DB_PASSWORD)" && "$(env_value DB_PASSWORD)" == "$(prod_env DB_PASSWORD)" ]]; then
+    echo "[deploy-test] .env.test 的 DB_PASSWORD 与生产相同，测试栈不应复用生产口令" >&2
     exit 2
   fi
   if [[ -n "$(prod_env JWT_SECRET)" && "$(env_value JWT_SECRET)" == "$(prod_env JWT_SECRET)" ]]; then
@@ -82,8 +92,17 @@ if [[ -f .env ]]; then
   fi
 fi
 
-# 显式导出：即使 .env.test 漏键，Compose 也必须使用脚本校验过的值
-export STACK_PREFIX HTTP_PORT HTTP_BIND DATA_DIR
+# 显式导出：即使 .env.test 漏键、或调用方 shell 里已导出同名变量，Compose 也必须
+# 使用脚本校验过的值。否则会出现「脚本校验的是文件、compose 实际用的是环境变量」
+# 或「重复键取第一行、compose 取最后一行」的分离（审查 M-5）。
+DB_USER="$(env_value DB_USER)"
+DB_NAME="$(env_value DB_NAME)"
+DB_PASSWORD="$(env_value DB_PASSWORD)"
+JWT_SECRET="$(env_value JWT_SECRET)"
+ADMIN_INIT_PASSWORD="$(env_value ADMIN_INIT_PASSWORD)"
+DEBUG="$(env_value DEBUG)"
+export STACK_PREFIX HTTP_PORT HTTP_BIND DATA_DIR \
+  DB_USER DB_NAME DB_PASSWORD JWT_SECRET ADMIN_INIT_PASSWORD DEBUG
 
 # 测试栈刻意 DEBUG=true，但再叠加 0.0.0.0 就等于把 /api/docs 暴露给整个网络
 if [[ "$(env_value DEBUG)" == "true" && "$HTTP_BIND" == "0.0.0.0" ]]; then
@@ -136,7 +155,14 @@ echo "[deploy-test] 健康检查"
 # 注意：nginx 的 /health 是 `return 200 "ok"`，不经过 backend/db，
 # 只查它会得到假阳性（审查 M-03）。这里必须查后端自己的 /api/health，
 # 并用一个未带 token 的管理接口确认鉴权链路也是通的（期望 401）。
-BASE="http://127.0.0.1:${HTTP_PORT}"
+# 自检地址必须跟着 HTTP_BIND 走：绑到具体网卡（非 0.0.0.0/127.0.0.1）时
+# 用 127.0.0.1 轮询会一直失败，栈其实是好的（审查 M-6）。
+CHECK_HOST="$HTTP_BIND"
+case "$CHECK_HOST" in
+  ""|0.0.0.0|::) CHECK_HOST="127.0.0.1" ;;
+  *:*) CHECK_HOST="[$CHECK_HOST]" ;;
+esac
+BASE="http://${CHECK_HOST}:${HTTP_PORT}"
 code_health=""
 code_api=""
 for _ in $(seq 1 60); do
@@ -148,7 +174,7 @@ done
 
 if [[ "$code_health" != "200" || "$code_api" != "401" ]]; then
   echo "[deploy-test] 健康检查失败：/api/health=$code_health（期望 200）、/api/admin/products=$code_api（期望 401）" >&2
-  echo "[deploy-test] 目标：http://127.0.0.1:${HTTP_PORT}（env=.env.test 项目=${STACK_PREFIX}）" >&2
+  echo "[deploy-test] 目标：$BASE（env=.env.test 项目=${STACK_PREFIX}）" >&2
   echo "[deploy-test] 排查：docker compose -p ${STACK_PREFIX} --env-file .env.test -f docker-compose.yml -f docker-compose.test.yml logs backend --tail 50" >&2
   exit 1
 fi

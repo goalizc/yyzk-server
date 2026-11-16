@@ -6,6 +6,7 @@
 #   ./restore.sh --db backups/db_20261021_030000.dump
 #   ./restore.sh --db <文件> --uploads backups/uploads_20261021_030000.tar.gz
 #   ./restore.sh --db <文件> --dry-run      只做校验，不动数据
+#   ./restore.sh --db <文件> --yes          非交互执行（cron/CI）时跳过确认
 #
 # 退出码：0 成功 | 1 恢复失败 | 2 参数/环境错误
 #
@@ -28,12 +29,14 @@ DEPLOY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DB_FILE=""
 UPLOADS_FILE=""
 DRY_RUN=0
+ASSUME_YES=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --db) DB_FILE="$2"; shift 2 ;;
     --uploads) UPLOADS_FILE="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --yes) ASSUME_YES=1; shift ;;
     -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "[ERROR] 未知参数: $1" >&2; exit 2 ;;
   esac
@@ -53,6 +56,11 @@ cd "$DEPLOY_DIR"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/_stack.sh"
 stack_require_env
+
+# --yes 与非交互环境的约定：非交互默认拒绝，必须显式放行才可能走到 DROP
+if [[ "$ASSUME_YES" == "1" ]]; then
+  export STACK_ASSUME_YES=1
+fi
 
 # 调用方显式传入的变量优先于 .env（同 backup.sh 的说明）
 _OVERRIDE_DB_USER="${DB_USER:-}"

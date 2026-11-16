@@ -117,9 +117,10 @@ cd deploy && docker compose build frontend && docker compose up -d frontend
 生产继续占用 80；测试栈使用独立数据库、上传目录和 JWT 密钥，互不影响：
 
 ```bash
-cd deploy && cp -n .env.test.example .env.test
+cd deploy
+cp -n .env.test.example .env.test
 # 修改 .env.test 里的数据库密码、JWT_SECRET、ADMIN_INIT_PASSWORD
-cd deploy && ./deploy-test.sh
+./deploy-test.sh
 ```
 
 - 访问：`http://127.0.0.1:8080/`（默认只监听本机；需要局域网访问时把 `.env.test` 的 `HTTP_BIND` 改成 `0.0.0.0`——但 `DEBUG=true` 会把 `/api/docs` 一并暴露，务必加防火墙或带鉴权的反代）
@@ -130,7 +131,7 @@ cd deploy && ./deploy-test.sh
 
 测试栈首次启动会建空库并初始化管理员：`deploy-test.sh` 会自动执行 migrate + init。
 
-**两栈共享的面**：`docker-compose.yml`、`nginx.conf` 和前后端代码。改这三处后两栈都要重建才生效；`deploy/scripts/enable-https.sh` 改的正是共享的 compose/nginx，因此对两栈同时生效。
+**两栈共享的面**：`docker-compose.yml`、`nginx.conf` 和前后端代码。改这三处后两栈都要重建才生效；`deploy/scripts/enable-https.sh` 改的正是共享的 compose/nginx 文件，但**只重建当前目标栈的 nginx**——两栈都要 HTTPS 就各跑一次（先生产、后测试，避免两个栈抢宿主机 443）。
 
 **运维脚本默认只打生产栈**，操作测试栈必须显式指定目标：
 
@@ -142,7 +143,9 @@ STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test ./scripts/harden.sh --check
 STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test ./scripts/install-cron.sh
 ```
 
-每个脚本开头都会打印目标栈（env / compose 项目 / 容器前缀 / 数据目录），`restore.sh` 这类破坏性操作还会要求二次确认。两栈的 cron 条目各有独立标记，互不覆盖。
+每个脚本开头都会打印目标栈（env / compose 项目 / 容器前缀 / 数据目录）。只给 `STACK_ENV_FILE` 而不给 `STACK_PROJECT` 时，脚本按容器前缀推导项目名（`.env.test` → `fault-test`），推导结果与容器前缀矛盾或 env 是测试文件却仍是生产前缀时直接拒绝，不会静默回落到生产项目。
+
+`restore.sh` 这类破坏性操作在交互终端要求输入 `y`；非交互（cron / CI / `ssh -T`）默认拒绝，必须显式 `--yes` 或 `STACK_ASSUME_YES=1`。两栈的 cron 条目各有独立标记，互不覆盖。
 
 **演示数据必须同时指定三处目标**，只改 `--base-url` 会被守卫拦下——那正是「清库清在测试栈、数据写进生产」的错配路径：
 

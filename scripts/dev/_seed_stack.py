@@ -60,6 +60,14 @@ def guard_target_stack(
         http_port = 80
     stack_prefix = env.get("STACK_PREFIX") or PROD_STACK_PREFIX
     is_test = stack_prefix != PROD_STACK_PREFIX
+    if not is_test and ".test" in env_file.name:
+        # 最常见的漏改：复制了 .env.test 却忘了改 STACK_PREFIX，于是整套判定
+        # 按生产走。提前点明，省得后面看到「生产栈」报错误判方向。
+        print(
+            f"[{label}] 注意：{env_file.name} 文件名像测试栈，"
+            f"但 STACK_PREFIX={stack_prefix} 仍是生产前缀，本文件将按生产栈校验。",
+            file=sys.stderr,
+        )
 
     parsed = urlparse(base_url)
     try:
@@ -71,7 +79,14 @@ def guard_target_stack(
     # 变成「清库在测试栈、写数据进生产 80」的反向错配。
     if port is None:
         port = 443 if parsed.scheme == "https" else 80
-    allowed = {http_port} | (set() if is_test else PROD_PORTS)
+    # 生产栈只认固定的 80 / 8000（外加 HTTPS 443）：不能把 env 自报的
+    # HTTP_PORT 并进允许集合——否则只要把生产 .env 的 HTTP_PORT 改成 8080，
+    # 守卫就会放行「清库打 deploy 项目（生产）+ 数据写 8080（测试）」这条
+    # 最危险的错配，等于 fail-open。
+    if is_test:
+        allowed = {http_port}
+    else:
+        allowed = set(PROD_PORTS) | {443}
     if port not in allowed:
         print(
             f"[{label}] 拒绝执行：--base-url 的端口 {port} 与 {env_file.name} 的 "

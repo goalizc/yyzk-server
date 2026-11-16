@@ -133,6 +133,24 @@
     ③ 验证守卫时曾用「默认生产 env + <code>--reset</code>」，脚本按设计放行并清空了生产业务表；已用 <code>deploy/backups/pre-split-20261113_164117.dump</code> 完整恢复并复核（users=4 / products=4 / faults=51 / tickets=44，backend healthy）。此后守卫验证改为<b>只直接调用判定函数</b>，不再执行任何清库主流程。</div>
 
   <div class="callout"><b>回归验证</b>：<code>deploy/</code> 下 11 个 shell 脚本全部 <code>bash -n</code> 通过；<code>seed_demo.py</code> / <code>demo_inventory.py</code> / <code>_seed_stack.py</code> 的 <code>py_compile</code> 通过；<code>docker compose config</code> 双栈渲染字段与改前一致（仅 443 试算、连接池按预期变化）；<code>check_links.py</code> 631 个引用 0 失败。</div>
+
+  <h3>第二轮：独立复审（3 个未 push 提交，干净上下文）</h3>
+  <div class="callout"><b>复审结论</b>：上一轮「17 条全部修复」的说法不成立——C-01 仍是 fail-open、M-01 修出了新回归、M-04 只在两个变量都给全时成立、C-02 的二次确认只在交互终端成立。复审另发现 6 项，本轮全部修完：</div>
+  <table>
+    <thead><tr><th>编号</th><th>问题</th><th>修法</th></tr></thead>
+    <tbody>
+      <tr><td><code>C-1</code></td><td>生产 env 自报 <code>HTTP_PORT=8080</code> 时，守卫把 8080 并进允许集合，放行「清库打 deploy 项目（生产）+ 数据写 8080」——正是 C-01 声称封死的路径</td><td>生产栈只认固定 80 / 8000 / 443，不再采信 env 自报端口；env 文件名像测试栈但前缀仍是 <code>fault</code> 时额外告警</td></tr>
+      <tr><td><code>M-1</code></td><td><code>enable-https.sh</code> 的替换串把 80 映射整行换成了 443，启用 HTTPS 后宿主机 80 消失（HTTP 跳转、certbot 续期、自检全断）——本轮引入的回归</td><td>改为「保留原 80 行 + 追加 443 行」，并断言两行并存；渲染确认 <code>published: ['80','443']</code></td></tr>
+      <tr><td><code>M-2</code></td><td>只给 <code>STACK_ENV_FILE=.env.test</code> 不给 <code>STACK_PROJECT</code> 时，compose 落回默认项目 <code>deploy</code>（生产），cron / 清理 / HTTPS 实际打错栈</td><td><code>_stack.sh</code> 按容器前缀推导项目名、推导结果与前缀矛盾或「测试 env + 生产前缀」时 <code>exit 2</code></td></tr>
+      <tr><td><code>M-3</code></td><td><code>stack_confirm</code> 在非交互环境直接 <code>return 0</code>，cron / CI / <code>ssh -T</code> 下 restore 无确认即 DROP</td><td>非交互默认拒绝，必须 <code>--yes</code> 或 <code>STACK_ASSUME_YES=1</code>；<code>--dry-run</code> 不受影响</td></tr>
+      <tr><td><code>M-5</code></td><td><code>deploy-test.sh</code> 用 <code>head -1</code> 读值、compose 用最后一行；且只 export 4 个键，调用方 shell 的同名变量可绕过 JWT / DB 隔离校验</td><td>读值改 <code>tail -1</code>，并显式 export 全部被校验的键；补 DB_USER / DB_PASSWORD 撞生产校验</td></tr>
+      <tr><td><code>M-6</code></td><td>测试栈健康检查固定打 <code>127.0.0.1</code>，<code>HTTP_BIND</code> 绑具体网卡时栈是好的却报失败</td><td>按 <code>HTTP_BIND</code> 推导自检地址，IPv6 加方括号</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout"><b>本轮未修、明确留档</b>：① <code>enable-https.sh</code> 失败回滚只还原文件、不重建 nginx（<code>--force-recreate</code> 已移除旧容器，最常见失败是 443 被占用）；② 该脚本 <code>--check</code> 现在要求 env 文件存在；③ <code>_stack.sh</code> 的 <code>compose()</code> 只带主 compose 文件，<code>enable-https</code> / <code>harden</code> 重建测试栈服务时资源上限会回到生产值；④ seed 守卫只看端口不看 host，「远端 8080」仍会被当作本地测试栈。四条都不影响生产数据安全，留待下一轮。</div>
+
+  <div class="callout"><b>本轮验证</b>：seed 守卫 6 组边界（生产自报 8080 拒绝 / 生产 :80 放行 / 生产 HTTPS 443 放行 / 测试 :8080 放行 / 测试 :80 拒绝 / 显式项目放行）全符合预期；<code>_stack.sh</code> 5 组（自动推导 fault-test、显式一致、生产默认、漏改前缀拒绝、测试前缀 + deploy 拒绝）全符合；<code>stack_confirm</code> 非交互 exit 2、<code>STACK_ASSUME_YES=1</code> 放行、<code>restore --dry-run</code> 不触发确认；<code>deploy-test.sh</code> 正向通过，重复键取末行、DB_USER 撞生产、环境变量注入三种绕过均被拒；443 插入后 <code>docker compose config</code> 渲染出 80 + 443 双端口。</div>
 </section>
 
 <section>
