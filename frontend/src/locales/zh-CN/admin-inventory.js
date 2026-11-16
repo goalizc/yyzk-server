@@ -3,6 +3,8 @@
 export default {
   common: {
     warehouse: '仓库',
+    // 仓库是迁移 005 的种子数据，没有后台管理入口；为空说明库被清过，需要人工初始化
+    noWarehouse: '暂无可用仓库，请联系管理员初始化仓库',
     sku: '物资 SKU',
     skuNo: 'SKU 编码',
     skuName: '名称',

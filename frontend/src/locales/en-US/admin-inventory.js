@@ -3,6 +3,7 @@
 export default {
   common: {
     warehouse: 'Warehouse',
+    noWarehouse: 'No warehouse available. Ask an administrator to initialize one.',
     sku: 'Item SKU',
     skuNo: 'SKU code',
     skuName: 'Name',

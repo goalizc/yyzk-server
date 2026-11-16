@@ -7,7 +7,11 @@
   >
     <el-form ref="formRef" :model="form" :label-width="labelWidth">
       <el-form-item :label="$t('admin.inventory.common.warehouse')">
-        <el-select v-model="form.warehouse_id" class="wd">
+        <el-select
+          v-model="form.warehouse_id"
+          :no-data-text="$t('admin.inventory.common.noWarehouse')"
+          class="wd"
+        >
           <el-option v-for="w in warehouses" :key="w.id" :label="w.name" :value="w.id" />
         </el-select>
       </el-form-item>

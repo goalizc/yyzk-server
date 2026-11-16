@@ -143,7 +143,12 @@
           <el-input v-model="form.name" maxlength="100" />
         </el-form-item>
         <el-form-item :label="$t('admin.inventory.sku.fieldWarehouse')" prop="warehouse_id">
-          <el-select v-model="form.warehouse_id" :disabled="Boolean(editingId)" class="full">
+          <el-select
+            v-model="form.warehouse_id"
+            :disabled="Boolean(editingId)"
+            :no-data-text="$t('admin.inventory.common.noWarehouse')"
+            class="full"
+          >
             <el-option v-for="w in warehouses" :key="w.id" :label="w.name" :value="w.id" />
           </el-select>
         </el-form-item>
