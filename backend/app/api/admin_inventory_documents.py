@@ -358,11 +358,16 @@ def reverse(
     db: Session = Depends(get_db),
     user: User = Depends(require(INVENTORY_ADJUST_WRITE)),
 ) -> DocumentDetail:
+    # 审计里写单号而不是 id：审计列表按 target_name 检索，
+    # 只留 id 的话事后没法按单号追溯（审查 m-08）。
+    doc = db.get(InventoryDocument, document_id)
+    if doc is None:
+        raise BusinessError("NOT_FOUND", "单据不存在", 404)
     request.state.audit = {
         "username": user.username,
         "user_id": user.id,
         "target_id": str(document_id),
-        "target_name": f"冲正单据 {document_id}",
+        "target_name": f"冲正单据 {doc.doc_no}",
         "detail": {"remark": payload.remark},
     }
     new_doc = reverse_document(db, document_id, user, payload.remark)

@@ -7,6 +7,11 @@
 // （见 router/index.js 的 firstAccessibleAdminPath）。
 //
 // 本用例锁定：warehouse 登录后稳定停在 /admin/inventory/skus，不死循环、不回登录页。
+//
+// 前置账号（幂等，可重复执行）：
+//   cd deploy && ./scripts/ensure-e2e-user.sh
+//   测试栈：STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test ./scripts/ensure-e2e-user.sh
+// 账号/口令用 E2E_WAREHOUSE_USER / E2E_WAREHOUSE_PASS 覆盖，默认 warehouse / 12345678。
 import { expect, test } from '@playwright/test'
 
 const WH_USER = process.env.E2E_WAREHOUSE_USER || 'warehouse'

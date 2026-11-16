@@ -91,10 +91,27 @@ CREATE INDEX IF NOT EXISTS idx_inv_movements_sku_time
 CREATE INDEX IF NOT EXISTS idx_inv_movements_doc
     ON stock_movements(document_id);
 
--- 新增仓管角色：约束名由 001_user_permissions.sql 固定，沿用其先例
-ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-ALTER TABLE users ADD CONSTRAINT users_role_check
-    CHECK (role IN ('super_admin','supervisor','agent','auditor','warehouse'));
+-- 新增仓管角色：约束名由 001_user_permissions.sql 固定，沿用其先例。
+-- 009 之后 users.role 列已删除，重放时整段跳过（否则报 column "role" does not exist）。
+-- 白名单用「当前 + 后续所有角色」的并集：重放 005 若把约束收窄回 5 个值，
+-- 008 引入的 product_planner 行会被 ADD CONSTRAINT 拒绝，迁移直接中断。
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'users'
+          AND column_name = 'role'
+    ) THEN
+        ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+        ALTER TABLE users ADD CONSTRAINT users_role_check
+            CHECK (role IN (
+                'super_admin', 'supervisor', 'product_planner', 'agent', 'auditor',
+                'warehouse', 'warehouse_clerk', 'warehouse_manager'
+            ));
+    END IF;
+END $$;
 
 INSERT INTO inventory_warehouses (code, name)
 VALUES ('DEFAULT', '默认仓')

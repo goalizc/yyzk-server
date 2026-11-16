@@ -116,7 +116,37 @@ def cmd_init(args) -> int:
             )
             print(f"[init_admin] 已重置 {username} 的密码")
         else:
-            print(f"[init_admin] 管理员 {username} 已存在，跳过（加 --reset-password 可重置）")
+            # 账号已存在不代表可用：从缺少 user_roles 的备份恢复后，账号能登录
+            # 但 permissions=[]，而用户管理页本身要 user:write，界面内无法自救。
+            roles = [
+                r[0]
+                for r in conn.execute(
+                    text("SELECT role FROM user_roles WHERE user_id = :id ORDER BY role"),
+                    {"id": row[0]},
+                )
+            ]
+            if not roles:
+                conn.execute(
+                    text(
+                        "INSERT INTO user_roles (user_id, role) VALUES (:id, 'super_admin') "
+                        "ON CONFLICT DO NOTHING"
+                    ),
+                    {"id": row[0]},
+                )
+                print(
+                    f"[init_admin] {username} 已存在但没有任何角色，已补授 super_admin"
+                    "（通常意味着备份里缺 user_roles 行）",
+                    file=sys.stderr,
+                )
+            elif "super_admin" not in roles:
+                print(
+                    f"[init_admin] 警告：{username} 已存在，角色为 {roles}，不含 super_admin。"
+                    " 若无法进入用户管理页，请手工补授："
+                    f" INSERT INTO user_roles (user_id, role) VALUES ({row[0]}, 'super_admin');",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"[init_admin] 管理员 {username} 已存在，跳过（加 --reset-password 可重置）")
 
     return 0
 

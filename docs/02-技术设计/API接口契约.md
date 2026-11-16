@@ -1228,19 +1228,49 @@ Error 503:
 
 ---
 
-## 10. 端点总览（50 个）
+## 10. 端点总览（75 个）
 
 | 分组 | 数量 | 明细 |
 |---|---|---|
 | 鉴权 | 3 | `POST /auth/login`、`GET /auth/me`、`PUT /auth/password` |
 | 公开接口 | 7 | 产品列表、零件级联、故障列表、故障详情、反馈、日志上报、工单提交 |
-| 后台内容管理 | 17 | 产品 4 + 零件 4 + 故障 5 + 工单 3 + 上传 1 |
+| 后台内容管理 | 18 | 产品 4 + 零件 4 + 故障 5 + 工单 3 + 上传 2 |
 | 用户管理与临时授权 | 10 | 用户列表、候选人、新建、修改、重置密码、授权列表、可授予清单、发放、收回、产品线分配 |
 | 产品线 | 4 | 列表、新建、修改、删除 |
 | 统计 | 3 | overview / top-faults / missed |
 | 操作审计 | 5 | 列表、详情、动作清单、按人汇总、导出 CSV |
+| 进销存 | 24 | 见 §10.1（仓库 1、SKU 5、分类 3、入库 3、出库 3、盘点 1、改单/冲正 2、流水 1、导出 1、汇总 1、低库存 1、引用 2） |
 | 运维 | 1 | health |
-| **合计** | **50** | 其中需鉴权 **41 个**（内容 17 + 用户 10 + 产品线 4 + 统计 3 + 审计 5 + `/auth/me` + 改密） |
+| **合计** | **75** | 其中需鉴权 **64 个**（内容 18 + 用户 10 + 产品线 4 + 统计 3 + 审计 5 + 进销存 24 + `/auth/me` + 改密） |
+
+### 10.1 进销存端点（24 个，全部需鉴权）
+
+| 方法 | 路径 | 权限码 | 说明 |
+|---|---|---|---|
+| GET | `/api/admin/inventory/warehouses` | `inventory:sku:read` | 仓库下拉，一期固定 1 条 |
+| GET | `/api/admin/inventory/skus` | `inventory:sku:read` | 列表，支持 `keyword` / `category_id` / `product_id` / `is_active` / `low_stock` 与分页 |
+| POST | `/api/admin/inventory/skus` | `inventory:sku:write` | 新建；重复编码 409 `SKU_NO_DUPLICATED` |
+| GET | `/api/admin/inventory/skus/{sku_id}` | `inventory:sku:read` | 详情（含最近流水） |
+| PUT | `/api/admin/inventory/skus/{sku_id}` | `inventory:sku:write` | 编辑；`sku_no` / `warehouse_id` 不可改；停用走 `SKU_IN_USE` 校验 |
+| DELETE | `/api/admin/inventory/skus/{sku_id}` | `inventory:sku:write` | 软删（`is_active=false`），被单据引用 409 `SKU_IN_USE` |
+| GET | `/api/admin/inventory/categories` | `inventory:sku:read` | 分类列表 |
+| POST | `/api/admin/inventory/categories` | `inventory:sku:write` | 新建分类，重名 409 `CATEGORY_NAME_DUPLICATED` |
+| PUT | `/api/admin/inventory/categories/{category_id}` | `inventory:sku:write` | 改名 / 停用；`name` 传 null 或空白 422 |
+| GET | `/api/admin/inventory/inbound-orders` | `inventory:inbound:read` | 入库单列表 |
+| POST | `/api/admin/inventory/inbound-orders` | `inventory:inbound:write` | 登记入库；`items` 1–200 行，`quantity` 为正整数 |
+| GET | `/api/admin/inventory/inbound-orders/{document_id}` | `inventory:inbound:read` | 入库单详情 |
+| GET | `/api/admin/inventory/outbound-orders` | `inventory:outbound:read` | 出库单列表 |
+| POST | `/api/admin/inventory/outbound-orders` | `inventory:outbound:write` | 登记出库；余额不足由 DB CHECK 整单回滚 |
+| GET | `/api/admin/inventory/outbound-orders/{document_id}` | `inventory:outbound:read` | 出库单详情 |
+| POST | `/api/admin/inventory/adjustments` | `inventory:adjust:write` | 盘点调整（盘盈 / 盘亏），复用同一过账链路 |
+| PUT | `/api/admin/inventory/documents/{document_id}` | `inventory:doc:edit` | 改单：按「新 − 旧」差额补记更正流水 |
+| POST | `/api/admin/inventory/documents/{document_id}/reverse` | `inventory:adjust:write` | 冲正：生成反向单，原流水不变；重复冲正 409 `DOCUMENT_ALREADY_VOIDED` |
+| GET | `/api/admin/inventory/movements` | `inventory:movement:read` | 流水列表，返回 `operator_name`（姓名优先，回落用户名） |
+| GET | `/api/admin/inventory/export` | `inventory:export` | CSV 导出，`type=balance\|movement`，单次上限 5000 行并带 `X-Export-Truncated` |
+| GET | `/api/admin/inventory/summary` | `inventory:sku:read` | 首页卡片：SKU 数、低库存数、本月入库/出库（不含已冲正） |
+| GET | `/api/admin/inventory/low-stock` | `inventory:sku:read` | 低库存清单（仅启用 SKU），按缺口降序 |
+| GET | `/api/admin/inventory/refs/products` | `inventory:sku:read` | 产品引用（仓管无 `product:read`，故单开） |
+| GET | `/api/admin/inventory/refs/parts` | `inventory:sku:read` | 零件引用，`product_id` 可选 |
 
 > 所有响应保持 `{"detail": string, "code": string}` 结构；`detail` 面向用户可直接展示（中文、无技术细节）。
 

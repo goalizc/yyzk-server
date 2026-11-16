@@ -299,6 +299,12 @@ else
     rm -f /tmp/deploy_backup.log
   fi
 
+  # 009 会 DROP COLUMN users.role；旧镜像的 User 模型仍映射该列，
+  # 迁移一提交，旧进程的每个请求都会 UndefinedColumn（登录/鉴权全 500）。
+  # 所以迁移前必须先停旧 backend，迁移完再由下面的 up -d 起新镜像。
+  echo "  停止旧 backend（本次迁移会删列，旧镜像读不了新表结构）..."
+  docker compose stop backend >/dev/null 2>&1 || true
+
   set +e
   docker compose run --rm -T migrate >/tmp/deploy_migrate.log 2>&1
   MIG_RC=$?
@@ -306,7 +312,15 @@ else
   tail -5 /tmp/deploy_migrate.log
   if [[ "$MIG_RC" != "0" ]]; then
     tail -30 /tmp/deploy_migrate.log >&2
-    die "数据库迁移失败，详见上面的输出"
+    # 迁移可能只完成了一部分（单文件内非事务分段）。旧镜像只在 009 未提交时可用，
+    # 所以先尝试拉起，起不来就明确告知走备份恢复，不要让人以为还能硬撑。
+    echo "  尝试恢复旧 backend..." >&2
+    docker compose start backend >/dev/null 2>&1 || true
+    die "数据库迁移失败，详见上面的输出。
+
+  迁移可能已部分提交，旧镜像不一定还能用：
+    - 若服务已 500：按 ./scripts/restore.sh --db backups/db_${STACK_PREFIX}_<最近时间>.dump 恢复
+    - 恢复后再排查迁移失败原因，不要反复重跑"
   fi
   rm -f /tmp/deploy_migrate.log
 
@@ -325,7 +339,10 @@ else
   常见原因：
     - 端口 ${HTTP_PORT} 被占用：sudo ss -ltnp | grep ':${HTTP_PORT}'
     - 数据目录 ${DATA_DIR}/pg 属主不对：sudo chown -R 1000:1000 ${DATA_PATH}/pg
-    - 内存不足（需 ≥ 2G）：free -h"
+    - 内存不足（需 ≥ 2G）：free -h
+
+  注意：迁移已提交，旧镜像依赖已删除的列，不能直接回退；
+  要回到旧版本必须先用本次备份恢复数据库（./scripts/restore.sh --db <备份>）。"
   fi
   rm -f /tmp/deploy_up.log
 

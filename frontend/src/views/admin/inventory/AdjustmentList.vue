@@ -41,10 +41,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElMessage } from 'element-plus'
 import {
   inventoryCategories, inventoryRefProducts, inventorySkus, inventoryWarehouses
 } from '../../../api/inventory'
 import { hasPermission } from '../../../utils/permissions'
+import { errorMessage } from '../../../utils/error'
 import MovementTable from './MovementTable.vue'
 import ReverseDialog from './ReverseDialog.vue'
 import DocumentFormDialog from './DocumentFormDialog.vue'
@@ -88,11 +90,13 @@ async function loadRefs() {
     skus.value = sku.items || []
     categoryOptions.value = cat.items || []
     productOptions.value = prod || []
-  } catch {
+  } catch (e) {
+    // 静默清空会让人以为「本来就没数据」，必须给出错误出口
     warehouses.value = []
     skus.value = []
     categoryOptions.value = []
     productOptions.value = []
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.inventory.common.loadFailed' }))
   }
 }
 

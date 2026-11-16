@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>22 · 未推送改动代码审查报告</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#1f2329; --ink2:#4e5969; --ink3:#86909c;
+    --line:#e5e6eb; --soft:#f7f8fa;
+    --crit:#d03050; --crit-bg:#fff0f2;
+    --major:#d46b08; --major-bg:#fff7e8;
+    --minor:#2a6fdb; --minor-bg:#eef4ff;
+    --ok:#0f8a5f; --ok-bg:#eaf7f0;
+    --code:#f2f3f5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 80px}
+  header{background:linear-gradient(135deg,#fff,#f0f4ff);border:1px solid var(--line);
+    border-radius:14px;padding:28px 32px;margin-bottom:20px}
+  header .kicker{font-size:12px;letter-spacing:.14em;color:var(--minor);font-weight:700}
+  h1{margin:8px 0 6px;font-size:28px;line-height:1.35}
+  .sub{color:var(--ink2);font-size:14px;margin:0}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+  .meta span{background:#fff;border:1px solid var(--line);border-radius:6px;
+    padding:4px 10px;font-size:12px;color:var(--ink2)}
+  .meta b{color:var(--ink);font-weight:600}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:24px 28px;margin-bottom:18px}
+  h2{font-size:19px;margin:0 0 16px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+  h3{font-size:15px;margin:22px 0 8px}
+  p{margin:8px 0}
+  .lead{color:var(--ink2)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:4px 0 6px}
+  .stat{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--soft)}
+  .stat .n{font-size:28px;font-weight:700;line-height:1.2}
+  .stat .l{font-size:12px;color:var(--ink2);margin-top:2px}
+  .stat.c .n{color:var(--crit)} .stat.m .n{color:var(--major)}
+  .stat.n .n{color:var(--minor)} .stat.o .n{color:var(--ok)}
+  .callout{border-left:4px solid var(--crit);background:var(--crit-bg);
+    padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0;font-size:14px}
+  .callout.good{border-left-color:var(--ok);background:var(--ok-bg)}
+  .callout.warn{border-left-color:var(--major);background:var(--major-bg)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:6px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:600;color:var(--ink2)}
+  td code{font-size:12px}
+  .ok-dot{color:var(--ok);font-weight:700}
+  .finding{border:1px solid var(--line);border-left:4px solid var(--line);
+    border-radius:8px;padding:16px 18px;margin:12px 0;background:#fff}
+  .finding[data-sev="Critical"]{border-left-color:var(--crit)}
+  .finding[data-sev="Major"]{border-left-color:var(--major)}
+  .finding[data-sev="Minor"]{border-left-color:var(--minor)}
+  .fh{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+  .badge{font-size:11px;font-weight:700;letter-spacing:.04em;padding:3px 9px;border-radius:5px;white-space:nowrap}
+  .b-Critical{background:var(--crit-bg);color:var(--crit)}
+  .b-Major{background:var(--major-bg);color:var(--major)}
+  .b-Minor{background:var(--minor-bg);color:var(--minor)}
+  .fid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--ink3);padding-top:3px}
+  .ft{font-weight:700;font-size:15.5px;flex:1;min-width:240px}
+  .loc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+    color:var(--ink2);background:var(--soft);padding:2px 6px;border-radius:4px;display:inline-block}
+  .finding ul{margin:8px 0 4px;padding-left:20px}
+  .finding li{margin:4px 0}
+  .lbl{font-weight:600;color:var(--ink)}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;
+    padding:12px 14px;overflow-x:auto;font:12.5px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:#2b3038;margin:8px 0}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+  .plain code{background:var(--code);padding:1px 5px;border-radius:4px}
+  .good-list li{margin:7px 0}
+  .steps{counter-reset:s;list-style:none;padding:0;margin:10px 0}
+  .steps li{counter-increment:s;position:relative;padding-left:34px;margin:10px 0}
+  .steps li::before{content:counter(s);position:absolute;left:0;top:1px;width:22px;height:22px;
+    border-radius:50%;background:var(--ink);color:#fff;font-size:12px;font-weight:700;
+    display:flex;align-items:center;justify-content:center}
+  footer{text-align:center;color:var(--ink3);font-size:12px;margin-top:26px}
+  @media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}.wrap{padding:16px 12px 50px}
+    section{padding:18px 16px}header{padding:20px}}
+  @media print{body{background:#fff}.finding{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">CODE REVIEW · SUPERPOWERS PHASE 6</div>
+  <h1>未推送改动代码审查报告</h1>
+  <p class="sub">审查范围：<code>61d81df..HEAD</code> 共 8 个提交 · 122 个文件 · +14355 / −386 —— 只审查，不修改代码</p>
+  <div class="meta">
+    <span>基准 <b>61d81df</b>（= origin/main）</span>
+    <span>末端 <b>7dbf019</b></span>
+    <span>审查者 <b>4 个干净上下文代理 + 人工复核</b></span>
+    <span>日期 <b>2026-11-16</b></span>
+  </div>
+</header>
+
+<section>
+  <h2>修复状态（2026-11-16 落地）</h2>
+  <p class="lead">本轮把 25 条发现全部处理完毕（2 Critical / 10 Major / 13 Minor）。<b>下面各节的原始结论保持审查当天的表述，不回改</b>；本节只记录实际改动与验证证据，并标明两处<b>没有按建议做</b>的地方。</p>
+  <table>
+    <thead><tr><th style="width:7%">编号</th><th style="width:9%">级别</th><th>问题</th><th style="width:42%">落地情况</th></tr></thead>
+    <tbody>
+      <tr><td><code>C-01</code></td><td>Critical</td><td>009 删列时旧后端仍在服务</td><td><b class="ok-dot">已修</b>　<code>deploy.sh</code> 在 <code>migrate</code> 之前 <code>compose stop backend</code>，迁移完由 <code>up -d</code> 起新镜像；迁移失败时尝试 <code>start backend</code> 并明确「可能已部分提交，必要时按备份恢复」；<code>up -d</code> 失败提示补一句「迁移已提交，旧镜像不能直接回退」。</td></tr>
+      <tr><td><code>C-02</code></td><td>Critical</td><td>005 / 006 迁移不可重放</td><td><b class="ok-dot">已修</b>　两处角色 DDL 包进 <code>DO $$ ... IF EXISTS (information_schema.columns ... column_name='role') ... END $$</code>；白名单用「当前 + 后续所有角色」的并集，避免在 008 之后重放时把约束收窄、拒绝 <code>product_planner</code> 行。<b>WASM PG 实测</b>：<code>schema.sql</code> 之后 005/006/008/009 各重放两次，8/8 成功；<code>users.role</code> 列数 0；<code>user_roles</code> CHECK 7 角色齐备。</td></tr>
+
+      <tr><td><code>M-01</code></td><td>Major</td><td>停用 SKU 与建单存在 check-then-act 竞态</td><td><b class="ok-dot">已修（代码）</b>　<code>_validate</code> 与 <code>ensure_sku_not_in_use</code> 在 PG 下都对 SKU 行加 <code>FOR UPDATE</code>，并按 <code>id</code> 升序取锁，与余额锁的先后顺序一致（SKU 先、余额后）。<b>PG 并发用例未补</b>：本机没有可达的 PostgreSQL（sudo 不可用），写一条跑不起来的测试比不写更糟，已留档到下轮。</td></tr>
+      <tr><td><code>M-02</code></td><td>Major</td><td><code>seed_demo --reset</code> 留孤儿单据</td><td><b class="ok-dot">已修</b>　<code>SQL_RESET</code> 显式 <code>TRUNCATE inventory_documents</code>；docstring 写明「库存台账（SKU/单据/余额/流水）会一起清、用户与角色保留」。WASM PG 实测：清完后 5 张库存业务表全为 0，无残留单据。</td></tr>
+      <tr><td><code>M-03</code></td><td>Major</td><td>恢复/初始化可能产出零权限管理员</td><td><b class="ok-dot">已修</b>　<code>restore.sh</code> 迁移后断言 <code>user_roles</code> 里 <code>super_admin</code> ≥ 1，否则打印补授 SQL 并以 exit 1 结束；另外用 <code>to_regclass</code> 检查 9 张库存表是否存在。<code>init_admin.py</code> 对「账号存在但零角色」自动补授 <code>super_admin</code>，角色不含超管时告警并给出 SQL。</td></tr>
+      <tr><td><code>M-04</code></td><td>Major</td><td>改单没有二次确认</td><td><b class="ok-dot">已修</b>　<code>EditDocumentDialog</code> 保存前 <code>ElMessageBox.confirm</code>，文案说明「按差额补记更正流水，余额会随之变化」；新增「取消不提交」负向用例。</td></tr>
+      <tr><td><code>M-05</code></td><td>Major</td><td>数量允许小数但后端 int</td><td><b class="ok-dot">已修</b>　入库/出库/改单的数量与 SKU 最低库存统一加 <code>:precision="0" :step-strictly="true"</code>。</td></tr>
+      <tr><td><code>M-06</code></td><td>Major</td><td>grants 运行时不过滤主数据写码</td><td><b class="ok-dot">已修</b>　新增 <code>UNGRANTABLE_PERMISSIONS</code>，发放侧与 <code>active_grants()</code> 共用同一集合（<code>user:write</code> / 冲正 / 成本读 / 三个主数据写）。<code>test_product_scope.py</code> 里「agent 持 product:write 可建本线产品」随之改为「持授权仍 403」，并补 <code>product_planner</code> 201 的对照用例。</td></tr>
+      <tr><td><code>M-07</code></td><td>Major</td><td>运维手册三处旧角色模型</td><td><b class="ok-dot">已修</b>　排障 SQL 改为 <code>users LEFT JOIN user_roles</code> + <code>string_agg</code>；「角色固定四种」改为七种并说明并集规则；<code>--role</code> 说明改为七个值。</td></tr>
+      <tr><td><code>M-08</code></td><td>Major</td><td>计划书的幂等验收命令已失效</td><td><b class="ok-dot">已修</b>　改为「<code>users</code> + <code>user_roles</code>」造数，重放 005/006/008/009，三条断言：<code>users.role</code> 不存在、<code>user_roles</code> CHECK 含 7 角色、历史 <code>product:write</code> 授权已收回。</td></tr>
+      <tr><td><code>M-09</code></td><td>Major</td><td>E2E 依赖仓库外手工账号</td><td><b class="ok-dot">已修</b>　新增 <code>deploy/scripts/ensure-e2e-user.sh</code>（走 <code>_stack.sh</code> 目标栈，幂等创建 <code>warehouse_clerk</code> 账号），README 与 spec 头注释写明前置命令；未实跑（需要起栈 + 浏览器）。</td></tr>
+      <tr><td><code>M-10</code></td><td>Major</td><td>流水「操作人」列展示数字 ID</td><td><b class="ok-dot">已修</b>　<code>/inventory/movements</code> 左连 <code>users</code> 返回 <code>operator_name</code>（姓名优先、回落用户名），前端列与 CSV 导出同步改为姓名。</td></tr>
+
+      <tr><td><code>m-01</code></td><td>Minor</td><td>CSV 负数被写成文本</td><td><b class="ok-dot">已修</b>　<code>_csv_cell</code> 只对字符串做公式注入前缀，数值（含负数）直接输出。</td></tr>
+      <tr><td><code>m-02</code></td><td>Minor</td><td>低库存与本月汇总口径不一致</td><td><b class="ok-dot">已修</b>　列表 <code>low_stock</code> 过滤加 <code>is_active</code>、前端 <code>isLow()</code> 同步；本月入库/出库排除 <code>status='void'</code>。</td></tr>
+      <tr><td><code>m-03</code></td><td>Minor</td><td>导出失败读不到 code / detail</td><td><b class="ok-dot">已修</b>　响应拦截器遇到 <code>Blob</code> 且类型为 JSON 时先 <code>text()</code> 解析，token 过期也能正常跳登录；<code>type</code> 参数补进契约 §10.1。</td></tr>
+      <tr><td><code>m-04</code></td><td>Minor</td><td>分类更新允许 null / 空白</td><td><b class="ok-dot">已修</b>　<code>CategoryUpdate</code> 加 strip 校验与「显式 null 拒绝」（422）；<code>IntegrityError</code> 按约束名区分，只有唯一冲突才报 <code>CATEGORY_NAME_DUPLICATED</code>。</td></tr>
+      <tr><td><code>m-05</code></td><td>Minor</td><td>所有 IntegrityError 都报「编码重复」</td><td><b class="ok-dot">已修</b>　关联 id 先 <code>dict.fromkeys</code> 去重；<code>_unique_violation()</code> 按「唯一 + 列名」判断，其余映射 <code>VALIDATION_ERROR</code>；<code>update_sku</code> 不再 500。</td></tr>
+      <tr><td><code>m-06</code></td><td>Minor</td><td><code>unit_cost</code> 未按 NUMERIC(12,2) 约束</td><td><b class="ok-dot">已修</b>　引入 <code>UnitCost = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]</code>，三处 <code>unit_cost</code> 统一使用，1e20 与 0.005 都在 422 阶段被拒。</td></tr>
+      <tr><td><code>m-07</code></td><td>Minor</td><td>明细与关联数组无上限</td><td><b class="ok-dot">已修</b>　<code>items</code> ≤ 200、<code>category_ids</code> / <code>product_ids</code> ≤ 100。</td></tr>
+      <tr><td><code>m-08</code></td><td>Minor</td><td>冲正审计写死 id</td><td><b class="ok-dot">已修</b>　先取单据再写 <code>target_name="冲正单据 {doc_no}"</code>，单据不存在直接 404。</td></tr>
+      <tr><td><code>m-09</code></td><td>Minor</td><td>SKU 编辑里的停用开关无确认</td><td><b class="ok-dot">已修</b>　记录打开弹窗时的启用状态，保存时若由启用改停用，复用列表「停用」的确认框。</td></tr>
+      <tr><td><code>m-10</code></td><td>Minor</td><td>空明细行被静默丢弃</td><td><b class="ok-dot">已修</b>　只忽略末尾空行；中间空行提示 <code>itemSkuRequired</code>，不再假装「两行都提交了」。</td></tr>
+      <tr><td><code>m-11</code></td><td>Minor</td><td>引用数据加载失败被吞</td><td><b class="ok-dot">已修</b>　两个列表页 <code>catch</code> 中补 <code>ElMessage.error(errorMessage(...))</code>，区分「没数据」与「接口挂了」。</td></tr>
+      <tr><td><code>m-12</code></td><td>Minor</td><td>测试缺集中清理与负向断言</td><td><b class="ok-dot">已修</b>　<code>Layout.spec.js</code> 改为集中登记 + <code>afterEach</code> 卸载并清空 <code>document.body</code>；<code>inventoryPages.spec.js</code> 同样补 body 清理，并新增两条负向用例（未开 <code>reversible</code> 无冲正入口、改单取消不提交）。</td></tr>
+      <tr><td><code>m-13</code></td><td>Minor</td><td>文档硬数字与契约缺口</td><td><b class="ok-dot">已修</b>　README 改 21 张业务表 / 75 个 API 操作 / 27 权限码；架构文档改 27 码（11 个 <code>inventory:*</code>）并补「不可授予」；契约新增 <b>§10.1 进销存 24 个端点</b>、总数 50→75；PRD 的 DDL 同步 DO 块、迁移表补 009；<code>verify_schema.mjs</code> 断言 22 张表 + <code>users.role</code> 已删 + 7 角色。</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout"><b>没有按建议做的两处</b><br>
+    ① <b>M-01 的 PG 并发用例</b>：本机没有可达的 PostgreSQL（sudo 不可用、db 端口未映射），补一条跑不起来的并发测试只会制造「假绿」。行锁已按代码路径逐行核对，留待有 PG 的环境补测。<br>
+    ② <b>不在 005 里删掉 <code>warehouse</code> 角色</b>：005 的白名单保留 <code>warehouse</code> 这个历史角色名，因为它的职责是「放宽」而不是「收窄」；真正把 <code>warehouse</code> 迁走的是 006 的 UPDATE。</div>
+
+  <div class="callout"><b>本轮回归结果</b>：<code>pytest backend/tests</code> 全绿（<b>390</b> passed / 2 skipped，PG 专项仍按环境跳过）；<code>vitest</code> 32 文件 / <b>283</b> 用例全绿（新增 2 条负向用例）；<code>npm run lint</code> 退出码 0；<code>check_i18n.py</code> 63 文件 0 硬编码；<code>check_links.py</code> 632 引用 0 失败；<code>check_duplicate_tests.py</code> 31 文件 0 重名；<code>verify_schema.mjs</code> 12/12 通过；<code>bash -n</code> 12 个脚本通过；WASM PG 迁移重放 8/8 与清库实测均通过。</div>
+</section>
+
+<section>
+  <h2>零、这份报告与 21 号的关系</h2>
+  <p class="lead">21 号报告只覆盖双栈部署的 4 个提交（<code>159504a</code> / <code>08178a4</code> / <code>9dff5b8</code> / <code>7dbf019</code>），并且已经过两轮修复。本次按「未 push 的全部内容」重审，把之前漏掉的 4 个提交一并纳入：<code>4473b43</code> 进销存、<code>cee256c</code> 计划书、<code>fb254a1</code> 一人多岗、<code>7ecc86a</code> 菜单改名。</p>
+  <p class="lead">双栈部分的结论沿用 21 号（含 4 项已知留档），本报告只补充它与其他改动的接缝。</p>
+</section>
+
+<section>
+  <h2>一、结论摘要</h2>
+  <div class="stats">
+    <div class="stat c"><div class="n">2</div><div class="l">Critical（阻断上线）</div></div>
+    <div class="stat m"><div class="n">10</div><div class="l">Major</div></div>
+    <div class="stat n"><div class="n">13</div><div class="l">Minor</div></div>
+    <div class="stat o"><div class="n">11</div><div class="l">实测通过项</div></div>
+  </div>
+  <div class="callout"><b>结论：代码可以合入 main，但现在不能上生产。</b> 2 个 Critical 都不在业务逻辑里，而在「升级怎么发」和「迁移能不能重放」：009 在旧后端运行时删掉 <code>users.role</code> 列，发布窗口内全站鉴权 500 且回滚要手工补列；005/006 在 009 之后重放必然失败，与 PRD 写死的「迁移幂等」硬约束冲突。这两条修完（约 30 行改动），进销存与多角色的功能面本身是达标的。</div>
+  <div class="callout good"><b>业务正确性没有找到 Critical。</b> 账务主链路（余额/流水同事务、行锁 + 咨询锁、冲正锁单据、改单净更正、盘点复用同一过账、append-only 触发器）成立，24 个库存端点的权限码逐一对齐，27 权限码 / 7 角色在 9 处来源齐平。</div>
+</section>
+
+<section>
+  <h2>二、审查方法</h2>
+  <p class="lead">按「先立需求判定标准，再对照实现」执行，避免被提交信息和注释带着走。</p>
+  <ol class="steps">
+    <li><b>需求侧</b>：4 个代理各自先读 PRD、需求定案、API 契约、计划书、迁移与 schema，写出「需求 → 怎么算达成」，再进入代码。不预设作者的说法成立。</li>
+    <li><b>分域</b>：进销存后端 / 权限与多角色 / 前后端页面 / 跨域接缝，四个干净上下文并行，互不共享结论。</li>
+    <li><b>复核</b>：代理给出的每条 Major 以上结论，由人工读源码或复跑命令复核；已纠正 1 条过判（见 m-09）。</li>
+    <li><b>约束</b>：全程只读。禁止 <code>deploy*.sh</code>、<code>restore.sh</code>、<code>--reset</code>、<code>cleanup --apply</code>；允许 pytest（sqlite 内存库）、vitest、内存 WASM PG。</li>
+  </ol>
+</section>
+
+<section>
+  <h2>三、逐提交结论</h2>
+  <table>
+    <thead><tr><th>提交</th><th>内容</th><th>规模</th><th>结论</th></tr></thead>
+    <tbody>
+      <tr><td><code>4473b43</code></td><td>进销存台账与账务闭环</td><td>80 文件 / +10485</td><td><b>有条件通过</b> — 账务正确，但停用 SKU 有并发竞态（M-01），迁移 005 不可重放（C-02）</td></tr>
+      <tr><td><code>cee256c</code></td><td>产品主数据归属改造计划</td><td>1 文件 / +1272</td><td><b>部分通过</b> — 计划项基本落地，但 PG 幂等验收命令已失效（M-08）</td></tr>
+      <tr><td><code>fb254a1</code></td><td>一人多岗 + 主数据单写者</td><td>49 文件 / +1261</td><td><b>有条件通过</b> — 模型正确，但发布顺序会造成鉴权 500（C-01），grants 运行时未过滤（M-06）</td></tr>
+      <tr><td><code>7ecc86a</code></td><td>库存菜单分组标题改名</td><td>3 文件 / +5</td><td><span class="ok-dot">通过</span> — 中英文案与 spec 断言同步</td></tr>
+      <tr><td><code>159504a</code></td><td>双栈部署</td><td>10 文件 / +170</td><td><span class="ok-dot">通过</span> — 见报告 21，两轮修复后已收口</td></tr>
+      <tr><td><code>08178a4</code></td><td>双栈配置隔离</td><td>9 文件 / +131</td><td><span class="ok-dot">通过</span></td></tr>
+      <tr><td><code>9dff5b8</code></td><td>双栈修复（第一轮）</td><td>19 文件 / +1071</td><td><span class="ok-dot">通过</span></td></tr>
+      <tr><td><code>7dbf019</code></td><td>双栈复审修复（第二轮）</td><td>11 文件 / +134</td><td><span class="ok-dot">通过</span> — 4 项留档见报告 21</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>四、问题清单 · Critical</h2>
+
+  <div class="finding" data-sev="Critical">
+    <div class="fh"><span class="badge b-Critical">Critical</span><span class="fid">C-01</span><span class="ft">009 删列时旧后端仍在服务：发布窗口内全站鉴权 500，回滚需手工补列</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">deploy/deploy.sh:269-316</span> <span class="loc">deploy/migrations/009_multi_role.sql:39</span></p>
+    <p><span class="lbl">证据</span> <code>deploy.sh</code> 的升级序列是 <code>up -d db</code> → <code>backup</code> → <code>run --rm migrate</code> → <code>up -d</code>，<b>全程没有停旧 backend</b>。旧镜像的 <code>User</code> 模型仍映射 <code>role</code> 列（<code>git show cee256c:backend/app/models/user.py</code>），每个请求 <code>db.get(User, ...)</code> 都会 SELECT 该列；009 一旦 <code>DROP COLUMN</code>，旧进程立刻 <code>UndefinedColumn</code>。反向同样成立：009 执行前，新代码查 <code>user_roles</code> 会 <code>UndefinedTable</code>。</p>
+    <pre>deploy.sh:  up -d db  →  migrate（DROP COLUMN role）  →  up -d backend
+             ↑ 旧 backend 仍在跑，模型 SELECT users.role  ↑ 全站 500 窗口</pre>
+    <p><span class="lbl">影响</span> 发布期间登录、<code>/api/auth/me</code>、所有 <code>require()</code> 接口全部 500。若 <code>up -d</code> 因端口/内存失败，旧后端会持续不可用。回滚到旧镜像必须手工 <code>ALTER TABLE users ADD COLUMN role</code> 并从 <code>user_roles</code> 回填，否则旧镜像同样起不来。</p>
+    <p><span class="lbl">修法</span> 二选一：<br>① 最小改动：migrate 前 <code>compose stop backend</code>，失败时 <code>compose start backend</code>；<br>② 规范做法：expand/contract —— 009 只建表 + 回填（保留 <code>users.role</code>），010 在新后端上线稳定后再 <code>DROP COLUMN</code>。</p>
+  </div>
+
+  <div class="finding" data-sev="Critical">
+    <div class="fh"><span class="badge b-Critical">Critical</span><span class="fid">C-02</span><span class="ft">005 / 006 迁移不可重放，与 PRD「全部幂等」硬约束冲突</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">deploy/migrations/005_inventory.sql:95-97</span> <span class="loc">deploy/migrations/006_warehouse_roles.sql:10-18</span></p>
+    <p><span class="lbl">证据</span> 两处都是无条件 <code>DROP CONSTRAINT IF EXISTS users_role_check</code> + <code>ADD CONSTRAINT ... CHECK (role IN (...))</code>。009 删掉 <code>role</code> 列后重放，直接失败：</p>
+    <pre>005_inventory.sql        FAIL: column "role" does not exist
+006_warehouse_roles.sql  FAIL: column "role" does not exist
+008_product_planner.sql  OK   ← 用 information_schema 包了 DO 块
+009_multi_role.sql       OK</pre>
+    <p><span class="lbl">影响</span> 违反 PRD §10.2、005/006 文件头自称的「全部幂等，可被 migrate.py 重复执行」。<code>schema_migrations</code> 丢失、按备份重建版本表、或按 PRD 做「连跑两次」验收时，migrate 中断，部署卡死。</p>
+    <p><span class="lbl">修法</span> 照 008 的写法，用 <code>information_schema.columns</code> 判断 <code>users.role</code> 是否存在，把角色 DDL 包进 <code>DO $$</code>；或在文件头明确「005/006 仅可在 009 之前执行」，并让 <code>migrate.py</code> 校验版本链完整性后拒绝乱序重放。</p>
+  </div>
+</section>
+
+<section>
+  <h2>五、问题清单 · Major</h2>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">Major</span><span class="fid">M-01</span><span class="ft">停用 SKU 与建单/改单存在 check-then-act 竞态</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">backend/app/services/inventory/posting.py:60-87</span> <span class="loc">backend/app/api/admin_inventory_skus.py:395-398,445-446</span></p>
+    <p><span class="lbl">证据</span> <code>_validate</code> 用普通 <code>SELECT</code> 读 SKU，不加锁；停用侧只在停用前 <code>count(document_items)</code>。两个事务交错时：T1 校验读到 <code>is_active=True</code> → T2 计数为 0、停用并提交 → T1 继续插入明细并过账提交。sqlite 串行测试无法暴露，PG 并发用例只覆盖了冲正。</p>
+    <p><span class="lbl">影响</span> 单据引用已停用 SKU 后，<code>reverse_document</code> / <code>edit_document</code> 的 <code>_validate</code> 会抛 <code>INVENTORY_SKU_INACTIVE</code>，该单<b>无法冲正、无法改单</b>，只能先手工启用 SKU。这与提交声称「修复停用绕过」是同一类问题，只堵了顺序路径。</p>
+    <p><span class="lbl">修法</span> <code>_validate</code> 在 PG 下对 SKU 行 <code>SELECT ... FOR UPDATE</code>（按 <code>sku_id</code> 排序防死锁）；停用路径先锁同一 SKU 行再计数；或 <code>_post_item</code> 取得余额锁后复核 <code>is_active</code>。</p>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">Major</span><span class="fid">M-02</span><span class="ft"><code>seed_demo.py --reset</code> 会静默清空库存主数据，并留下无明细的孤儿单据</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">scripts/dev/seed_demo.py:111-122</span></p>
+    <p><span class="lbl">证据</span> TRUNCATE 列表只有售后 7 张表 + <code>product_lines</code>。CASCADE 会沿 <code>products → inventory_skus</code> 连锁清掉 SKU、余额、流水、明细，但 <code>inventory_documents</code> 不被任何被清表引用，因此存活。内存 PG 实测：</p>
+    <pre>inventory_skus / balances / stock_movements / document_items  →  0
+inventory_documents                                          →  1（残留）
+users / user_roles                                           →  保留</pre>
+    <p><span class="lbl">影响</span> 演示库出现「状态 confirmed、但 0 明细 / 0 流水 / 0 余额」的幽灵单；<code>demo_inventory.py</code> 按流水数判断是否已初始化，会再建一套单据，旧脏单永久残留。脚本 docstring 只写「清空业务数据」，没写会清库存主数据。</p>
+    <p><span class="lbl">修法</span> TRUNCATE 列表补 <code>inventory_documents</code>（子表已由 CASCADE 覆盖，但建议一并列出便于阅读）；docstring 与 README 的「重置演示数据」注明「会清空 SKU / 单据 / 余额 / 流水」。</p>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">Major</span><span class="fid">M-03</span><span class="ft">恢复/初始化可能产出「能登录但零权限」且无法自救的管理员</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">deploy/scripts/restore.sh:153-171</span> <span class="loc">deploy/scripts/init_admin.py:85-119</span> <span class="loc">deploy/deploy.sh:380-400</span></p>
+    <p><span class="lbl">证据</span> <code>restore.sh</code> 只统计 <code>users/products/parts/faults/tickets/query_logs</code> 六张旧表，然后打印「全部关键表非空」；<code>init_admin.py:119</code> 在账号已存在时只打印「跳过」，不检查 <code>user_roles</code>；<code>deploy.sh</code> 只看 init 退出码 0 就报「管理员已就绪」。</p>
+    <p><span class="lbl">影响</span> 若恢复出的库 <code>user_roles</code> 为空（或 admin 缺 <code>super_admin</code>），三处都报成功。admin 能登录但 <code>permissions=[]</code>，所有后台接口 403，而用户管理页本身需要 <code>user:write</code>，界面内无法自救。</p>
+    <p><span class="lbl">修法</span> restore 自检加 <code>count(*) FROM user_roles WHERE role='super_admin'</code> 必须 &gt; 0（并断言 9 张库存表存在）；<code>init_admin</code> 对「账号存在但零角色」补 <code>super_admin</code> 或以非零码退出并告警。</p>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">Major</span><span class="fid">M-04</span><span class="ft">改单没有二次确认，点「保存」即改写已生效台账</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">frontend/src/views/admin/inventory/EditDocumentDialog.vue:89-94</span> <span class="loc">:218-249</span></p>
+    <p><span class="lbl">证据</span> footer 的保存按钮直接 <code>@click="onSubmit"</code>；<code>onSubmit</code> 校验完立即 <code>inventoryUpdateDocument</code>；文件只 import 了 <code>ElMessage</code>（:101），没有 <code>ElMessageBox</code>。改单会按「新明细 − 旧明细」补记更正流水，是权威台账变更。</p>
+    <p><span class="lbl">影响</span> 主管误点保存即可改变余额，与「冲正/改单等危险操作二次确认」的验收口径不符。</p>
+    <p><span class="lbl">修法</span> 提交前 <code>ElMessageBox.confirm</code>，文案说明「将按差额补记更正流水」，确认后再请求。</p>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">Major</span><span class="fid">M-05</span><span class="ft">数量/阈值允许输入小数，后端 int 直接 422，且提示无法定位</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">DocumentFormDialog.vue:56</span> <span class="loc">EditDocumentDialog.vue:54-61</span> <span class="loc">SkuList.vue:210</span> <span class="loc">backend/app/schemas/inventory.py:193</span></p>
+    <p><span class="lbl">证据</span> 三处 <code>el-input-number</code> 只设 <code>:min</code> / <code>:max</code>，没有 <code>:precision="0"</code> 或 <code>:step-strictly</code>；后端 <code>quantity: int</code>。实测 Pydantic 对 <code>2.5</code> 报 <code>Input should be a valid integer</code>，前端只显示「参数校验失败：items.0.quantity」。</p>
+    <p><span class="lbl">影响</span> 单位是自由文本（可能是 kg/米），用户自然会输小数，提交失败且不知道错在哪一行。</p>
+    <p><span class="lbl">修法</span> 数量与阈值统一加 <code>:precision="0" :step-strictly="true"</code>；若产品确实需要小数计量，先改后端字段类型与 PRD，而不是留在半截。</p>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">Major</span><span class="fid">M-06</span><span class="ft">主数据写权限的「不可授予」只在发放侧把关，运行时仍采信存量行</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">backend/app/core/permissions.py:260-278</span> <span class="loc">:281-299</span></p>
+    <p><span class="lbl">证据</span> <code>grantable_permissions()</code> 排除了 <code>product:write / part:write / product_line:write</code>，但 <code>effective_permissions()</code> 是 <code>expand(角色权限 ∪ active_grants())</code>，<b>对 grants 不做任何过滤</b>。008 的收回是一次性 UPDATE；旧版本在 008 执行前写入的 <code>product:write</code>（最长 180 天）在新版本依然生效，恢复旧 grants 表也会重现。</p>
+    <p><span class="lbl">影响</span> 「主数据唯一常规写者」这一核心验收项，实际依赖「迁移跑过且没人再写」而不是代码不变量。审计上会显示为「历史授权」，看不出越权。</p>
+    <p><span class="lbl">修法</span> 在 <code>active_grants()</code> 或 <code>effective_permissions()</code> 里剔除与 <code>grantable_permissions()</code> 相同的排除集，约 3 行。</p>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">Major</span><span class="fid">M-07</span><span class="ft">运维手册三处仍按旧角色模型写，排障 SQL 会直接报错</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">docs/04-运维与运营/运维手册.md:269</span> <span class="loc">:395</span> <span class="loc">:414</span></p>
+    <p><span class="lbl">证据</span> :269 教运维执行 <code>SELECT username, role, is_active FROM users;</code>，而 <code>users.role</code> 已在 009 删除；:395 写「角色固定四种」；:414 写「<code>--role</code> 支持四个角色值」，实际 <code>init_admin.py:265-277</code> 是 7 个 choices。</p>
+    <p><span class="lbl">影响</span> 登录 401 排障第一步就报 <code>column "role" does not exist</code>；运维不知道 <code>product_planner</code> / 两个仓管角色，可能试图用临时授权绕过主数据权限（008 已收回且 grantable 永久排除，必然 400）。</p>
+    <p><span class="lbl">修法</span> SQL 改 <code>LEFT JOIN user_roles</code> + <code>string_agg</code>；角色说明与 <code>--role</code> 改 7 个。</p>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">Major</span><span class="fid">M-08</span><span class="ft">计划书的 PG 迁移幂等验收命令已失效，008 的验证是空跑</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">docs/superpowers/plans/2026-11-13-product-master-ownership.md:1176-1186</span></p>
+    <p><span class="lbl">证据</span> 验收命令写 <code>INSERT INTO users (username, ..., role)</code>，v1.6 的表已无 <code>role</code> 列，实测直接报 <code>column "role" of relation "users" does not exist</code>；即使删掉该 INSERT，<code>users_role_check</code> 在 v1.6 也不存在，断言返回空。008 的 DO 块在无 <code>role</code> 列时整块跳过，所以「连续执行两次 008 均成功」只是 no-op。</p>
+    <p><span class="lbl">影响</span> 按计划书做验收，第一步就失败；强行解释成「通过」会让迁移幂等的验收结论不可信。</p>
+    <p><span class="lbl">修法</span> 改为插 <code>users</code> + <code>user_roles</code>，断言 <code>user_roles.role</code> 的 CHECK 含 7 角色、且 <code>users.role</code> 不存在。</p>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">Major</span><span class="fid">M-09</span><span class="ft">warehouse-login E2E 依赖仓库外手工账号，计划书声称的「7 条 E2E」不可复现</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">frontend/e2e/warehouse-login.spec.js:12-13</span></p>
+    <p><span class="lbl">证据</span> 用例默认 <code>warehouse / 12345678</code>；全仓没有任何脚本或文档创建该账号（<code>init_admin.py</code> 只建 admin，<code>seed_demo.py</code> 不动用户），<code>playwright.config.js</code> 也没有 globalSetup。</p>
+    <p><span class="lbl">影响</span> 全新测试栈跑 E2E 会因登录失败而红，验收记录无法复现。</p>
+    <p><span class="lbl">修法</span> 在用例 setup 里用 admin 调 <code>POST /api/admin/users</code> 建 <code>roles=["warehouse_clerk"]</code> 的账号，或提供 <code>scripts/dev/</code> 前置脚本并在 README 写明。</p>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">Major</span><span class="fid">M-10</span><span class="ft">流水「操作人」列展示的是数字 ID</span></div>
+    <p><span class="lbl">位置</span> <span class="loc">frontend/src/views/admin/inventory/MovementTable.vue:74</span> <span class="loc">backend/app/schemas/inventory.py:275</span></p>
+    <p><span class="lbl">证据</span> 列 <code>prop="operator_id"</code>，表头是「操作人」；后端响应只有 <code>operator_id</code>，没有姓名。</p>
+    <p><span class="lbl">影响</span> 列表显示 <code>3</code>、<code>7</code>，审计追查价值大幅降低；仓管也没有 <code>user:read</code> 权限，前端无法自行映射。</p>
+    <p><span class="lbl">修法</span> 后端 join <code>users</code> 补 <code>operator_name</code>；若不便改契约，至少把列名改成「操作人 ID」并给出说明。</p>
+  </div>
+</section>
+
+<section>
+  <h2>六、问题清单 · Minor</h2>
+  <table>
+    <thead><tr><th>编号</th><th>问题</th><th>位置</th><th>影响 / 修法</th></tr></thead>
+    <tbody>
+      <tr><td><code>m-01</code></td><td>CSV 导出把负数写成 <code>'-4</code> 文本</td><td><code>admin_inventory_movements.py:34-36</code></td><td>Excel 把「变动量/变动后余额」当文本，SUM 与透视表忽略负值。只对字符串做公式注入防护，数值直接 <code>str()</code>。</td></tr>
+      <tr><td><code>m-02</code></td><td>低库存与本月汇总口径不一致</td><td><code>admin_inventory_skus.py:269,624-645</code></td><td>停用 SKU 仍被标红；已冲正（void）单据仍计入「本月入库」。补 <code>is_active</code> 与 <code>status != 'void'</code> 过滤。</td></tr>
+      <tr><td><code>m-03</code></td><td>导出失败时读不到后端 code/detail；<code>type</code> 参数未登记契约</td><td><code>api/request.js:17-23</code>、<code>api/inventory.js:111-113</code></td><td><code>responseType:'blob'</code> 下错误体是 Blob，只能落「导出失败，请重试」；<code>AUTH_TOKEN_EXPIRED</code> 也不会触发跳转。错误分支先 <code>await data.text()</code> 解析 JSON。</td></tr>
+      <tr><td><code>m-04</code></td><td>分类更新允许 null/空白，并把 NOT NULL 错误误报成「名称已存在」</td><td><code>schemas/inventory.py:325-328</code>、<code>admin_inventory_skus.py:552-560</code></td><td><code>{"name": null}</code> 触发 IntegrityError → 409 <code>CATEGORY_NAME_DUPLICATED</code>；<code>"  "</code> 能落库。加 strip 校验，按约束名区分错误。</td></tr>
+      <tr><td><code>m-05</code></td><td><code>create_sku</code> 把所有 IntegrityError 都报成 <code>SKU_NO_DUPLICATED</code></td><td><code>admin_inventory_skus.py:349-360</code></td><td>重复的 <code>category_ids</code> 也会提示「编码重复」；<code>update_sku</code> 同类情况直接 500。先对 id 去重，再按约束名映射。</td></tr>
+      <tr><td><code>m-06</code></td><td><code>unit_cost</code> 未按 <code>NUMERIC(12,2)</code> 约束输入</td><td><code>schemas/inventory.py:138</code></td><td><code>1e20</code> 过校验后 PG 溢出 500；<code>0.005</code> 静默舍入。改 <code>condecimal(max_digits=12, decimal_places=2)</code>。</td></tr>
+      <tr><td><code>m-07</code></td><td>明细与关联 id 数组无长度上限</td><td><code>schemas/inventory.py:132-133,204</code></td><td>一次请求可提交数万行，N+1 查询 + 长事务 + 锁持有放大。加 <code>max_length</code>（items 200 / 关联 100）。</td></tr>
+      <tr><td><code>m-08</code></td><td>冲正审计 <code>target_name</code> 写死「冲正单据 {id}」而不是单号</td><td><code>admin_inventory_documents.py:361-367</code></td><td>审计列表只能看到 id，无法按单号追溯。先取 <code>doc.doc_no</code>。</td></tr>
+      <tr><td><code>m-09</code></td><td>SKU 编辑弹窗的停用开关不弹二次确认</td><td><code>SkuList.vue:216-218</code></td><td><b>已复核纠正</b>：<code>update_sku</code> 同样调了 <code>ensure_sku_not_in_use</code>，<b>没有</b>绕过 SKU_IN_USE，只是少了列表按钮那一步确认。属交互一致性问题，非权限漏洞。</td></tr>
+      <tr><td><code>m-10</code></td><td>空明细行被静默丢弃，<code>itemSkuRequired</code> 成了死键</td><td><code>DocumentFormDialog.vue:215-219</code></td><td>用户加两行只填一行，会以为两行都提交了。提交前校验空行并提示，同时删死键。</td></tr>
+      <tr><td><code>m-11</code></td><td>引用数据加载失败被静默吞掉</td><td><code>DocumentList.vue:231-249</code>、<code>AdjustmentList.vue:79-97</code></td><td>仓库/分类下拉为空且无错误出口，用户不知道是没数据还是出错。补 <code>ElMessage</code> 或 <code>ErrorState</code>。</td></tr>
+      <tr><td><code>m-12</code></td><td>新测试未落实仓库既有清理约定，缺负向断言</td><td><code>inventoryPages.spec.js:46-49</code>、<code>Layout.spec.js:30-52</code></td><td><code>attachTo: document.body</code> 但无集中 <code>afterEach</code> 卸载与清空 body，teleport 会跨用例堆积（仓库踩过 5s 超时）；冲正按钮只有「有权限可见」的正向断言。</td></tr>
+      <tr><td><code>m-13</code></td><td>文档硬数字与契约缺口</td><td>README:12,69；系统架构:213；API 契约 §1-7；PRD:345,675；verify_schema.mjs:33</td><td>「7 张表 / 24 索引」实为 21 业务表 / 63 索引；「权限码 16 个」实为 27；契约缺 24 个库存端点；PRD §3.4 的可复制 DDL 含已删除的 <code>users.role</code>；<code>verify_schema</code> 仍只断言 11 张表。</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>七、实测通过项</h2>
+  <ul class="good-list">
+    <li><span class="ok-dot">通过</span> <b>账务不变量</b>：<code>Σ stock_movements.delta == inventory_balances.quantity</code>，逐笔 <code>balance_after</code> 等于前缀和，PG 用例覆盖（<code>test_inventory_ledger_pg.py</code>）。</li>
+    <li><span class="ok-dot">通过</span> <b>冲正并发</b>：两线程抢同一单据，结果恰为 <code>["DOCUMENT_ALREADY_VOIDED", "ok"]</code>，反向单只 1 张，<code>Σdelta == 0</code>。</li>
+    <li><span class="ok-dot">通过</span> <b>改单净更正</b>：按 SKU 汇总新旧差额，只追加 <code>document_edit</code> 流水，历史流水不改。</li>
+    <li><span class="ok-dot">通过</span> <b>盘点</b>：<code>adjust_in/out</code> 复用同一过账函数，<code>PD/PK</code> 单号，走 <code>inventory:adjust:write</code>。</li>
+    <li><span class="ok-dot">通过</span> <b>append-only</b>：UPDATE / DELETE / TRUNCATE 三种语句都被触发器拒绝，PG 实测。</li>
+    <li><span class="ok-dot">通过</span> <b>权限矩阵</b>：24 个端点逐一挂静态 <code>require()</code>，27 权限码无拼写漂移，7 角色在 9 处来源齐平。</li>
+    <li><span class="ok-dot">通过</span> <b>一人多岗</b>：<code>users.role</code> 双写已彻底消除（列已删，仅剩派生 property）；权限取并集后 <code>expand()</code> 到不动点。</li>
+    <li><span class="ok-dot">通过</span> <b>主数据边界</b>：<code>product_planner</code> 未获得任何售后/库存权限；supervisor 三个写端点均 403。</li>
+    <li><span class="ok-dot">通过</span> <b>迁移回填</b>：内存 PG 实测 008/009 连续两轮成功，008 在 009 后重放仍成功；存量账号全部落 1 个角色，<code>product:write</code> 历史授权已 <code>revoked</code>。</li>
+    <li><span class="ok-dot">通过</span> <b>i18n</b>：7 个语言包模块 zh/en key 双向差集为空（<code>admin-inventory</code> 189/189 等），<code>check_i18n.py</code> 63 文件 0 硬编码中文。</li>
+    <li><span class="ok-dot">通过</span> <b>双栈隔离</b>：见报告 21，两栈在容器名 / 项目名 / 库名 / 数据目录 / 端口 / JWT / DEBUG / 资源上限八个维度实测隔离。</li>
+  </ul>
+</section>
+
+<section>
+  <h2>八、修复顺序建议</h2>
+  <h3>推送前必修（2 项，约 30 行）</h3>
+  <ol class="steps">
+    <li><b>C-01</b> <code>deploy.sh</code> 在 migrate 前停 backend；或拆 009/010 做 expand-contract。这条决定「能不能上生产」，其余都是体验与健壮性。</li>
+    <li><b>C-02</b> 005/006 的角色 DDL 包进 <code>DO $$</code> 列存在性判断，恢复「迁移幂等」这条硬约束。</li>
+  </ol>
+  <h3>建议同批（4 项，都是小改动）</h3>
+  <ol class="steps" start="3">
+    <li><b>M-02</b> <code>seed_demo --reset</code> 补 <code>inventory_documents</code> 并写明影响面 —— 否则下次重置演示数据就会看到幽灵单。</li>
+    <li><b>M-03</b> restore 自检加 <code>user_roles</code> 超管数 —— 恢复是最后一道防线，不能报假成功。</li>
+    <li><b>M-04 / M-05</b> 改单二次确认 + 数量整数化 —— 两个都是日常高频操作，改动各 3~5 行。</li>
+    <li><b>M-06</b> grants 运行时剔除主数据写码 —— 把「不可授予」从依赖迁移改成代码不变量。</li>
+  </ol>
+  <h3>上线前（1 项）</h3>
+  <p><b>M-01</b> 停用 SKU 竞态：需要加行锁并补一条 PG 并发用例，改动比上面几项大，但会产出无法冲正/改单的脏单据，不能留到上线后。</p>
+  <h3>可后续跟进</h3>
+  <p>M-07（运维手册）、M-08（计划书验收）、M-09（E2E 账号）、M-10（操作人姓名）与 13 条 Minor。其中 <b>m-12</b>（测试清理）建议本轮顺手补，因为仓库已经因此踩过一次 5s 超时。</p>
+</section>
+
+<section>
+  <h2>九、实际执行的验证</h2>
+  <table>
+    <thead><tr><th>验证</th><th>结果</th><th>只读</th></tr></thead>
+    <tbody>
+      <tr><td><code>pytest backend/tests</code></td><td>389 passed / 2 skipped（PG 专项按 <code>PG_TEST_DATABASE_URL</code> 缺失跳过）</td><td>是（sqlite 内存库）</td></tr>
+      <tr><td><code>npx vitest run</code></td><td>32 文件 / 281 用例全绿</td><td>是</td></tr>
+      <tr><td><code>npm run lint</code></td><td>退出码 0，无告警</td><td>是</td></tr>
+      <tr><td><code>check_i18n.py</code> / <code>check_links.py</code> / <code>check_duplicate_tests.py</code></td><td>63 文件 0 硬编码；631 引用 0 失败；31 文件 0 重名</td><td>是</td></tr>
+      <tr><td><code>node scripts/dev/verify_schema.mjs</code></td><td>11/11 通过（但断言清单只覆盖 11 张旧表，见 m-13）</td><td>是（内存 WASM PG）</td></tr>
+      <tr><td>内存 PG 重放 005/006/008/009</td><td>005 / 006 报 <code>column "role" does not exist</code>；008 / 009 成功</td><td>是</td></tr>
+      <tr><td>内存 PG 执行 <code>seed_demo.SQL_RESET</code></td><td><code>inventory_documents=1</code> 残留，其余库存业务表 0</td><td>是</td></tr>
+      <tr><td>OpenAPI 计数</td><td>75 个操作（其中 <code>/inventory/*</code> 24 个）、27 权限码</td><td>是</td></tr>
+      <tr><td><code>bash -n</code> 全部部署脚本</td><td>退出码 0</td><td>是</td></tr>
+      <tr><td>人工复核 M-01 / M-02 / M-03 / M-04 / M-05 / M-06 / M-09</td><td>7 条均读源码确认；M-09 由 Major 降为 Minor</td><td>是</td></tr>
+    </tbody>
+  </table>
+  <p class="lead">未执行（按约束）：<code>deploy.sh</code>、<code>deploy-test.sh</code>、<code>restore.sh</code>（非 dry-run）、<code>seed_demo --reset</code>、<code>demo_inventory --reset</code>、<code>cleanup-*.sh --apply</code>、<code>install-cron.sh</code>、<code>enable-https.sh</code>、任何 <code>docker compose up/down</code>、E2E 实跑。</p>
+</section>
+
+<footer>22 · 未推送改动代码审查报告 · 2026-11-16 · 审查范围 61d81df..HEAD</footer>
+</div>
+</body>
+</html>

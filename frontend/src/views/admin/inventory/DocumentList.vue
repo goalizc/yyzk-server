@@ -241,11 +241,13 @@ async function loadRefs() {
     skus.value = sku.items || []
     categoryOptions.value = cat.items || []
     productOptions.value = prod || []
-  } catch {
+  } catch (e) {
+    // 之前静默清空：下拉全空，用户分不清「没数据」还是「接口挂了」
     warehouses.value = []
     skus.value = []
     categoryOptions.value = []
     productOptions.value = []
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.inventory.common.loadFailed' }))
   }
 }
 

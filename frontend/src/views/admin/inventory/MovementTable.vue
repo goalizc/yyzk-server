@@ -71,7 +71,12 @@
         </template>
       </el-table-column>
       <el-table-column prop="balance_after" :label="t('admin.inventory.movement.colBalanceAfter')" width="120" align="center" />
-      <el-table-column prop="operator_id" :label="t('admin.inventory.movement.colOperator')" width="100" align="center" />
+      <el-table-column :label="t('admin.inventory.movement.colOperator')" width="120" align="center">
+        <template #default="{ row }">
+          <!-- 姓名优先，老数据/账号已删时回落 id，再空则占位 -->
+          {{ row.operator_name || row.operator_id || '—' }}
+        </template>
+      </el-table-column>
       <el-table-column v-if="reversible" :label="t('admin.inventory.common.actions')" width="100" align="center">
         <template #default="{ row }">
           <!-- 已冲正单据的流水不能再冲正一次；没有关联单据的流水也不显示 -->

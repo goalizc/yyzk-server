@@ -174,6 +174,41 @@ log "    users=$NUM_USERS products=$NUM_PRODUCTS faults=$NUM_FAULTS 全部关键
 log "执行数据库迁移（备份可能来自旧版本）"
 compose run --rm -T migrate
 
+# ---------- 迁移后：角色与库存表完整性 ----------
+# 角色只存在 user_roles（009 起）。备份若缺角色行，恢复结果是「能登录但零权限」：
+# 所有后台接口 403，而用户管理页本身要 user:write，界面内无法自救。
+# 这一步必须拦住，不能像以前那样只数 6 张旧表就报「全部关键表非空」。
+ROLE_STAT=$(compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -t -A -F'|' -c "
+  SELECT
+    (SELECT count(*) FROM user_roles) AS total,
+    (SELECT count(*) FROM user_roles WHERE role = 'super_admin') AS super_count;
+" | tr -d '[:space:]')
+NUM_ROLE_ROWS="${ROLE_STAT%%|*}"
+NUM_SUPER="${ROLE_STAT##*|}"
+
+if [[ "${NUM_SUPER:-0}" -lt 1 ]]; then
+  log "    [ERROR] user_roles 里没有 super_admin（共 ${NUM_ROLE_ROWS:-0} 行角色）"
+  log "    恢复本身成功，但系统不可用：管理员能登录却没有任何权限。手工补授后重跑："
+  log "      docker exec -i ${DB_CONTAINER} psql -U ${DB_USER} -d ${DB_NAME} -c \\"
+  log "        \"INSERT INTO user_roles (user_id, role) SELECT id, 'super_admin' FROM users WHERE username='${ADMIN_USERNAME:-admin}' ON CONFLICT DO NOTHING;\""
+  compose start backend >/dev/null 2>&1 || true
+  exit 1
+fi
+log "    user_roles=$NUM_ROLE_ROWS 行，super_admin=$NUM_SUPER"
+
+INV_MISSING=$(compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -t -A -c "
+  SELECT count(*) FROM (VALUES
+    ('inventory_warehouses'), ('inventory_categories'), ('inventory_skus'),
+    ('inventory_sku_categories'), ('inventory_sku_products'),
+    ('inventory_documents'), ('inventory_document_items'),
+    ('inventory_balances'), ('stock_movements')
+  ) AS t(name)
+  WHERE to_regclass('public.' || t.name) IS NULL;
+" | tr -d '[:space:]')
+if [[ "${INV_MISSING:-0}" -gt 0 ]]; then
+  log "    [WARN] 有 ${INV_MISSING} 张库存表不存在：迁移可能被跳过，进销存页面会 500"
+fi
+
 # ---------- 6. 附件 ----------
 if [[ -n "$UPLOADS_FILE" ]]; then
   [[ -f "$UPLOADS_FILE" ]] || die "附件包不存在: $UPLOADS_FILE"

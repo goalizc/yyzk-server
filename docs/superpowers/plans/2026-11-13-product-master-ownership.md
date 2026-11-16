@@ -1168,29 +1168,42 @@ docker run -d --rm --name master-review-pg \
   -p 127.0.0.1:55432:5432 postgres:15-alpine
 ```
 
-在容器内建一个临时库，执行 `schema.sql` 后连续执行两次 `008`：
+在容器内建一个临时库，执行 `schema.sql`（已是 v1.6 结构，无 `users.role`）后重放各迁移：
 
 ```bash
 docker exec master-review-pg psql -U review -d invtest -c "CREATE DATABASE migtest"
 docker exec -i master-review-pg psql -U review -d migtest -v ON_ERROR_STOP=1 -q < deploy/schema.sql
 
 # 造一条历史 product:write 临时授权，验证 008 会收回它
+# 注意：v1.6 的 users 没有 role 列，角色写 user_roles（旧脚本直接 INSERT users.role 会报错）
 docker exec master-review-pg psql -U review -d migtest -v ON_ERROR_STOP=1 -q -c "
-INSERT INTO users (username, password_hash, real_name, role)
-VALUES ('grant_user', 'x', '授权测试', 'supervisor');
+INSERT INTO users (username, password_hash, real_name)
+VALUES ('grant_user', 'x', '授权测试');
+INSERT INTO user_roles (user_id, role)
+SELECT id, 'supervisor' FROM users WHERE username = 'grant_user';
 INSERT INTO user_permission_grants (user_id, permission, expires_at, reason, granted_by)
 SELECT id, 'product:write', NOW() + interval '1 day', '历史授权', id
 FROM users WHERE username = 'grant_user';
 "
 
-docker exec -i master-review-pg psql -U review -d migtest -v ON_ERROR_STOP=1 -q < deploy/migrations/008_product_planner.sql
-docker exec -i master-review-pg psql -U review -d migtest -v ON_ERROR_STOP=1 -q < deploy/migrations/008_product_planner.sql
+# 幂等：005/006/008/009 各重放一次（005/006 的角色 DDL 已包 DO 块，
+# 在 009 删列之后重放会整段跳过，不再报 column "role" does not exist）
+for f in 005_inventory 006_warehouse_roles 008_product_planner 009_multi_role; do
+  docker exec -i master-review-pg psql -U review -d migtest -v ON_ERROR_STOP=1 -q \
+    < "deploy/migrations/$f.sql" || echo "FAILED: $f"
+done
+
+# 断言 1：角色只在 user_roles，users.role 已删除 → 期望 0
 docker exec master-review-pg psql -U review -d migtest -Atc \
-  "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='users_role_check'"
+  "SELECT count(*) FROM information_schema.columns WHERE table_name='users' AND column_name='role'"
+# 断言 2：user_roles 的 CHECK 含 7 个角色（含 product_planner）
+docker exec master-review-pg psql -U review -d migtest -Atc \
+  "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='user_roles'::regclass AND contype='c'"
+# 断言 3：历史授权已被收回 → 期望 0
 docker exec master-review-pg psql -U review -d migtest -Atc \
   "SELECT count(*) FROM user_permission_grants WHERE permission='product:write' AND revoked_at IS NULL"
 ```
-Expected: 两次执行均成功；约束定义包含 `product_planner`；最后一条计数为 `0`（历史授权已被收回）。
+Expected: 四次重放均无 `FAILED`；断言 1 为 `0`；断言 2 含 `product_planner` 等 7 个角色；断言 3 为 `0`。
 
 清理：
 ```bash

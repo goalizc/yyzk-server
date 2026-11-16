@@ -9,7 +9,7 @@
 
 | 部分 | 状态 |
 |---|---|
-| 后端 | ✅ 完成：客户查询 / 工单 / 知识库 / 产品与零件 / 用户与授权 / 审计 / 统计，7 张表 |
+| 后端 | ✅ 完成：客户查询 / 工单 / 知识库 / 产品与零件 / 用户与授权 / 审计 / 统计 / 进销存，21 张业务表、75 个 API 操作、27 个权限码 |
 | 前端 | ✅ 完成：客户侧 4 页 + 后台 10 页，中英双语 |
 | 部署 | ✅ 一键脚本 + Compose（backend / frontend / nginx / db），单机 4C8G 已跑通 |
 | 文档 | ✅ 需求、设计、测试、运维、评估审查齐备（索引见 `docs/README.md`） |
@@ -33,6 +33,9 @@
 > 不影响页面功能。动该文件前先修这个基线，否则分不清是不是自己引入的。
 
 E2E 依赖已启动的全栈（`cd deploy && ./deploy.sh`），跑的是真实浏览器 + 真实后端。
+冒烟用例里 `warehouse-login.spec.js` 需要一个「纯仓管」账号，首次跑之前执行一次
+`cd deploy && ./scripts/ensure-e2e-user.sh`（幂等；测试栈加
+`STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test`）。
 
 ## 主要能力
 
@@ -66,7 +69,7 @@ E2E 依赖已启动的全栈（`cd deploy && ./deploy.sh`），跑的是真实�
 │   └── e2e/                      # Playwright（smoke / walkthrough / mobile）
 ├── deploy/                       # 一键部署
 │   ├── docker-compose.yml        # 4 服务 + 一次性 init
-│   ├── schema.sql                # 7 张表
+│   ├── schema.sql                # 21 张业务表（+ schema_migrations）
 │   ├── migrations/               # 增量 SQL（001~004，含审计防篡改触发器）
 │   ├── nginx*.conf               # 入口：gzip / 安全头 / 限流 / 错误 JSON 化
 │   ├── scripts/                  # init_admin / prepare-storage / cleanup-* / install-cron

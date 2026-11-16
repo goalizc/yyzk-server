@@ -30,19 +30,39 @@ check('schema.sql 可整体执行', async (db) => {
   return ok('schema.sql 可整体执行', `${sql.length} 字符`)
 })
 
-check('11 张表齐备', async (db) => {
+check('22 张表齐备（21 业务 + schema_migrations）', async (db) => {
   const { rows } = await db.query(
     `SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename`
   )
   const got = rows.map((r) => r.tablename)
   const want = [
-    'faults', 'parts', 'product_lines', 'products', 'query_logs',
-    'schema_migrations', 'ticket_status_logs', 'tickets',
-    'user_permission_grants', 'user_product_lines', 'users'
+    'audit_logs', 'faults', 'inventory_balances', 'inventory_categories',
+    'inventory_document_items', 'inventory_documents', 'inventory_sku_categories',
+    'inventory_sku_products', 'inventory_skus', 'inventory_warehouses',
+    'parts', 'product_lines', 'products', 'query_logs', 'schema_migrations',
+    'stock_movements', 'ticket_status_logs', 'tickets',
+    'user_permission_grants', 'user_product_lines', 'user_roles', 'users'
   ]
   const missing = want.filter((t) => !got.includes(t))
   if (missing.length) throw new Error(`缺少表：${missing.join(',')}（实际：${got.join(',')}）`)
-  return ok('11 张表齐备', got.join(' / '))
+  return ok('22 张表齐备', `${got.length} 张`)
+})
+
+check('角色只存在 user_roles，users.role 已删除', async (db) => {
+  const { rows: cols } = await db.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='users' AND column_name='role'`
+  )
+  if (cols.length) throw new Error('users.role 仍存在：009 未生效')
+  const { rows: defs } = await db.query(
+    `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conrelid='user_roles'::regclass AND contype='c'`
+  )
+  const def = defs.map((r) => r.def).join(' ')
+  const missing = ['super_admin', 'product_planner', 'warehouse_clerk', 'warehouse_manager']
+    .filter((r) => !def.includes(r))
+  if (missing.length) throw new Error(`user_roles CHECK 缺角色：${missing.join(',')}`)
+  return ok('角色只存在 user_roles，users.role 已删除', '7 角色')
 })
 
 check('部分索引与表达式索引已创建', async (db) => {

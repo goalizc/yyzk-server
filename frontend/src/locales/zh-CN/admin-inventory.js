@@ -72,6 +72,7 @@ export default {
     reversed: '已冲正',
     editDoc: '修改单据',
     editDocHint: '保存后按「新明细 − 旧明细」的差额补记更正流水；历史流水不删不改。',
+    editConfirm: '确认保存对单据 {docNo} 的修改？系统将按差额补记更正流水，库存余额会随之变化。',
     editSuccess: '单据已修改',
     editFailed: '修改失败，请重试',
     export: '导出 CSV',

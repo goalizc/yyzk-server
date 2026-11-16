@@ -6,9 +6,14 @@
 三种用法：
     python scripts/dev/seed_demo.py                  # 增量写入，按型号幂等跳过（走后台 API）
     python scripts/dev/seed_demo.py --via-sql        # 同上，但不登录、直接写库（忘记管理员密码时用）
-    python scripts/dev/seed_demo.py --reset          # 清空业务数据后重建（保留用户）
+    python scripts/dev/seed_demo.py --reset          # 清空演示业务数据后重建（保留用户与角色）
     python scripts/dev/seed_demo.py --activity       # 重建查询日志与工单，让看板有数
     python scripts/dev/seed_demo.py --reset --activity   # 全量重建（换机型时用这个）
+
+`--reset` 的影响面大于「售后数据」：清 products 会沿外键级联清掉
+inventory_skus / inventory_balances / inventory_document_items / stock_movements，
+并显式清空 inventory_documents。也就是**库存台账（SKU、单据、余额、流水）会一起没**，
+但用户、角色、仓库、库存分类保留。清完需要重跑 scripts/dev/demo_inventory.py 重建库存演示数据。
 
 --reset / --activity / --via-sql 走 docker compose exec psql（db 端口未映射到宿主机），
 所以需要在能执行 docker compose 的机器上跑。
@@ -112,10 +117,13 @@ def login(base: str) -> str:
 # RESTART IDENTITY 让 id 从 1 开始，方便 E2E 与文档引用稳定 id。
 # 注意：CASCADE 会连带清空 user_product_lines（账号的产品线归属），
 # 所以重建后要按「用户名 + 产品线名」把归属恢复回去，见 restore_assignments()。
+# inventory_documents 必须显式列出：products 的 CASCADE 会清掉 SKU / 余额 /
+# 明细 / 流水，但单据表不被任何被清表引用，漏掉就会留下「confirmed 但 0 明细」的幽灵单。
 SQL_RESET = """
 BEGIN;
 ALTER TABLE stock_movements DISABLE TRIGGER USER;
-TRUNCATE ticket_status_logs, tickets, query_logs, faults, parts, products, product_lines
+TRUNCATE ticket_status_logs, tickets, query_logs, faults, parts, products, product_lines,
+         inventory_documents
 RESTART IDENTITY CASCADE;
 ALTER TABLE stock_movements ENABLE TRIGGER USER;
 COMMIT;

@@ -1,5 +1,5 @@
 // Layout.vue：侧边栏高亮归并、改密规则（新旧相同 / 两次不一致 / 服务端字段错误不吞）
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -27,6 +27,15 @@ vi.mock('../../utils/idle', () => ({
 import { changePassword, fetchMe } from '../../api/auth'
 import { setPermissions } from '../../utils/permissions'
 
+// attachTo: document.body 的用例必须集中卸载：不清理时 teleport 的弹窗
+// 会跨用例堆积，曾导致 5s 超时（UserList/TicketList 已踩过）。
+const mounted = []
+afterEach(() => {
+  mounted.splice(0).forEach((w) => w.unmount())
+  document.body.innerHTML = ''
+  vi.restoreAllMocks()
+})
+
 async function mountLayout(path = '/admin/tickets') {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -48,6 +57,7 @@ async function mountLayout(path = '/admin/tickets') {
     global: { plugins: [ElementPlus, router] },
     attachTo: document.body
   })
+  mounted.push(wrapper)
   await flushPromises()
   return { wrapper, router }
 }
@@ -159,10 +169,10 @@ describe('Layout', () => {
       global: { plugins: [ElementPlus, router] },
       attachTo: document.body
     })
+    mounted.push(wrapper)
     await flushPromises()
 
     expect(fetchMe).toHaveBeenCalledTimes(1)
-    wrapper.unmount()
   })
 
   it('顶栏展示用户名与角色中文名', async () => {

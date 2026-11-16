@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import io
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -32,7 +33,13 @@ _EXPORT_LIMIT = 5000
 
 
 def _csv_cell(value: object) -> str:
-    text = "" if value is None else str(value)
+    # 数值不加引号前缀：负数会被 Excel 当文本，SUM 与透视表直接忽略掉。
+    # 需要防的是「字符串被当成公式」，所以只对 str 做前缀检查。
+    if value is None:
+        return ""
+    if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
+        return str(value)
+    text = str(value)
     return "'" + text if text[:1] in _CSV_UNSAFE_PREFIX else text
 
 
@@ -44,9 +51,13 @@ def _movement_stmt() -> Select:
             InventorySku.name,
             InventoryDocument.doc_no,
             InventoryDocument.status,
+            User.real_name,
+            User.username,
         )
         .join(InventorySku, StockMovement.sku_id == InventorySku.id)
         .outerjoin(InventoryDocument, StockMovement.document_id == InventoryDocument.id)
+        # 操作人姓名：只给 id 的话列表显示 3、7，审计追查价值基本为零
+        .outerjoin(User, StockMovement.operator_id == User.id)
     )
 
 
@@ -127,9 +138,10 @@ def list_movements(
                 doc_no=doc_no_out,
                 doc_status=doc_status_out,
                 operator_id=move.operator_id,
+                operator_name=(real_name or username),
                 created_at=move.created_at,
             )
-            for move, sku_no, sku_name, doc_no_out, doc_status_out in rows
+            for move, sku_no, sku_name, doc_no_out, doc_status_out, real_name, username in rows
         ],
     )
 
@@ -189,14 +201,14 @@ def export_inventory(
     ).all()
     writer.writerow(
         [_csv_cell(c) for c in
-         ["时间", "SKU编码", "SKU名称", "仓库ID", "变动量", "变动后余额", "单据号", "操作人ID"]]
+         ["时间", "SKU编码", "SKU名称", "仓库ID", "变动量", "变动后余额", "单据号", "操作人"]]
     )
-    for move, sku_no, sku_name, doc_no, _ in rows:
+    for move, sku_no, sku_name, doc_no, _status, real_name, username in rows:
         writer.writerow(
             [_csv_cell(c) for c in [
                 to_app_tz(move.created_at).isoformat(), sku_no, sku_name,
                 move.warehouse_id, move.delta, move.balance_after,
-                doc_no or "", move.operator_id or "",
+                doc_no or "", real_name or username or move.operator_id or "",
             ]]
         )
     return _csv_response(buffer, "inventory-movements", total=total)

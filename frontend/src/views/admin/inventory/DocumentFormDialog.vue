@@ -53,7 +53,7 @@
       </el-table-column>
       <el-table-column :label="$t('admin.inventory.common.quantity')" :width="isCompact ? 100 : 120">
         <template #default="{ row }">
-          <el-input-number v-model="row.quantity" class="full" :min="1" :max="999999" size="small" controls-position="right" />
+          <el-input-number v-model="row.quantity" class="full" :min="1" :max="999999" :precision="0" :step-strictly="true" size="small" controls-position="right" />
         </template>
       </el-table-column>
       <el-table-column v-if="showBalance" :label="$t('admin.inventory.common.balance')" :width="isCompact ? 90 : 110" align="center">
@@ -212,7 +212,15 @@ function onSkuChange() {
 
 async function onSubmit() {
   hint.value = ''
-  const items = form.value.items.filter((item) => item.sku_id)
+  const rows = form.value.items
+  const lastFilled = rows.reduce((last, row, idx) => (row.sku_id ? idx : last), -1)
+  // 只忽略「末尾空行」；中间空行说明漏填，静默丢弃会让用户
+  // 以为两行都提交了（审查 m-10）
+  if (rows.some((row, idx) => !row.sku_id && idx < lastFilled)) {
+    hint.value = t('admin.inventory.common.itemSkuRequired')
+    return
+  }
+  const items = rows.filter((item) => item.sku_id)
   if (!items.length) {
     hint.value = t('admin.inventory.common.itemEmpty')
     return

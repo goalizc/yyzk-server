@@ -9,9 +9,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.common import AppDateTime
 
@@ -25,6 +25,11 @@ def _strip_required(value: str) -> str:
 
 def _strip_optional(value: str | None) -> str | None:
     return None if value is None else _strip_required(value)
+
+
+# 与列定义 NUMERIC(12,2) 对齐：上限 9999999999.99、两位小数。
+# 不校验的话 1e20 会在 PG 里溢出成 500，0.005 会被静默舍入成 0.01/0.00。
+UnitCost = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]
 
 
 # ---------------------------------------------------------------- 仓库
@@ -129,13 +134,14 @@ class SkuCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     spec: str | None = Field(default=None, max_length=100)
     unit: str = Field(default="件", max_length=20)
-    category_ids: list[int] = Field(default_factory=list)
-    product_ids: list[int] = Field(default_factory=list)
+    # 上限防一次请求塞几万条关联：N+1 查询 + 长事务会把锁持有时间放大
+    category_ids: list[int] = Field(default_factory=list, max_length=100)
+    product_ids: list[int] = Field(default_factory=list, max_length=100)
     part_id: int | None = None
     warehouse_id: int
     min_stock: int = Field(default=0, ge=0)
     # 只写留档：响应不返回（§3.6）
-    unit_cost: Decimal | None = Field(default=None, ge=0)
+    unit_cost: UnitCost | None = None
     batch_no: str | None = Field(default=None, max_length=50)
     is_active: bool = True
     remark: str | None = Field(default=None, max_length=500)
@@ -156,7 +162,7 @@ class SkuUpdate(BaseModel):
     product_ids: list[int] | None = None
     part_id: int | None = None
     min_stock: int | None = Field(default=None, ge=0)
-    unit_cost: Decimal | None = Field(default=None, ge=0)
+    unit_cost: UnitCost | None = None
     batch_no: str | None = Field(default=None, max_length=50)
     is_active: bool | None = None
     remark: str | None = Field(default=None, max_length=500)
@@ -192,7 +198,7 @@ class DocumentItemInput(BaseModel):
     sku_id: int
     quantity: int = Field(gt=0)
     # 只写留档：不返回、不计算（§3.6）
-    unit_cost: Decimal | None = Field(default=None, ge=0)
+    unit_cost: UnitCost | None = None
     remark: str | None = Field(default=None, max_length=200)
 
 
@@ -201,7 +207,7 @@ class DocumentCreate(BaseModel):
     remark: str | None = Field(default=None, max_length=500)
     # 空明细交给 service 抛 400 INVENTORY_ITEM_EMPTY；这里不用 min_length，
     # 否则会变成 422 VALIDATION_ERROR，与契约 §8 的机器码不一致。
-    items: list[DocumentItemInput] = Field(default_factory=list)
+    items: list[DocumentItemInput] = Field(default_factory=list, max_length=200)
 
 
 class AdjustmentCreate(DocumentCreate):
@@ -212,7 +218,7 @@ class DocumentUpdate(BaseModel):
     """修改已生效单据：只允许改数量 / 种类 / 备注，仓库与单据类型不可改。"""
 
     remark: str | None = Field(default=None, max_length=500)
-    items: list[DocumentItemInput] = Field(default_factory=list)
+    items: list[DocumentItemInput] = Field(default_factory=list, max_length=200)
 
 
 class ReverseRequest(BaseModel):
@@ -273,6 +279,8 @@ class MovementItem(BaseModel):
     # 单据状态：void 的流水仍在，但不能再冲正；前端据此隐藏冲正按钮
     doc_status: str | None = None
     operator_id: int | None = None
+    # 姓名优先，缺失时回落用户名；账号被删时为空
+    operator_name: str | None = None
     created_at: AppDateTime
 
 
@@ -326,3 +334,17 @@ class CategoryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=50)
     remark: str | None = Field(default=None, max_length=200)
     is_active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _strip(cls, value: str | None) -> str | None:
+        # 空白串（"  "）过不了 min_length，但 strip 后是空，必须在这里拒掉
+        return _strip_optional(value)
+
+    @model_validator(mode="after")
+    def _name_not_null(self) -> "CategoryUpdate":
+        # 显式传 null 会撞 NOT NULL，之前被 IntegrityError 误报成「名称已存在」；
+        # 这里直接按参数非法拒绝，语义才对。
+        if "name" in self.model_fields_set and self.name is None:
+            raise ValueError("分类名称不能为空")
+        return self

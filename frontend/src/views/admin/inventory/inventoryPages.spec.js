@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessageBox } from 'element-plus'
 import SkuList from './SkuList.vue'
 import InboundList from './InboundList.vue'
 import DocumentList from './DocumentList.vue'
 import OutboundList from './OutboundList.vue'
 import MovementList from './MovementList.vue'
+import MovementTable from './MovementTable.vue'
 import AdjustmentList from './AdjustmentList.vue'
 import ReverseDialog from './ReverseDialog.vue'
 import CategoryList from './CategoryList.vue'
@@ -46,6 +47,9 @@ let wrapper
 afterEach(() => {
   wrapper?.unmount()
   wrapper = null
+  // 弹窗 teleport 到 body，不清理会跨用例堆积（仓库曾因此 5s 超时）
+  document.body.innerHTML = ''
+  vi.restoreAllMocks()
 })
 
 beforeEach(() => {
@@ -131,6 +135,22 @@ describe('进销存 5 个页面冒烟', () => {
     expect(wrapper.text()).toContain('库存流水')
     expect(wrapper.text()).toContain('导出余额')
     expect(wrapper.text()).toContain('导出流水')
+  })
+
+  it('MovementTable 未开启 reversible 时不出现冲正入口（负向）', async () => {
+    inv.inventoryMovements.mockResolvedValue({
+      total: 1,
+      items: [{
+        id: 1, sku_id: 1, sku_no: 'A1', sku_name: '螺丝', warehouse_id: 1,
+        delta: 1, balance_after: 6, document_id: 9, doc_no: 'RK1',
+        doc_status: 'confirmed', operator_name: '管理员',
+        created_at: '2026-11-16T10:00:00+08:00'
+      }]
+    })
+    wrapper = mount(MovementTable, { global: { plugins: [ElementPlus] }, attachTo: document.body })
+    await flushPromises()
+    // 正向用例只验「有权限可见」，这里补「没开 reversible 就一个入口都不给」
+    expect(wrapper.findAll('button').some((b) => b.text() === '冲正')).toBe(false)
   })
 
   it('AdjustmentList 渲染标题与登记按钮', async () => {
@@ -346,14 +366,44 @@ describe('改单弹窗：回填明细并按新数量提交', () => {
 
     const saveBtn = wrapper.findAll('button').find((b) => b.text() === '保存')
     expect(saveBtn.exists()).toBe(true)
+    // 改单是权威台账变更，保存前必须弹二次确认（审查 M-04）
+    const confirmSpy = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm')
     await saveBtn.trigger('click')
     await flushPromises()
 
+    expect(confirmSpy).toHaveBeenCalled()
     expect(inv.inventoryUpdateDocument).toHaveBeenCalledWith(
       9,
       expect.objectContaining({
         items: [expect.objectContaining({ sku_id: 1, quantity: 7 })]
       })
     )
+  })
+
+  it('改单二次确认取消时不提交（负向）', async () => {
+    const doc = {
+      id: 9,
+      doc_no: 'RK20261112-0009',
+      doc_type: 'inbound',
+      remark: '',
+      items: [{ sku_id: 1, sku_no: 'A1', sku_name: '螺丝', quantity: 5, remark: '' }]
+    }
+    wrapper = mount(EditDocumentDialog, {
+      props: {
+        modelValue: true,
+        doc,
+        skus: [{ id: 1, sku_no: 'A1', name: '螺丝', quantity: 100 }]
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body
+    })
+    await flushPromises()
+
+    vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue('cancel')
+    const saveBtn = wrapper.findAll('button').find((b) => b.text() === '保存')
+    await saveBtn.trigger('click')
+    await flushPromises()
+
+    expect(inv.inventoryUpdateDocument).not.toHaveBeenCalled()
   })
 })

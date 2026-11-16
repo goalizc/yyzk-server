@@ -340,10 +340,24 @@ CREATE INDEX IF NOT EXISTS idx_inv_sku_cat_cat
 CREATE INDEX IF NOT EXISTS idx_inv_sku_prod_prod
     ON inventory_sku_products(product_id);
 
--- 新增角色必须放宽既有 CHECK（约束名由 001 迁移固定为 users_role_check）
-ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-ALTER TABLE users ADD CONSTRAINT users_role_check
-    CHECK (role IN ('super_admin','supervisor','agent','auditor','warehouse_clerk','warehouse_manager'));
+-- 新增角色必须放宽既有 CHECK（约束名由 001 迁移固定为 users_role_check）。
+-- 注意：009 之后 users.role 列已删除，重放本文件时整段跳过；
+-- 白名单用最终角色全集，否则在 008 之后重放会把约束收窄并拒绝 product_planner 行。
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'users' AND column_name = 'role'
+    ) THEN
+        ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+        ALTER TABLE users ADD CONSTRAINT users_role_check
+            CHECK (role IN (
+                'super_admin','supervisor','product_planner','agent','auditor',
+                'warehouse','warehouse_clerk','warehouse_manager'
+            ));
+    END IF;
+END $$;
 
 INSERT INTO inventory_warehouses (code, name)
 VALUES ('DEFAULT', '默认仓')
@@ -670,15 +684,16 @@ L1 的定位是"只记数量、不做金额账"，但定案稿要求为未来成
 | `deploy/migrations/006_warehouse_roles.sql` | 角色拆分 | 旧 `warehouse` 账号升级为 `warehouse_manager`，CHECK 放宽 |
 | `deploy/migrations/007_inventory_categories.sql` | 分类主数据 | 建分类/关联表；**先回填旧 `category` 再删列** |
 | `deploy/migrations/008_product_planner.sql` | 主数据角色 | 角色 CHECK 放宽到 7 角色；收回既有主数据写临时授权 |
-| `deploy/schema.sql` | 全新库 initdb 一次建到最新 | 同步 9 张库存表 DDL + role CHECK + 触发器 + 登记 `005` / `006` / `007` / `008` |
+| `deploy/migrations/009_multi_role.sql` | 一人多岗 | 建 `user_roles`、回填既有角色、删除 `users.role`（发布时必须先停旧 backend） |
+| `deploy/schema.sql` | 全新库 initdb 一次建到最新 | 同步 9 张库存表 DDL + `user_roles` + 触发器 + 登记 `005`–`009` |
 
-`migrate.py` 用 `path.stem`（如 `005_inventory`）作版本号；全新库的 `schema.sql` 必须显式登记 `005` / `006` / `007` / `008`，否则 migrate 会在全新库上再跑一遍。四个迁移本身也写成幂等，双保险。
+`migrate.py` 用 `path.stem`（如 `005_inventory`）作版本号；全新库的 `schema.sql` 必须显式登记 `005`–`009`，否则 migrate 会在全新库上再跑一遍。五个迁移本身也写成幂等（005/006 的角色 DDL 用 `information_schema.columns` 判存在性，009 删列后重放会整段跳过），双保险。
 
 ### 10.2 迁移硬约束
 
 - **SQL 内禁止出现 `%`**（psycopg2 占位符冲突）——§3.4 已规避，`$$` 不受影响。
 - 全部 `CREATE TABLE/INDEX IF NOT EXISTS`、`DROP CONSTRAINT/TRIGGER IF EXISTS`、`ON CONFLICT DO NOTHING`。
-- `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check` 沿用 001 迁移的先例，约束名固定。
+- 角色 CHECK 的变更一律包在 `DO $$ ... IF EXISTS (SELECT 1 FROM information_schema.columns WHERE ... column_name='role') ... END $$` 里：009 删列后重放 005/006/008 必须整段跳过，否则报 `column "role" does not exist`。约束名沿用 001 迁移的先例，固定为 `users_role_check`。
 - 验证：`docker compose run --rm migrate` **连跑两次均成功且第二次显示"没有待执行的迁移"**。
 
 ### 10.3 镜像（方案 B）

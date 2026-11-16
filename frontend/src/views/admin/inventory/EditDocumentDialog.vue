@@ -56,6 +56,8 @@
             class="full"
             :min="1"
             :max="999999"
+            :precision="0"
+            :step-strictly="true"
             size="small"
             controls-position="right"
           />
@@ -98,7 +100,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { inventoryUpdateDocument } from '../../../api/inventory'
 import { errorMessage } from '../../../utils/error'
 import { useNarrow } from '../../../utils/viewport'
@@ -217,7 +219,14 @@ function balanceInsufficient(row) {
 
 async function onSubmit() {
   hint.value = ''
-  const items = form.value.items.filter((item) => item.sku_id)
+  const rows = form.value.items
+  const lastFilled = rows.reduce((last, row, idx) => (row.sku_id ? idx : last), -1)
+  // 与新建单据同规则：中间空行是漏填，不能静默丢
+  if (rows.some((row, idx) => !row.sku_id && idx < lastFilled)) {
+    hint.value = t('admin.inventory.common.itemSkuRequired')
+    return
+  }
+  const items = rows.filter((item) => item.sku_id)
   if (!items.length) {
     hint.value = t('admin.inventory.common.itemEmpty')
     return
@@ -234,6 +243,17 @@ async function onSubmit() {
       quantity: Number(item.quantity),
       ...(item.remark ? { remark: item.remark } : {})
     }))
+  }
+  // 改单会按差额补记更正流水，是权威台账变更：和冲正一样要二次确认，
+  // 避免误点「保存」直接改余额（审查 M-04）。
+  try {
+    await ElMessageBox.confirm(
+      t('admin.inventory.common.editConfirm', { docNo: props.doc.doc_no }),
+      t('admin.inventory.common.confirmTitle'),
+      { type: 'warning' }
+    )
+  } catch {
+    return
   }
   submitting.value = true
   try {

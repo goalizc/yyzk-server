@@ -1,4 +1,11 @@
-"""产品写操作受产品线可见性约束：LINES 角色不能碰其它产品线的产品。"""
+"""产品写的权限边界。
+
+历史背景：主数据写曾可通过临时授权 `product:write` 发给 agent，
+那时这里验的是「LINES 角色不能碰其它产品线」。
+2026-11 起主数据写只认 `product_planner` 角色，`product:write` 被列入
+`UNGRANTABLE_PERMISSIONS`，发放侧与运行时都不再认——所以 agent 持历史授权
+在本线建产品也必须 403（见 test_product_write_grant_is_ignored）。
+"""
 
 from __future__ import annotations
 
@@ -73,12 +80,33 @@ def test_cannot_create_product_in_other_line(client, db) -> None:
     assert response.json()["code"] == "PERMISSION_DENIED"
 
 
-def test_can_create_product_in_own_line(client, db) -> None:
+def test_product_write_grant_is_ignored(client, db) -> None:
+    """M-06：存量 product:write 临时授权在运行时也不生效。
+
+    旧版本这里断言「本线可建（201）」；现在 agent 持该授权仍应 403，
+    否则「主数据唯一常规写者」只是迁移时的一次性 UPDATE，不是代码不变量。
+    """
     _, headers, line_a, _, _ = _agent_with_product_write(client, db)
 
     response = client.post(
         "/api/admin/products",
         json={"name": "本线产品", "model": "A9", "line_id": line_a.id},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "PERMISSION_DENIED"
+
+
+def test_product_planner_can_create_product(client, db) -> None:
+    """正面对照：product_planner 是常规写者，可跨线建产品。"""
+    line_a, _, _ = _setup(db)
+    make_user(db, username="planner1", role="product_planner")
+    headers = auth_headers(login(client, "planner1")["access_token"])
+
+    response = client.post(
+        "/api/admin/products",
+        json={"name": "规划新产品", "model": "P9", "line_id": line_a.id},
         headers=headers,
     )
 

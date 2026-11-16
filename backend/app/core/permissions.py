@@ -257,8 +257,27 @@ def _as_utc(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+# 永远不可临时授予的权限码。发放侧与运行时共用同一集合：
+# 只挡发放挡不住存量行——008 之前写入的 product:write 最长留 180 天，
+# 从备份恢复旧 grants 表也会重现，所以运行时必须再过滤一次。
+UNGRANTABLE_PERMISSIONS: frozenset[str] = frozenset(
+    {
+        USER_WRITE,
+        INVENTORY_ADJUST_WRITE,
+        INVENTORY_COST_READ,
+        PRODUCT_WRITE,
+        PART_WRITE,
+        PRODUCT_LINE_WRITE,
+    }
+)
+
+
 def active_grants(db: Session, user_id: int) -> list[str]:
-    """未收回、未过期的临时授权。按 Python 侧比较，兼容 SQLite 单测。"""
+    """未收回、未过期的临时授权。按 Python 侧比较，兼容 SQLite 单测。
+
+    已剔除不可授予的权限码：这些码即使存在于表里也不生效，
+    避免「迁移收回了才安全」这种把不变量交给一次性 UPDATE 的写法。
+    """
     now = datetime.now(timezone.utc)
     rows = db.scalars(
         select(UserPermissionGrant).where(
@@ -266,7 +285,11 @@ def active_grants(db: Session, user_id: int) -> list[str]:
             UserPermissionGrant.revoked_at.is_(None),
         )
     ).all()
-    return [row.permission for row in rows if _as_utc(row.expires_at) > now]
+    return [
+        row.permission
+        for row in rows
+        if _as_utc(row.expires_at) > now and row.permission not in UNGRANTABLE_PERMISSIONS
+    ]
 
 
 def effective_permissions(db: Session, user: User) -> frozenset[str]:
@@ -281,7 +304,7 @@ def effective_permissions(db: Session, user: User) -> frozenset[str]:
 def grantable_permissions() -> frozenset[str]:
     """可临时授予的权限。
 
-    永远排除：
+    永远排除（与 `UNGRANTABLE_PERMISSIONS` 同源）：
     - `user:write`：临时授权会变成提权入口，可直接改角色；
     - `inventory:adjust:write`：冲正能凭空改账，不应带 expires_at / reason 临时发放；
     - `inventory:cost:read`：L1 只登记不启用、无端点使用，避免出现没有实际功能的选项；
@@ -289,14 +312,7 @@ def grantable_permissions() -> frozenset[str]:
       主数据单写者，常规只能由 product_planner 角色持有；
       super_admin 的 break-glass 权限不通过临时授权转授。
     """
-    return ALL_PERMISSIONS - {
-        USER_WRITE,
-        INVENTORY_ADJUST_WRITE,
-        INVENTORY_COST_READ,
-        PRODUCT_WRITE,
-        PART_WRITE,
-        PRODUCT_LINE_WRITE,
-    }
+    return ALL_PERMISSIONS - UNGRANTABLE_PERMISSIONS
 
 
 def current_permissions(user: User, db: Session) -> list[str]:

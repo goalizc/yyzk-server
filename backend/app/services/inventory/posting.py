@@ -69,10 +69,19 @@ def _validate(db: Session, payload: DocumentInput) -> None:
         raise BusinessError("NOT_FOUND", "仓库不存在或已停用", 404)
 
     sku_ids = {item.sku_id for item in payload.items}
-    by_id = {
-        row.id: row
-        for row in db.scalars(select(InventorySku).where(InventorySku.id.in_(sku_ids))).all()
-    }
+    sku_stmt = (
+        select(InventorySku)
+        .where(InventorySku.id.in_(sku_ids))
+        .order_by(InventorySku.id)
+    )
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name == "postgresql":
+        # 与「停用 SKU」抢同一把行锁。停用侧先锁行再计数，这里也先锁行再校验；
+        # 否则 T1 读 is_active=True → T2 计数 0 并停用提交 → T1 落一张引用停用 SKU 的单，
+        # 该单之后既不能冲正也不能改单（_validate 自己会抛 INVENTORY_SKU_INACTIVE）。
+        # 按 id 升序取锁，与停用路径一致，避免互相死锁。
+        sku_stmt = sku_stmt.with_for_update()
+    by_id = {row.id: row for row in db.scalars(sku_stmt).all()}
     for item in payload.items:
         if item.quantity <= 0:
             raise BusinessError("VALIDATION_ERROR", "明细数量必须大于 0", 400)
@@ -366,6 +375,15 @@ def current_balance(db: Session, sku_id: int, warehouse_id: int) -> int:
 
 
 def ensure_sku_not_in_use(db: Session, sku_id: int) -> None:
+    # 先锁 SKU 行再计数，与过账侧 _validate 的加锁顺序一致（SKU 先、余额后）。
+    # 否则「读 is_active / 数明细」各读各的，两边都能提交，
+    # 结果就是一张引用已停用 SKU 的单据——事后既不能冲正也不能改单。
+    lock_stmt = select(InventorySku.id).where(InventorySku.id == sku_id)
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name == "postgresql":
+        lock_stmt = lock_stmt.with_for_update()
+    db.scalar(lock_stmt)
+
     used = db.scalar(
         select(func.count())
         .select_from(InventoryDocumentItem)

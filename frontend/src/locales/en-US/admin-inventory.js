@@ -69,6 +69,7 @@ export default {
     reversed: 'Reversed',
     editDoc: 'Edit document',
     editDocHint: 'Saving posts a correction movement for the net difference (new lines minus old); existing movements are never changed or deleted.',
+    editConfirm: 'Save changes to document {docNo}? A correction movement will be posted for the net difference, which changes stock balances.',
     editSuccess: 'Document updated',
     editFailed: 'Failed to update. Please retry.',
     export: 'Export CSV',

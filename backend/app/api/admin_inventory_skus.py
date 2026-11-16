@@ -120,7 +120,9 @@ def _ensure_sku_no_available(db: Session, sku_no: str) -> None:
 
 def _resolve_categories(db: Session, ids: list[int]) -> list[InventoryCategory]:
     result: list[InventoryCategory] = []
-    for cid in ids:
+    # 去重：重复 id 会撞 (sku_id, category_id) 唯一约束，
+    # 之前一律被报成「SKU 编码重复」，误导排查方向。
+    for cid in dict.fromkeys(ids):
         row = db.get(InventoryCategory, cid)
         if row is None:
             raise BusinessError("NOT_FOUND", f"分类不存在: {cid}", 404)
@@ -130,12 +132,23 @@ def _resolve_categories(db: Session, ids: list[int]) -> list[InventoryCategory]:
 
 def _resolve_products(db: Session, ids: list[int]) -> list["Product"]:
     result: list[Product] = []
-    for pid in ids:
+    for pid in dict.fromkeys(ids):
         row = db.get(Product, pid)
         if row is None:
             raise BusinessError("NOT_FOUND", f"产品不存在: {pid}", 404)
         result.append(row)
     return result
+
+
+def _unique_violation(exc: IntegrityError, column: str) -> bool:
+    """IntegrityError 是否来自指定列的唯一约束。
+
+    PG 报 `duplicate key value violates unique constraint "uq_xxx_name"`，
+    SQLite 报 `UNIQUE constraint failed: table.column`，两边都包含列名，
+    所以按「唯一 + 列名」判断，比统一的「编码重复」文案准确。
+    """
+    text = str(getattr(exc, "orig", exc)).lower()
+    return ("unique" in text or "duplicate key" in text) and column.lower() in text
 
 
 # ---------------------------------------------------------------- 仓库
@@ -267,7 +280,9 @@ def list_skus(
     if is_active is not None:
         stmt = stmt.where(InventorySku.is_active.is_(is_active))
     if low_stock:
-        stmt = stmt.where(qty < InventorySku.min_stock)
+        # 与 /skus/low-stock、/summary 同口径：停用 SKU 不参与「低库存」，
+        # 否则列表里会一直标红一个已经不用补货的条目。
+        stmt = stmt.where(InventorySku.is_active.is_(True), qty < InventorySku.min_stock)
     if part_id is not None:
         stmt = stmt.where(InventorySku.part_id == part_id)
 
@@ -357,7 +372,12 @@ def create_sku(
         db.commit()
     except IntegrityError as exc:  # 并发下靠唯一约束兜底
         db.rollback()
-        raise BusinessError("SKU_NO_DUPLICATED", f"SKU 编码 {payload.sku_no} 已存在", 409) from exc
+        if _unique_violation(exc, "sku_no"):
+            raise BusinessError(
+                "SKU_NO_DUPLICATED", f"SKU 编码 {payload.sku_no} 已存在", 409
+            ) from exc
+        # 其它完整性错误（关联重复、外键失效）不该伪装成「编码重复」
+        raise BusinessError("VALIDATION_ERROR", "SKU 数据不合法，请检查关联分类/产品", 400) from exc
     db.refresh(sku)
     request.state.audit["target_id"] = str(sku.id)
     part_name = db.get(Part, sku.part_id).name if sku.part_id else None
@@ -412,7 +432,16 @@ def update_sku(
         sku.products = _resolve_products(db, prod_ids)
 
     sku.updated_at = datetime.now(timezone.utc)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        # 之前这里直接 500：重复关联、外键失效都变成「服务器错误」。
+        if _unique_violation(exc, "sku_no"):
+            raise BusinessError(
+                "SKU_NO_DUPLICATED", f"SKU 编码 {sku.sku_no} 已存在", 409
+            ) from exc
+        raise BusinessError("VALIDATION_ERROR", "SKU 数据不合法，请检查关联分类/产品", 400) from exc
     db.refresh(sku)
     part_name = db.get(Part, sku.part_id).name if sku.part_id else None
     return _to_sku_item(sku, part_name, current_balance(db, sku.id, sku.warehouse_id))
@@ -555,9 +584,13 @@ def update_category(
     row.updated_at = datetime.now(timezone.utc)
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         db.rollback()
-        raise BusinessError("CATEGORY_NAME_DUPLICATED", f"分类名称 {row.name} 已存在", 409)
+        if _unique_violation(exc, "name"):
+            raise BusinessError(
+                "CATEGORY_NAME_DUPLICATED", f"分类名称 {row.name} 已存在", 409
+            ) from exc
+        raise BusinessError("VALIDATION_ERROR", "分类数据不合法", 400) from exc
     db.refresh(row)
     return CategoryItem(
         id=row.id,
@@ -629,6 +662,9 @@ def inventory_summary(
                 .where(
                     InventoryDocument.doc_type == doc_type,
                     InventoryDocument.created_at >= since,
+                    # 已冲正（void）的单据不算「本月入库/出库」：
+                    # 冲正的意思是这笔业务被撤销，计进去会让台账与卡片对不上。
+                    InventoryDocument.status != "void",
                 )
             )
             or 0

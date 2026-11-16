@@ -207,7 +207,7 @@
           </div>
         </el-form-item>
         <el-form-item :label="$t('admin.inventory.sku.fieldMinStock')">
-          <el-input-number v-model="form.min_stock" :min="0" :max="999999" controls-position="right" />
+          <el-input-number v-model="form.min_stock" :min="0" :max="999999" :precision="0" :step-strictly="true" controls-position="right" />
         </el-form-item>
         <el-form-item :label="$t('admin.inventory.common.unitCost')">
           <el-input-number v-model="form.unit_cost" :min="0" :precision="2" controls-position="right" />
@@ -267,6 +267,8 @@ const productOptions = ref([])
 
 const dialogVisible = ref(false)
 const editingId = ref(null)
+// 打开编辑弹窗时的原始启用状态：用于判断「这次保存是否在停用」
+const editingActive = ref(true)
 const submitting = ref(false)
 const formRef = ref()
 const emptyForm = () => ({
@@ -283,7 +285,8 @@ const rules = computed(() => ({
 }))
 
 function isLow(row) {
-  return row.min_stock > 0 && row.quantity < row.min_stock
+  // 停用 SKU 不再标红：与后端 /skus/low-stock 和 /summary 的口径保持一致
+  return row.is_active !== false && row.min_stock > 0 && row.quantity < row.min_stock
 }
 
 function categoriesText(categories) {
@@ -427,6 +430,7 @@ function onPartVisibleChange(visible) {
 
 function resetForm() {
   editingId.value = null
+  editingActive.value = true
   Object.assign(form, emptyForm(), { warehouse_id: warehouses.value[0]?.id ?? null })
   formRef.value?.clearValidate()
 }
@@ -439,6 +443,7 @@ function openCreate() {
 function openEdit(row) {
   resetForm()
   editingId.value = row.id
+  editingActive.value = row.is_active
   Object.assign(form, {
     sku_no: row.sku_no,
     name: row.name,
@@ -482,6 +487,19 @@ async function onSubmit() {
   // el-dialog 懒渲染：未打开时 formRef 为 null，validate() 会静默 return
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
+  // 编辑弹窗里的停用开关与列表「停用」是同一件事（后端同样校验 SKU_IN_USE），
+  // 但这里原本没有二次确认，误关就再也建不了单（审查 m-09）。
+  if (editingId.value && editingActive.value && !form.is_active) {
+    try {
+      await ElMessageBox.confirm(
+        t('admin.inventory.sku.disableConfirm', { name: form.name }),
+        t('admin.inventory.sku.disableTitle'),
+        { type: 'warning' }
+      )
+    } catch {
+      return
+    }
+  }
   submitting.value = true
   try {
     const payload = payloadFromForm()
