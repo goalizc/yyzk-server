@@ -132,11 +132,14 @@ else
 fi
 
 # ---------- 3. 清理过期 ----------
-log "3/3 清理 $RETENTION_DAYS 天前的备份..."
-BEFORE=$(find "$BACKUP_DIR" -maxdepth 1 \( -name 'db_*.dump' -o -name 'uploads_*.tar.gz' \) | wc -l)
-find "$BACKUP_DIR" -maxdepth 1 -name 'db_*.dump' -mtime +"$RETENTION_DAYS" -delete
-find "$BACKUP_DIR" -maxdepth 1 -name 'uploads_*.tar.gz' -mtime +"$RETENTION_DAYS" -delete
-AFTER=$(find "$BACKUP_DIR" -maxdepth 1 \( -name 'db_*.dump' -o -name 'uploads_*.tar.gz' \) | wc -l)
+# 必须按栈前缀过滤：两栈共用 deploy/backups，`db_*.dump` 会同时匹配
+# db_fault_* 与 db_fault-test_*，任一栈跑一次保留期清理就会删掉另一栈的备份，
+# 回退链直接断掉。`db_fault_` 含下划线，天然不会误匹配 `db_fault-test_`。
+log "3/3 清理 $RETENTION_DAYS 天前的备份（仅 ${STACK_PREFIX} 栈）..."
+BEFORE=$(find "$BACKUP_DIR" -maxdepth 1 \( -name "db_${STACK_PREFIX}_*.dump" -o -name "uploads_${STACK_PREFIX}_*.tar.gz" \) | wc -l)
+find "$BACKUP_DIR" -maxdepth 1 -name "db_${STACK_PREFIX}_*.dump" -mtime +"$RETENTION_DAYS" -delete
+find "$BACKUP_DIR" -maxdepth 1 -name "uploads_${STACK_PREFIX}_*.tar.gz" -mtime +"$RETENTION_DAYS" -delete
+AFTER=$(find "$BACKUP_DIR" -maxdepth 1 \( -name "db_${STACK_PREFIX}_*.dump" -o -name "uploads_${STACK_PREFIX}_*.tar.gz" \) | wc -l)
 log "    清理 $((BEFORE - AFTER)) 个过期文件，现存 $AFTER 个"
 
 log "备份完成: $STAMP"

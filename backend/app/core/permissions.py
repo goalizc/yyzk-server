@@ -186,6 +186,18 @@ _DATA_SCOPE: dict[str, str] = {
     "auditor": ALL,
 }
 
+# 工单域单独一张表。两个仓管的 ALL 只针对库存，绝不能用来放宽工单可见范围：
+# 曾经把 `_DATA_SCOPE` 直接取并集，`agent + warehouse_clerk` 的工单范围
+# 会从「本产品线」抬成「全部产品线」——一线客服能看到别条线客户的工单。
+# 仓管角色没有工单权限，这里不出现在表里、按 LINES 兜底也不会放大任何东西。
+_TICKET_SCOPE: dict[str, str] = {
+    "super_admin": ALL,
+    "supervisor": ALL,
+    "product_planner": ALL,
+    "auditor": ALL,
+    "agent": LINES,
+}
+
 _DEPENDENCIES: dict[str, frozenset[str]] = {
     TICKET_WRITE: frozenset({TICKET_READ}),
     TICKET_ASSIGN: frozenset({TICKET_READ, TICKET_WRITE}),
@@ -242,14 +254,24 @@ def role_permissions(role: str) -> frozenset[str]:
 
 
 def role_scope(role: str) -> str:
+    """角色的库存域数据范围（库存域统一 ALL，见 _DATA_SCOPE 注释）。"""
     return _DATA_SCOPE.get(role, LINES)
 
 
+def role_ticket_scope(role: str) -> str:
+    """角色的工单域数据范围。仓管角色不参与工单域，按 LINES 兜底。"""
+    return _TICKET_SCOPE.get(role, LINES)
+
+
 def data_scope(user: User) -> str:
-    """多角色取最宽范围：任一角色为 ALL 即 ALL。"""
+    """工单可见范围（多角色取最宽）。
+
+    只统计参与工单域的角色。不要把 `role_scope`（库存域）混进来：
+    仓管的 ALL 会让客服的工单范围从本产品线扩到全部产品线。
+    """
     if not user.roles:
         return LINES
-    scopes = {role_scope(item.role) for item in user.roles}
+    scopes = {role_ticket_scope(item.role) for item in user.roles}
     return ALL if ALL in scopes else LINES
 
 

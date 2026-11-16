@@ -4,7 +4,7 @@
 // 单测里既慢又容易被网络层干扰。函数本身是纯的，规则错了这里就会红；
 // 接入点是否正确由 e2e/admin-entry.spec.js 端到端兜住。
 import { beforeEach, describe, expect, it } from 'vitest'
-import { idleRedirect, loggedInRedirect, firstAccessibleAdminPath } from './index'
+import { idleRedirect, loggedInRedirect, firstAccessibleAdminPath, adminFallback } from './index'
 import { setPermissions } from '../utils/permissions'
 
 const b64url = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url')
@@ -134,5 +134,25 @@ describe('firstAccessibleAdminPath', () => {
   it('无任何后台权限 → 安全网回登录页', () => {
     setPermissions([])
     expect(firstAccessibleAdminPath()).toBe('/admin/login')
+  })
+})
+
+describe('adminFallback', () => {
+  it('零权限账号：清掉登录态再回登录页，避免与登录页互踢成死循环', () => {
+    // 回归：/admin → /admin/login（无可见页）→ 登录页见 token 有效 → /admin
+    // 两边互踢，浏览器直接白屏。
+    setPermissions([])
+    loginWith(nowSeconds() + 3600)
+    const target = adminFallback()
+    expect(target.path).toBe('/admin/login')
+    expect(target.query.reason).toBe('noperm')
+    expect(localStorage.getItem('token')).toBeNull()
+  })
+
+  it('有权限时回第一个可见页，且不动登录态', () => {
+    setPermissions(['ticket:read', 'fault:read'])
+    loginWith(nowSeconds() + 3600)
+    expect(adminFallback()).toEqual({ path: '/admin/tickets' })
+    expect(localStorage.getItem('token')).not.toBeNull()
   })
 })

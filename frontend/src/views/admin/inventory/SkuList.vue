@@ -368,8 +368,11 @@ async function loadWarehouses() {
   try {
     const data = await inventoryWarehouses({ page: 1, page_size: 100 })
     warehouses.value = data.items || []
-  } catch {
+  } catch (e) {
+    // 静默清空会让「新建 SKU」弹窗里没有仓库可选，用户只能提交后才看到
+    // 「请选择仓库」，错误原因完全看不到
     warehouses.value = []
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.inventory.common.loadFailed' }))
   }
 }
 
@@ -378,8 +381,9 @@ async function loadCategoryOptions() {
   try {
     const data = await inventoryCategories({ page: 1, page_size: 100, is_active: true })
     categoryOptions.value = data.items || []
-  } catch {
+  } catch (e) {
     categoryOptions.value = []
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.inventory.common.loadFailed' }))
   }
 }
 

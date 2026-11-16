@@ -188,6 +188,23 @@ export function firstAccessibleAdminPath() {
   return '/admin/login'
 }
 
+/**
+ * 无权限 / 落地时的回退目标。
+ *
+ * 零权限账号（例如从旧备份恢复出来的「能登录但零权限」账号）一个可落地页
+ * 都没有，firstAccessibleAdminPath() 会返回 /admin/login；而登录页那一侧
+ * 见 token 有效又把人送回 /admin ——两边互踢就是无限重定向，浏览器白屏。
+ * 所以这种情况下必须先清掉本地登录态，登录页才不会再弹回来。
+ *
+ * 独立导出便于单测（见 router/guard.spec.js）。
+ */
+export function adminFallback() {
+  const target = firstAccessibleAdminPath()
+  if (target !== '/admin/login') return { path: target }
+  clearAuthLocal()
+  return { path: '/admin/login', query: { reason: 'noperm' } }
+}
+
 const router = createRouter({
   history: createWebHistory(),
   routes
@@ -253,7 +270,6 @@ router.beforeEach(async (to) => {
   // 放在 public 放行之前：登录页是 public，先放行就轮不到这条判断了
   const skipLogin = loggedInRedirect(to)
   if (skipLogin) return skipLogin
-
   // 客户侧与登录页公开
   if (to.meta.public) return true
   if (!localStorage.getItem('token')) {
@@ -271,20 +287,22 @@ router.beforeEach(async (to) => {
     }
   }
 
+  // 目标页无权限时回退到「当前角色第一个可见页面」。
+  // 零权限账号的死循环由 adminFallback() 内部处理（它会先清登录态）。
   // 根路径 /admin：按角色权限落地到第一个可见页面。
   // 不能写死 /admin/tickets——warehouse 等无售后权限角色会陷入
   // "重定向到自己"的死循环（登录后浏览器卡死）。
   if (to.path === '/admin') {
-    return { path: firstAccessibleAdminPath() }
+    return adminFallback()
   }
 
   // 目标页无权限：回退到当前角色第一个可见页面（同样是动态取的，
   // 保证回退目标自身一定有权限，不会二次触发 403 死循环）。
   if (to.meta.permission && !hasPermission(to.meta.permission)) {
-    return { path: firstAccessibleAdminPath() }
+    return adminFallback()
   }
   if (to.meta.requires && !to.meta.requires.every(hasPermission)) {
-    return { path: firstAccessibleAdminPath() }
+    return adminFallback()
   }
   return true
 })

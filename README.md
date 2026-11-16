@@ -10,7 +10,7 @@
 | 部分 | 状态 |
 |---|---|
 | 后端 | ✅ 完成：客户查询 / 工单 / 知识库 / 产品与零件 / 用户与授权 / 审计 / 统计 / 进销存，21 张业务表、75 个 API 操作、27 个权限码 |
-| 前端 | ✅ 完成：客户侧 4 页 + 后台 10 页，中英双语 |
+| 前端 | ✅ 完成：客户侧 4 页 + 后台 14 页，中英双语 |
 | 部署 | ✅ 一键脚本 + Compose（backend / frontend / nginx / db），单机 4C8G 已跑通 |
 | 文档 | ✅ 需求、设计、测试、运维、评估审查齐备（索引见 `docs/README.md`） |
 | 验收 | ✅ 运维 / 安全 / 性能 / 移动端四条路线已过，真机 iOS Safari 待补 |
@@ -21,16 +21,17 @@
 
 | 项 | 命令 | 当前 |
 |---|---|---|
-| 后端测试 | `.venv/bin/python -m pytest backend/tests -q` | 298 项全绿 |
-| 前端单测 | `cd frontend && npm run test` | 239 项 / 30 文件，235 passed |
+| 后端测试 | `.venv/bin/python -m pytest backend/tests -q` | 391 passed / 2 skipped |
+| 前端单测 | `cd frontend && npm run test` | 285 passed / 32 文件 |
 | 前端 E2E | `cd frontend && npm run e2e` | 12 条冒烟全过 |
 | 前端 lint | `cd frontend && npm run lint` | 无告警 |
 | 国际化闸门 | `python scripts/dev/check_i18n.py` | 无硬编码中文 |
+| Schema 闸门 | `node scripts/dev/verify_schema.mjs` | 12/12（含表集合、7 角色双向断言） |
+| 文档链接 | `python scripts/dev/check_links.py` | 639 引用 0 失败 |
 
-> **已知基线失败**：`frontend/src/views/admin/users/UserList.spec.js` 有 4 条「行点击」
-> 用例超时（happy-dom 下 `nextSibling` 为空），并伴随 27 条 unhandled error。
-> `git stash` 回退到引入该文件之前的提交同样失败，属环境/框架层面的既有问题，
-> 不影响页面功能。动该文件前先修这个基线，否则分不清是不是自己引入的。
+> 上面这几个数字会过期，改测试后请顺手更新；命令本身才是基线。
+> `pytest` 的汇总行被 `pytest.ini` 的 `addopts` 吃掉时，加 `-o addopts=""` 才看得到
+> 「N passed」——`-q` 的进度点看着全绿也可能藏着 skip。
 
 E2E 依赖已启动的全栈（`cd deploy && ./deploy.sh`），跑的是真实浏览器 + 真实后端。
 冒烟用例里 `warehouse-login.spec.js` 需要一个「纯仓管」账号，首次跑之前执行一次
@@ -62,7 +63,7 @@ E2E 依赖已启动的全栈（`cd deploy && ./deploy.sh`），跑的是真实�
 ├── frontend/                     # Vue 3 + Vite + Element Plus
 │   ├── src/
 │   │   ├── views/public/         # 客户侧 4 页
-│   │   ├── views/admin/          # 后台 10 页（按模块分目录）
+│   │   ├── views/admin/          # 后台 14 页（按模块分目录）
 │   │   ├── components/           # DetailPanel / LangSwitch / FaultSolutionView …
 │   │   ├── router/ locales/ utils/ api/
 │   │   └── …                     # 单测与被测文件同目录（*.spec.js）
@@ -70,7 +71,7 @@ E2E 依赖已启动的全栈（`cd deploy && ./deploy.sh`），跑的是真实�
 ├── deploy/                       # 一键部署
 │   ├── docker-compose.yml        # 4 服务 + 一次性 init
 │   ├── schema.sql                # 21 张业务表（+ schema_migrations）
-│   ├── migrations/               # 增量 SQL（001~004，含审计防篡改触发器）
+│   ├── migrations/               # 增量 SQL（001~009，含审计防篡改触发器）
 │   ├── nginx*.conf               # 入口：gzip / 安全头 / 限流 / 错误 JSON 化
 │   ├── scripts/                  # init_admin / prepare-storage / cleanup-* / install-cron
 │   └── data/                     # pg 与 uploads 挂载（注意 uploads 属主须为 10001）

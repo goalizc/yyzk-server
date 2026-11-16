@@ -579,13 +579,15 @@ L1 的定位是"只记数量、不做金额账"，但定案稿要求为未来成
 | `frontend/src/views/admin/inventory/SkuList.vue` / `faults/FaultEdit.vue` | 产品/零件缺档时提示联系产品/计划岗 |
 | `backend/app/services/audit.py` | `_RULES` 补 11 行、`_NAME_FIELDS` 加 3 项（见 §9） |
 | `backend/app/api/admin_inventory*.py` | 3 个 router，共 24 个端点（§4） |
-| `backend/app/models/__init__.py` | 注册 9 个新模型，注释「11 张表」→「20 张表」 |
+| `backend/app/models/__init__.py` | 注册 9 个新模型，注释「11 张表」→「21 张业务表」 |
 | `backend/app/schemas/user.py` | `ROLE_VALUES` whitelist 为 7 个角色 |
 | `backend/tests/test_permissions.py` / `frontend/src/utils/permissionLabels.spec.js` / `frontend/src/views/admin/users/UserList.spec.js` | 基线断言同步：角色闭包循环加仓管/产品计划角色；grantable 等式排除 6 码；权限码清单 16→27；角色下拉 4→7 |
 | `frontend/src/views/admin/users/UserList.vue` | 授权下拉改由 `GET /admin/permissions/grantable` 提供，与后端 `grantable_permissions()` 单一来源 |
 | `backend/tests/test_inventory_permissions.py` | **新建**（任务卡 #2 验收）：11 码登记、7 角色矩阵、依赖闭包封闭、仓管数据范围 ALL、grantable 6 类排除，纯函数无需 db |
 
-> 新增语言包必须**两个 `index.js` 都注册**，否则 `check_i18n.py` 键集合校验会红。
+> 新增语言包必须**两个 `index.js` 都注册**，否则界面文案取不到 key。
+> 注意 `check_i18n.py` 只查硬编码中文，**不做键集合校验**——双语对称由
+> `frontend/src/locales/locale.spec.js` 双向断言（zh 有 en 无 / en 有 zh 无都会红）。
 
 ---
 
@@ -696,9 +698,15 @@ L1 的定位是"只记数量、不做金额账"，但定案稿要求为未来成
 - 角色 CHECK 的变更一律包在 `DO $$ ... IF EXISTS (SELECT 1 FROM information_schema.columns WHERE ... column_name='role') ... END $$` 里：009 删列后重放 005/006/008 必须整段跳过，否则报 `column "role" does not exist`。约束名沿用 001 迁移的先例，固定为 `users_role_check`。
 - 验证：`docker compose run --rm migrate` **连跑两次均成功且第二次显示"没有待执行的迁移"**。
 
-### 10.3 镜像（方案 B）
+### 10.3 镜像（方案 B）— 未落地，待补
 
-`docker-compose.prod.yml` 已把 `migrate` / `migrations` 烤进 backend 镜像、`schema.sql` 烤进 db 镜像，**compose 文件不用改**；文件更新后走 `bash deploy/build-and-push.sh` 重新构建推送，`bash deploy/deploy-remote.sh user@host` 部署。源码不出构建机（用户硬约束）。
+**当前仓库里没有镜像化产物**：`deploy/` 下只有 `docker-compose.yml`、`docker-compose.test.yml`、`deploy.sh`、`deploy-test.sh`。生产发布走 `deploy.sh` 在**服务器上就地 `docker compose build`**（build context 指向仓库根），也就是源码需要在构建机上。
+
+这与「部署单元只能是构建物、源码不出构建机」的硬约束冲突，属于**已知缺口**，不是已完成项：
+
+- 待补：`docker-compose.prod.yml`（全 `image:`）、`build-and-push.sh`、`deploy-remote.sh`；
+- 待补：把 `migrate` / `migrations` 烤进 backend 镜像、`schema.sql` 烤进 db 镜像；
+- 在那之前，生产发布仍然依赖服务器上有源码，不能对外宣称「源码不出构建机」。
 
 ---
 

@@ -7,6 +7,13 @@
 #   ./restore.sh --db <文件> --uploads backups/uploads_20261021_030000.tar.gz
 #   ./restore.sh --db <文件> --dry-run      只做校验，不动数据
 #   ./restore.sh --db <文件> --yes          非交互执行（cron/CI）时跳过确认
+#   ./restore.sh --db <文件> --skip-migrate 保留备份里的 schema，不跑迁移
+#                                           （发布事故回滚用，见下）
+#
+# --skip-migrate 的用途：deploy.sh 迁移失败时如果正是「新迁移本身有问题」
+# （例如 009 删 users.role 导致旧镜像 500），恢复旧备份后**不能再跑同一批
+# 迁移**，否则会再次把 schema 推到坏状态。此时用 --skip-migrate 保留备份
+# 自带的旧 schema，旧镜像才能正常启动。
 #
 # 退出码：0 成功 | 1 恢复失败 | 2 参数/环境错误
 #
@@ -30,6 +37,7 @@ DB_FILE=""
 UPLOADS_FILE=""
 DRY_RUN=0
 ASSUME_YES=0
+SKIP_MIGRATE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -37,7 +45,8 @@ while [[ $# -gt 0 ]]; do
     --uploads) UPLOADS_FILE="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --yes) ASSUME_YES=1; shift ;;
-    -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --skip-migrate) SKIP_MIGRATE=1; shift ;;
+    -h|--help) sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "[ERROR] 未知参数: $1" >&2; exit 2 ;;
   esac
 done
@@ -171,8 +180,24 @@ NUM_FAULTS=$(echo "$COUNTS" | cut -d'|' -f4)
 log "    users=$NUM_USERS products=$NUM_PRODUCTS faults=$NUM_FAULTS 全部关键表非空"
 
 # ---------- 迁移：备份可能来自旧版本 ----------
-log "执行数据库迁移（备份可能来自旧版本）"
-compose run --rm -T migrate
+if [[ "$SKIP_MIGRATE" == "1" ]]; then
+  log "跳过数据库迁移（--skip-migrate）：保留备份里的 schema 原样"
+else
+  log "执行数据库迁移（备份可能来自旧版本）"
+  set +e
+  compose run --rm -T migrate
+  MIG_RC=$?
+  set -e
+  if [[ "$MIG_RC" != "0" ]]; then
+    compose start backend >/dev/null 2>&1 || true
+    die "迁移失败（详见上方输出）。数据已恢复，但 schema 可能停在中间态：
+
+  若这轮迁移本身就是事故原因（例如删列后旧镜像读不了），
+  请加 --skip-migrate 重跑本脚本，保留备份自带的旧 schema：
+    ./scripts/restore.sh --db $DB_FILE --skip-migrate
+  否则先排查迁移失败原因再重跑。不要反复直接重试。"
+  fi
+fi
 
 # ---------- 迁移后：角色与库存表完整性 ----------
 # 角色只存在 user_roles（009 起）。备份若缺角色行，恢复结果是「能登录但零权限」：

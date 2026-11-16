@@ -345,6 +345,11 @@ ORDER BY f.view_count DESC;
 
 INSERT INTO schema_migrations (version) VALUES ('001_user_permissions');
 INSERT INTO schema_migrations (version) VALUES ('002_token_version');
+-- 003/004 的内容（audit_logs 表、防篡改触发器）本脚本已一并建好，
+-- 必须登记：否则全新库首次 migrate 会再跑一遍 003/004。两者本身幂等，
+-- 不会失败，但「全新库一次到最新」与版本表就自相矛盾了。
+INSERT INTO schema_migrations (version) VALUES ('003_audit_logs');
+INSERT INTO schema_migrations (version) VALUES ('004_audit_immutable');
 
 -- ------------------------------------------------------------
 -- 进销存模块（v1.3，对应 deploy/migrations/005_inventory.sql）

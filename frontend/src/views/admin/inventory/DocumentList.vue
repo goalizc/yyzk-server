@@ -230,12 +230,15 @@ async function load() {
 
 async function loadRefs() {
   try {
+    // 不要再给单个请求挂 .catch(() => [])：那会让分类/产品加载失败变成
+    // 「下拉是空的」——用户分不清没数据还是接口挂了，错误也被外层 catch 吞掉。
+    // 统一让失败冒到外层，由 errorMessage() 出口统一提示。
     const [wh, sku, cat, prod] = await Promise.all([
       inventoryWarehouses({ page: 1, page_size: 100 }),
       inventorySkus({ page: 1, page_size: 100, is_active: true }),
-      inventoryCategories({ page: 1, page_size: 100, is_active: true }).catch(() => ({ items: [] })),
+      inventoryCategories({ page: 1, page_size: 100, is_active: true }),
       // 产品引用走库存域端点：仓管没有 product:read，用 /admin/products 会被 403 成空列表
-      inventoryRefProducts().catch(() => [])
+      inventoryRefProducts()
     ])
     warehouses.value = wh.items || []
     skus.value = sku.items || []

@@ -158,8 +158,9 @@ class SkuUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     spec: str | None = Field(default=None, max_length=100)
     unit: str | None = Field(default=None, max_length=20)
-    category_ids: list[int] | None = None
-    product_ids: list[int] | None = None
+    # 与 SkuCreate 同口径：PUT 也能整表替换关联，不设上限同样能塞几万条
+    category_ids: list[int] | None = Field(default=None, max_length=100)
+    product_ids: list[int] | None = Field(default=None, max_length=100)
     part_id: int | None = None
     min_stock: int | None = Field(default=None, ge=0)
     unit_cost: UnitCost | None = None

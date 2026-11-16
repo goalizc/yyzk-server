@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from app import models  # noqa: F401  确保 20 张业务表的模型注册到 Base.metadata
+from app import models  # noqa: F401  确保 21 张业务表的模型注册到 Base.metadata
 from app.api import (
     admin,
     admin_audit,

@@ -67,8 +67,11 @@ def main() -> int:
                 is_md = token.endswith(".md")
                 has_dir = "/" in token
 
-                # 裸文件名且非 .md（如 `schema.sql`、`health.py`）多为行文简写，不校验
-                if not is_md and not has_dir:
+                # 只跳过「没有扩展名」的裸词（多为行文简写，如 `init`、`migrate`）。
+                # 以前是「裸文件名且非 .md」整类跳过，于是文档里引用
+                # build-and-push.sh / docker-compose.prod.yml 这种根本不存在的
+                # 文件也能过闸门——带扩展名的一律要在仓库里查得到。
+                if not has_dir and not is_md and "." not in token:
                     continue
 
                 if token in allow:

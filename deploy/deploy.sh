@@ -303,7 +303,20 @@ else
   # 迁移一提交，旧进程的每个请求都会 UndefinedColumn（登录/鉴权全 500）。
   # 所以迁移前必须先停旧 backend，迁移完再由下面的 up -d 起新镜像。
   echo "  停止旧 backend（本次迁移会删列，旧镜像读不了新表结构）..."
-  docker compose stop backend >/dev/null 2>&1 || true
+  # 不能用 `|| true` 吞掉失败：停不掉就等于旧进程还在跑，迁移提交后
+  # 每个请求都会 UndefinedColumn，C-01 那个窗口会原样重现。
+  if ! docker compose stop backend >/tmp/deploy_stop.log 2>&1; then
+    tail -10 /tmp/deploy_stop.log >&2
+    rm -f /tmp/deploy_stop.log
+    die "停止旧 backend 失败，已中止迁移（未改动数据库）。
+  手工处理后重跑：docker compose stop backend"
+  fi
+  # 二次确认真的停了：compose 返回 0 但容器仍在运行的情况见过（健康检查竞态）
+  if docker compose ps --status running --format '{{.Name}}' 2>/dev/null | grep -qx "${STACK_PREFIX}-backend"; then
+    die "旧 backend 仍在运行（${STACK_PREFIX}-backend），已中止迁移。
+  迁移会删 users.role，旧进程在线必然 500。先停掉它再重跑。"
+  fi
+  rm -f /tmp/deploy_stop.log
 
   set +e
   docker compose run --rm -T migrate >/tmp/deploy_migrate.log 2>&1
@@ -319,7 +332,9 @@ else
     die "数据库迁移失败，详见上面的输出。
 
   迁移可能已部分提交，旧镜像不一定还能用：
-    - 若服务已 500：按 ./scripts/restore.sh --db backups/db_${STACK_PREFIX}_<最近时间>.dump 恢复
+    - 若服务已 500：按 ./scripts/restore.sh --db backups/db_${STACK_PREFIX}_<最近时间>.dump --skip-migrate 恢复
+      （--skip-migrate 必须加：否则恢复完又会重跑刚失败的那批迁移，
+        等于把 schema 再推回坏状态，backend 起不来）
     - 恢复后再排查迁移失败原因，不要反复重跑"
   fi
   rm -f /tmp/deploy_migrate.log

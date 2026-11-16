@@ -41,6 +41,12 @@ _REVERSE_TYPE = {
     "adjust_out": "adjust_in",
 }
 
+# 反向单的备注前缀，也是「这张单是冲正」的唯一标识。
+# 表里没有 reversal_of_id 列（历史技术债），统计口径只能靠前缀排除反向单：
+# 否则冲正一笔入库会因为反向单 doc_type=outbound 而被算成「本月出库 +1」。
+# 改这里必须同步 admin_inventory_skus.py 的汇总过滤。
+REVERSAL_REMARK_PREFIX = "冲正 "
+
 
 @dataclass(frozen=True)
 class ItemInput:
@@ -245,7 +251,7 @@ def reverse_document(
             )
             for it in doc.items
         ),
-        remark=f"冲正 {doc.doc_no}" + (f"：{remark}" if remark else ""),
+        remark=f"{REVERSAL_REMARK_PREFIX}{doc.doc_no}" + (f"：{remark}" if remark else ""),
     )
     new_doc = create_document(db, payload, user)
     doc.status = "void"

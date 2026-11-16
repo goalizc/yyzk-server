@@ -45,7 +45,11 @@ check('22 张表齐备（21 业务 + schema_migrations）', async (db) => {
   ]
   const missing = want.filter((t) => !got.includes(t))
   if (missing.length) throw new Error(`缺少表：${missing.join(',')}（实际：${got.join(',')}）`)
-  return ok('22 张表齐备', `${got.length} 张`)
+  // 必须双向：只查 missing 的话，schema.sql 多建一张表仍会 PASS，
+  // 而「表集合 == 文档声明的 22 张」才是这道闸门的意义。
+  const extra = got.filter((t) => !want.includes(t))
+  if (extra.length) throw new Error(`多出未登记的表：${extra.join(',')}（清单里没有，请同步文档与清单）`)
+  return ok('22 张表齐备', `${want.length} 张，无多余表`)
 })
 
 check('角色只存在 user_roles，users.role 已删除', async (db) => {
@@ -59,10 +63,20 @@ check('角色只存在 user_roles，users.role 已删除', async (db) => {
       WHERE conrelid='user_roles'::regclass AND contype='c'`
   )
   const def = defs.map((r) => r.def).join(' ')
-  const missing = ['super_admin', 'product_planner', 'warehouse_clerk', 'warehouse_manager']
-    .filter((r) => !def.includes(r))
-  if (missing.length) throw new Error(`user_roles CHECK 缺角色：${missing.join(',')}`)
-  return ok('角色只存在 user_roles，users.role 已删除', '7 角色')
+  // 集合必须恰好等于 7 个角色：只验「这 4 个名字存在」时，
+  // CHECK 漏掉 supervisor/auditor/agent 也照样 PASS。
+  const wantRoles = [
+    'super_admin', 'supervisor', 'product_planner', 'agent',
+    'auditor', 'warehouse_clerk', 'warehouse_manager'
+  ]
+  const gotRoles = new Set(
+    [...def.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).filter((v) => v !== 'text')
+  )
+  const roleMissing = wantRoles.filter((r) => !gotRoles.has(r))
+  const roleExtra = [...gotRoles].filter((r) => !wantRoles.includes(r))
+  if (roleMissing.length) throw new Error(`user_roles CHECK 缺角色：${roleMissing.join(',')}`)
+  if (roleExtra.length) throw new Error(`user_roles CHECK 多出未登记角色：${roleExtra.join(',')}`)
+  return ok('角色只存在 user_roles，users.role 已删除', `恰好 ${wantRoles.length} 角色`)
 })
 
 check('部分索引与表达式索引已创建', async (db) => {

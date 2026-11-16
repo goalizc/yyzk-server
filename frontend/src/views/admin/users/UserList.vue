@@ -569,9 +569,10 @@ async function loadGrants() {
 async function loadGrantablePermissions() {
   try {
     grantableOptions.value = await adminListGrantablePermissions()
-  } catch {
-    // 拉不到清单时授权下拉为空，但不会误发不在白名单里的权限
+  } catch (e) {
+    // 静默清空会让管理员只看到「下拉是空的」：既发不出授权，也不知道是接口挂了
     grantableOptions.value = []
+    ElMessage.error(errorMessage(e, { fallbackKey: 'admin.user.grant.loadFailed' }))
   }
 }
 

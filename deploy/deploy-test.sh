@@ -92,6 +92,18 @@ if [[ -f .env ]]; then
   fi
 fi
 
+# 端口白名单：80/443 是生产入口（HTTPS 启用后 80 还要承载跳转与 certbot 续期）。
+# 只校验「不等于生产 HTTP_PORT」挡不住把测试栈放到 443——那会占掉生产 HTTPS
+# 入口，等生产启用 HTTPS 时才发现端口被抢。
+if [[ "$HTTP_PORT" == "80" || "$HTTP_PORT" == "443" ]]; then
+  echo "[deploy-test] HTTP_PORT=$HTTP_PORT 是生产入口端口，测试栈请用 8080 等高位端口" >&2
+  exit 2
+fi
+if ! [[ "$HTTP_PORT" =~ ^[0-9]+$ ]] || (( HTTP_PORT < 1024 || HTTP_PORT > 65535 )); then
+  echo "[deploy-test] HTTP_PORT=$HTTP_PORT 不合法：必须是 1024-65535 的整数（低端口需 root）" >&2
+  exit 2
+fi
+
 # 显式导出：即使 .env.test 漏键、或调用方 shell 里已导出同名变量，Compose 也必须
 # 使用脚本校验过的值。否则会出现「脚本校验的是文件、compose 实际用的是环境变量」
 # 或「重复键取第一行、compose 取最后一行」的分离（审查 M-5）。

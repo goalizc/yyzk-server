@@ -141,6 +141,71 @@
 </section>
 
 <section>
+  <h2>第二轮：干净上下文复审（2026-11-16）</h2>
+  <p class="lead">修复提交 <code>231d3ed</code> 之后，用 <b>4 个不带先前结论的代理</b>按域重审 <code>61d81df..HEAD</code>（此时 9 个提交）。每个代理的作业顺序都是「先读需求文档 → 自己建问题清单 → 再核对本报告条目」，不允许预设上一轮结论。</p>
+  <div class="stats">
+    <div class="stat o"><div class="n">2/2</div><div class="l">Critical 真实闭合</div></div>
+    <div class="stat m"><div class="n">9/10</div><div class="l">Major 真实闭合</div></div>
+    <div class="stat n"><div class="n">11/13</div><div class="l">Minor 真实闭合</div></div>
+    <div class="stat c"><div class="n">19</div><div class="l">复审新发现（已修）</div></div>
+  </div>
+  <div class="callout warn"><b>「表面闭合」的两条</b><br>
+    ① <code>M-09</code>：脚本建出来了，但 <code>init_admin.py user add</code> 的账号是<b>位置参数</b>，脚本写的是 <code>--username</code>，实测 <code>argparse</code> 直接 exit 2 —— E2E 前置必红。已修，并在测试栈实跑通过。<br>
+    ② <code>m-11</code>：<code>AdjustmentList</code> 补了错误出口，但 <code>DocumentList</code> 仍给分类/产品请求挂了 <code>.catch(() =&gt; [])</code>，失败照样静默成空下拉。已修。</div>
+
+  <h3>复审新发现（本轮已全部修复）</h3>
+  <table>
+    <thead><tr><th style="width:6%">编号</th><th style="width:8%">级别</th><th style="width:30%">问题</th><th>修复与证据</th></tr></thead>
+    <tbody>
+      <tr><td><code>R-01</code></td><td>Major</td><td><code>ensure-e2e-user.sh</code> 参数写错，且默认目标是生产栈 + 弱口令</td><td>改位置参数；目标是生产项目时<b>直接拒绝</b>（除非 <code>STACK_ASSUME_YES=1</code> 且显式给 <code>E2E_WAREHOUSE_PASS</code>）。实测：<code>STACK_ENV_FILE=.env.test</code> 跑通并识别「账号已存在」；不带参数跑生产栈 <code>exit 2</code>，未触达任何 docker 命令。</td></tr>
+      <tr><td><code>R-02</code></td><td>Major</td><td><code>backup.sh</code> 保留期清理不按栈过滤，会删掉另一栈的备份</td><td><code>db_*.dump</code> 同时匹配 <code>db_fault_*</code> 与 <code>db_fault-test_*</code>。改为 <code>db_${STACK_PREFIX}_*</code>（<code>db_fault_</code> 带下划线，天然不误匹配 <code>db_fault-test_</code>），日志也标明「仅 N 栈」。</td></tr>
+      <tr><td><code>R-03</code></td><td>Major</td><td><code>_stack.sh</code> 项目名推导只看 env 文件名，测试前缀可 fail-open 到生产项目</td><td>把 <code>.env.test</code> 复制成 <code>.env</code> 时文件名骗过判断，project 留空 → compose 落到 <code>deploy</code>，清理/HTTPS 却按 <code>fault-test-*</code> 找容器。改为「project 空 + 前缀非 fault 就推导」。6 个场景实测，含 3 条「不回退」用例。</td></tr>
+      <tr><td><code>R-04</code></td><td>Major</td><td>测试栈的数据目录可以指向生产 <code>deploy/data</code></td><td>新增 realpath 归一化后的比对：测试前缀 + 解析结果等于生产数据目录 → <code>exit 2</code> 并提示改 <code>DATA_DIR=./data-test</code>。缺省 <code>./data</code> 也会被拦。</td></tr>
+      <tr><td><code>R-05</code></td><td>Major</td><td><code>restore.sh</code> 恢复后强制重跑迁移，deploy.sh 宣称的回滚路径其实是死路</td><td>新增 <code>--skip-migrate</code>：发布事故回滚时保留备份自带的旧 schema；迁移失败不再被 <code>set -e</code> 静默带走，先 <code>start backend</code> 再给出可执行指令。deploy.sh 的失败提示同步改成带 <code>--skip-migrate</code> 的命令。</td></tr>
+      <tr><td><code>R-06</code></td><td>Major</td><td><code>deploy.sh</code> 用 <code>|| true</code> 吞掉「停旧 backend」的失败</td><td>停不掉仍继续迁移 = C-01 窗口原样重现。改为失败即中止（未动数据库），并二次确认 <code>fault-backend</code> 确实不在运行。</td></tr>
+      <tr><td><code>R-07</code></td><td>Major</td><td>多角色数据范围跨域取并集，工单可见范围被库存域抬成全量</td><td><code>agent + warehouse_clerk</code> 原本得到 <code>ALL</code>，能看到全部产品线的工单。拆成 <code>_DATA_SCOPE</code>（库存域）与 <code>_TICKET_SCOPE</code>（工单域），<code>data_scope()</code> 只统计参与工单域的角色；仓管角色不出现在表里、按 <code>LINES</code> 兜底。测试从「断言该 bug」改为断言 <code>LINES</code>，并补纯仓管用例。</td></tr>
+      <tr><td><code>R-08</code></td><td>Major</td><td>文档声称的镜像化发布（<code>docker-compose.prod.yml</code> 等）在仓库里不存在</td><td>三个文件全仓 glob 无结果、git 历史也没有。PRD §10.3 从「已完成」改为「<b>未落地，待补</b>」，并列明缺口。这条不动代码——它是对「源码不出构建机」硬约束的<b>未完成项</b>，不能靠改文档消掉。</td></tr>
+
+      <tr><td><code>R-09</code></td><td>Minor</td><td><code>SkuUpdate</code> 的 <code>category_ids</code> / <code>product_ids</code> 无上限</td><td>PUT 能整表替换关联，同样能塞几万条。补 <code>max_length=100</code>，与 <code>SkuCreate</code> 同口径。</td></tr>
+      <tr><td><code>R-10</code></td><td>Minor</td><td>冲正的反向单被算进「本月出库 / 本月入库」</td><td>冲掉一笔入库会生成 <code>doc_type=outbound</code> 的反向单，卡片上凭空多出「本月出库 +1」。表里没有 <code>reversal_of_id</code>，只能按备注前缀排除：抽 <code>REVERSAL_REMARK_PREFIX</code> 常量共用，汇总查询同时处理 <code>remark IS NULL</code>。</td></tr>
+      <tr><td><code>R-11</code></td><td>Minor</td><td>零权限账号在 <code>/admin</code> ↔ <code>/admin/login</code> 之间无限重定向</td><td>旧备份恢复出的「能登录但零权限」账号会白屏。新增导出函数 <code>adminFallback()</code>：无可见页时先 <code>clearAuthLocal()</code> 再回登录页（带 <code>?reason=noperm</code>），两处回退统一改用它，补 2 条单测。</td></tr>
+      <tr><td><code>R-12</code></td><td>Minor</td><td><code>DocumentList</code> 的引用加载仍静默吞错</td><td>去掉单个请求上的 <code>.catch(() =&gt; [])</code>，失败统一冒到外层走 <code>errorMessage()</code>。</td></tr>
+      <tr><td><code>R-13</code></td><td>Minor</td><td><code>UserList</code> 授权清单、<code>SkuList</code> 仓库/分类下拉失败后静默清空</td><td>两处 <code>catch{}</code> 补 <code>ElMessage.error(errorMessage(...))</code>：授权下拉空着不知道原因、新建 SKU 无仓库可选都要能看出是接口问题。</td></tr>
+      <tr><td><code>R-14</code></td><td>Minor</td><td>详情弹窗未关就叠一层冲正弹窗</td><td>冲正是两个居中遮罩叠加，且成功后详情已失效。改为先关详情再开冲正，与编辑路径一致。</td></tr>
+      <tr><td><code>R-15</code></td><td>Minor</td><td><code>verify_schema.mjs</code> 只查缺表、角色只验 4 个名字</td><td>表集合改双向（多一张也 FAIL）；角色从 <code>contains</code> 改为集合相等（恰好 7 个，多出未登记角色也 FAIL）。仍 12/12。</td></tr>
+      <tr><td><code>R-16</code></td><td>Minor</td><td><code>check_links.py</code> 整类跳过「裸文件名」，文档引用不存在的脚本照样 0 失败</td><td>改成只跳过「没有扩展名」的裸词；带扩展名的一律要在仓库里查得到。覆盖面 632 → 639 引用，立刻抓出 <code>docker-compose.prod.yml</code> 这条真断链。只把「本来就不属于仓库」的（<code>postgresql.conf</code>、用户机器上的 <code>backup-other.sh</code>）与三个待补产物加进白名单。</td></tr>
+      <tr><td><code>R-17</code></td><td>Minor</td><td><code>schema.sql</code> 漏登记 003 / 004</td><td>全新库会把 003/004 再跑一遍（幂等所以不报错，但「一次到最新」与版本表矛盾）。补两条 <code>INSERT</code>。</td></tr>
+      <tr><td><code>R-18</code></td><td>Minor</td><td><code>deploy-test.sh</code> 无端口白名单</td><td>只校验「不等于生产 HTTP_PORT」挡不住把测试栈放到 443 抢生产 HTTPS 入口。补：80/443 拒绝 + 必须 1024-65535。</td></tr>
+      <tr><td><code>R-19</code></td><td>Minor</td><td><code>prepare-storage.sh</code> 只读进程环境的 <code>DATA_DIR</code></td><td>新 shell 里没有该变量 → 测试栈按 <code>./data</code> 把属主改到生产目录。改为走 <code>_stack.sh</code> 取目标栈的 <code>DATA_PATH</code>；调用方显式传入时仍优先。两栈实跑确认解析到 <code>data</code> / <code>data-test</code>。</td></tr>
+    </tbody>
+  </table>
+
+  <h3>文档硬数字（同一类问题的余量）</h3>
+  <p class="lead">上一轮只改了被点名的数字，相邻的旧数字没跟着改。复审逐条对代码取值后修正：</p>
+  <table>
+    <thead><tr><th style="width:34%">位置</th><th style="width:26%">文档原值</th><th>代码真值</th></tr></thead>
+    <tbody>
+      <tr><td><code>README.md</code> 当前状态 / 目录树</td><td>后台 10 页</td><td><b>14</b> 项 <code>NAV_ITEMS</code></td></tr>
+      <tr><td><code>README.md</code> 目录树</td><td>migrations 001~004</td><td><b>001~009</b></td></tr>
+      <tr><td><code>README.md</code> 质量基线</td><td>后端 298 / 前端 239 项 30 文件 / 235 passed</td><td><b>391 passed·2 skipped / 285 passed·32 文件</b>；并删掉已不成立的「UserList 4 条基线失败」说明</td></tr>
+      <tr><td><code>进销存模块PRD…md</code> 文件清单</td><td>注释「11 张表」→「20 张表」</td><td><b>21 张业务表</b></td></tr>
+      <tr><td><code>进销存模块PRD…md</code> 语言包说明</td><td>「<code>check_i18n.py</code> 键集合校验会红」</td><td>该脚本只查硬编码中文；双语对称由 <code>locale.spec.js</code> 双向断言</td></tr>
+      <tr><td><code>backend/app/main.py</code> 导入注释</td><td>确保 20 张业务表</td><td><b>21</b></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout"><b>已确认但本轮未修（留档，附原因）</b><br>
+    ① <code>enable-https.sh --cert-dir</code> 自定义目录不会写进 compose 挂载（仍挂 <code>./certs</code>），<code>nginx -t</code> 能过但容器起不来 —— 需要改成 compose 变量或强制证书目录，属独立改动。<br>
+    ② <code>posting.create_document</code> 的幂等是「先 count 再跳过」，没先锁单据行；当前 L1 只在创建时调用一次，等审批/确认端点落地前必须补。<br>
+    ③ <code>SkuList</code> 分类下拉只取启用分类，编辑含停用分类的 SKU 会回显数字 id（要改引用端点）。<br>
+    ④ <code>MovementTable</code> 的 SKU 筛选固定 <code>page_size=100</code> 且只取启用 SKU，第 101 条以后查不到。<br>
+    ⑤ <code>Layout.vue</code> 已改二级分组菜单，与 <code>页面清单与交互说明</code> 里「一级菜单、本期不做二级」冲突 —— 需求版本问题，需产品确认。<br>
+    ⑥ <code>_seed_stack.py</code> 只校验端口不校验 host；<code>restore.sh</code> 库存表缺失只 WARN 不退出。</div>
+
+  <div class="callout good"><b>本轮回归</b>：<code>pytest backend/tests -o addopts=""</code> → <b>391 passed / 2 skipped</b>；<code>vitest</code> → <b>285 passed / 32 文件</b>（新增 2 条 <code>adminFallback</code> 用例）；<code>npm run lint</code> 退出码 0；<code>check_i18n.py</code> 63 文件 0 硬编码；<code>check_links.py</code> <b>639 引用 0 失败</b>（覆盖面已扩大）；<code>check_duplicate_tests.py</code> 31 文件 0 重名；<code>verify_schema.mjs</code> <b>12/12</b>（含新的双向断言）；<code>bash -n</code> 6 个改动脚本通过；栈守卫 6 场景、端口白名单 3 场景、<code>ensure-e2e-user.sh</code> 两条路径（测试栈实跑 / 生产拒绝）均实测。</div>
+</section>
+
+<section>
   <h2>零、这份报告与 21 号的关系</h2>
   <p class="lead">21 号报告只覆盖双栈部署的 4 个提交（<code>159504a</code> / <code>08178a4</code> / <code>9dff5b8</code> / <code>7dbf019</code>），并且已经过两轮修复。本次按「未 push 的全部内容」重审，把之前漏掉的 4 个提交一并纳入：<code>4473b43</code> 进销存、<code>cee256c</code> 计划书、<code>fb254a1</code> 一人多岗、<code>7ecc86a</code> 菜单改名。</p>
   <p class="lead">双栈部分的结论沿用 21 号（含 4 项已知留档），本报告只补充它与其他改动的接缝。</p>

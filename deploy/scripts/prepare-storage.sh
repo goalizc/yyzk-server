@@ -21,13 +21,23 @@
 set -euo pipefail
 
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# 与 compose 的 DATA_DIR 保持一致；支持相对与绝对路径
-DATA_DIR="${DATA_DIR:-data}"
-case "$DATA_DIR" in
-  /*)   UPLOAD_DIR="$DATA_DIR/uploads" ;;
-  ./*)  UPLOAD_DIR="$DEPLOY_DIR/${DATA_DIR#./}/uploads" ;;
-  *)    UPLOAD_DIR="$DEPLOY_DIR/$DATA_DIR/uploads" ;;
-esac
+# 与 compose 的 DATA_DIR 保持一致。
+# 优先用调用方显式传入的 DATA_DIR；否则**读目标栈的 env 文件**（走 _stack.sh）。
+# 只读进程环境是不够的：新 shell 里进程环境没有 DATA_DIR，测试栈就会
+# 按默认 ./data 把属主改到生产目录，而真正要写的是 data-test/uploads。
+if [[ -n "${DATA_DIR:-}" ]]; then
+  # 支持相对与绝对路径
+  case "$DATA_DIR" in
+    /*)   UPLOAD_DIR="$DATA_DIR/uploads" ;;
+    ./*)  UPLOAD_DIR="$DEPLOY_DIR/${DATA_DIR#./}/uploads" ;;
+    *)    UPLOAD_DIR="$DEPLOY_DIR/$DATA_DIR/uploads" ;;
+  esac
+else
+  # shellcheck disable=SC1091
+  source "$DEPLOY_DIR/scripts/_stack.sh"
+  UPLOAD_DIR="$UPLOADS_DIR"
+  DATA_DIR="$DATA_PATH"
+fi
 
 # 与 backend/Dockerfile 里的 uid/gid 保持一致，改一处要同步另一处
 BACKEND_UID=10001

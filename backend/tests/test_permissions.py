@@ -18,6 +18,7 @@ from app.core.permissions import (
     effective_permissions,
     expand,
     role_permissions,
+    role_scope,
 )
 from app.models import UserPermissionGrant
 from tests.conftest import make_user
@@ -78,8 +79,17 @@ def test_multi_role_permissions_and_scope_are_union(db):
     perms = effective_permissions(db, user)
     # 一线客服 + 仓管录入员的并集：两边权限都要生效
     assert {"ticket:read", "ticket:write", "inventory:sku:read"} <= perms
-    # 任一角色为 ALL，数据范围即为 ALL（仓管不受产品线限制）
-    assert data_scope(user) == ALL
+    # 但数据范围是分域的：仓管的 ALL 只针对库存，
+    # 不能把工单可见范围从「本产品线」抬成「全部产品线」
+    assert data_scope(user) == LINES
+    assert role_scope("warehouse_clerk") == ALL
+
+
+def test_warehouse_only_user_keeps_narrow_ticket_scope(db):
+    # 纯仓管没有工单权限；即便将来误挂上工单码，范围也只能是最窄的
+    user = make_user(db, username="wh-only", roles=["warehouse_clerk"])
+    assert data_scope(user) == LINES
+    assert role_scope("warehouse_clerk") == ALL
 
 
 def test_closure_pulls_in_dependencies():

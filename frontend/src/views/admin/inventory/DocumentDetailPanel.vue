@@ -100,6 +100,9 @@ function onReverseClick() {
   if (!props.doc) return
   reverseDocId.value = props.doc.id
   reverseDocNo.value = props.doc.doc_no
+  // 先关详情再开冲正：两个都是居中遮罩，叠着会出现两层半透明蒙版，
+  // 而且冲正成功后详情已经失效（原单已 void）。编辑路径也是这么做的。
+  emit('update:modelValue', false)
   reverseVisible.value = true
 }
 

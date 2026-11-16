@@ -54,6 +54,7 @@ from app.schemas.inventory import (
     WarehousePage,
 )
 from app.services.inventory import current_balance, ensure_sku_not_in_use
+from app.services.inventory.posting import REVERSAL_REMARK_PREFIX
 from app.services.pagination import paginate
 from app.utils.search import LIKE_ESCAPE, like_pattern
 
@@ -665,6 +666,13 @@ def inventory_summary(
                     # 已冲正（void）的单据不算「本月入库/出库」：
                     # 冲正的意思是这笔业务被撤销，计进去会让台账与卡片对不上。
                     InventoryDocument.status != "void",
+                    # 冲正生成的反向单本身也不是新业务：冲掉一笔入库会生成一张
+                    # doc_type=outbound 的反向单，不排除的话卡片上会多出
+                    # 「本月出库 +1」，而实际什么都没发生。
+                    or_(
+                        InventoryDocument.remark.is_(None),
+                        ~InventoryDocument.remark.startswith(REVERSAL_REMARK_PREFIX),
+                    ),
                 )
             )
             or 0

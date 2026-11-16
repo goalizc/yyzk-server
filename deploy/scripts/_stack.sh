@@ -51,7 +51,11 @@ BACKEND_CONTAINER="${STACK_PREFIX}-backend"
 # 半指定（只给 env、不给 project）时 compose 会落到默认项目 deploy，也就是
 # 生产项目，而容器名/数据目录却来自测试栈 env：cleanup、cron、HTTPS 都会打错栈。
 STACK_ENV_BASENAME="$(basename "$STACK_ENV_FILE")"
-if [[ "$STACK_ENV_BASENAME" != ".env" && -z "$STACK_PROJECT" ]]; then
+# 只看「project 是否为空 + 前缀是否非生产」，不能只看文件名：
+# 把 .env.test 复制成 .env（或 CI 里统一用 .env）时文件名是 .env、前缀却是
+# fault-test，此时 project 空 → compose 落到默认项目 deploy（生产），
+# 而 cleanup/cron/HTTPS 又按 fault-test-* 找容器，清理会打到生产栈。
+if [[ -z "$STACK_PROJECT" && "$STACK_PREFIX" != "fault" ]]; then
   STACK_PROJECT="$STACK_PREFIX"
   echo "[stack] 未指定 STACK_PROJECT，按容器前缀推导为 $STACK_PROJECT"
 fi
@@ -78,6 +82,18 @@ esac
 # 规范化：消除 ../ 之类的路径写法，避免测试栈绕过校验挂到生产数据目录（M-08）
 if command -v realpath >/dev/null 2>&1; then
   DATA_PATH="$(realpath -m "$DATA_PATH")"
+fi
+# 测试栈不得落在生产数据目录：DATA_DIR 漏改（或沿用默认 ./data）时，
+# restore 会往生产 uploads 覆盖附件、backup 也会备错目录，
+# 而两栈共用同一份 docker-compose.yml，光看容器名挡不住。
+PROD_DATA_PATH="$STACK_DEPLOY_DIR/data"
+if command -v realpath >/dev/null 2>&1; then
+  PROD_DATA_PATH="$(realpath -m "$PROD_DATA_PATH")"
+fi
+if [[ "$STACK_PREFIX" != "fault" && "$DATA_PATH" == "$PROD_DATA_PATH" ]]; then
+  echo "[stack] 拒绝执行：STACK_PREFIX=$STACK_PREFIX 是测试栈，但 DATA_DIR=$DATA_DIR 指向生产数据目录 $PROD_DATA_PATH" >&2
+  echo "        请在 ${STACK_ENV_FILE} 里设 DATA_DIR=./data-test（或其它独立目录）" >&2
+  exit 2
 fi
 UPLOADS_DIR="$DATA_PATH/uploads"
 
