@@ -18,7 +18,13 @@
     ADMIN_PASSWORD=<测试管理员口令> \
     .venv/bin/python scripts/dev/demo_inventory.py --reset --base-url http://127.0.0.1:8080
 
-口令：优先 ADMIN_PASSWORD 环境变量 → deploy/.env 的 ADMIN_INIT_PASSWORD。
+双栈：启动前会以 SEED_ENV_FILE 为唯一真源校验「API 目标」与「清库目标」是否
+一致（见 _seed_stack.py）；不一致直接拒绝，避免 --reset 清空错误的数据库。
+「只改 --base-url 而不设 SEED_ENV_FILE」会被守卫拦下（那会清生产库）。
+SEED_COMPOSE_PROJECT 可省略，守卫会按 .env.test 的 STACK_PREFIX 自动绑定。
+
+口令：优先 ADMIN_PASSWORD / ADMIN_INIT_PASSWORD 环境变量（二者等价）
+      → deploy/.env 的 ADMIN_INIT_PASSWORD。
       deploy/.env 里的口令可能与库中实际 admin 口令不一致（本地库历史原因），
       此时用 ADMIN_PASSWORD=真实口令 覆盖，不要在仓库里硬编码口令。
 
@@ -43,6 +49,9 @@ import sys
 from pathlib import Path
 
 import httpx
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _seed_stack import guard_target_stack  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_DIR = REPO_ROOT / "deploy"
@@ -185,9 +194,13 @@ def psql(sql: str, fetch: bool = False) -> str:
 
 def login(base: str) -> str:
     """登录 admin 拿 token。口令不写进仓库，用环境变量或 deploy/.env。"""
-    password = os.getenv("ADMIN_PASSWORD") or read_env().get("ADMIN_INIT_PASSWORD")
+    password = (
+        os.getenv("ADMIN_PASSWORD")
+        or os.getenv("ADMIN_INIT_PASSWORD")
+        or read_env().get("ADMIN_INIT_PASSWORD")
+    )
     if not password:
-        print("[demo-inventory] 需要 ADMIN_PASSWORD 环境变量或 deploy/.env", file=sys.stderr)
+        print("[demo-inventory] 需要 ADMIN_PASSWORD / ADMIN_INIT_PASSWORD 环境变量或 deploy/.env", file=sys.stderr)
         raise SystemExit(2)
     with httpx.Client(base_url=base, timeout=30.0) as client:
         resp = client.post("/api/auth/login", json={"username": "admin", "password": password})
@@ -493,6 +506,13 @@ def main() -> int:
     parser.add_argument("--reset", action="store_true", help="清空库存业务数据后全量重建（保留默认仓与用户）")
     parser.add_argument("--verify", action="store_true", help="只做对账校验，不写任何数据")
     args = parser.parse_args()
+
+    # 双栈守卫：必须在任何 psql / API 调用之前（--verify 也走 psql）
+    global COMPOSE_PROJECT, COMPOSE_ENV_FILE
+    COMPOSE_PROJECT, COMPOSE_ENV_FILE = guard_target_stack(
+        args.base_url, SEED_ENV_FILE, COMPOSE_PROJECT, COMPOSE_ENV_FILE,
+        label="demo-inventory",
+    )
 
     if args.verify:
         return verify()

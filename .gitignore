@@ -38,9 +38,11 @@ deploy/backups/
 deploy/certs/
 
 # 环境变量（含真实密码，绝不入库）
+# 用通配覆盖 .env.test / .env.staging 等任意栈的 env；再单独放行模板（审查 m-01）
 .env
-deploy/.env
-deploy/.env.test
+deploy/.env*
+!deploy/.env.example
+!deploy/.env.test.example
 
 # 工具与本地配置
 .workbuddy/

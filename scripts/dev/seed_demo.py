@@ -12,11 +12,16 @@
 
 --reset / --activity / --via-sql 走 docker compose exec psql（db 端口未映射到宿主机），
 所以需要在能执行 docker compose 的机器上跑。
-默认读 deploy/.env；测试栈可指定：
+
+双栈：启动前会以 SEED_ENV_FILE 为唯一真源校验「API 目标」与「清库目标」是否
+一致（见 _seed_stack.py）；不一致直接拒绝，避免 --reset 清空错误的数据库。
+默认读 deploy/.env（生产栈，:80 / 本机 :8000）；测试栈必须同时指定：
   SEED_ENV_FILE=deploy/.env.test SEED_COMPOSE_PROJECT=fault-test \
   SEED_COMPOSE_ENV_FILE=deploy/.env.test \
   ADMIN_INIT_PASSWORD=<测试管理员口令> \
   python scripts/dev/seed_demo.py --reset --activity --base-url http://127.0.0.1:8080
+即「只改 --base-url 而不设 SEED_ENV_FILE」会被守卫拦下（那会清生产库）。
+口令变量名 ADMIN_INIT_PASSWORD 与 ADMIN_PASSWORD 均可，二者等价。
 --via-sql 会跳过附件上传（上传必须走 API 拿文件路径）。
 """
 
@@ -34,6 +39,7 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from demo_data import MISS_QUERIES, PRODUCT_LINES, PRODUCTS, TICKET_DESCRIPTIONS  # noqa: E402
+from _seed_stack import guard_target_stack  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_DIR = REPO_ROOT / "deploy"
@@ -85,9 +91,13 @@ def api(base: str, token: str | None = None) -> httpx.Client:
 
 
 def login(base: str) -> str:
-    password = os.getenv("ADMIN_INIT_PASSWORD") or read_env().get("ADMIN_INIT_PASSWORD")
+    password = (
+        os.getenv("ADMIN_INIT_PASSWORD")
+        or os.getenv("ADMIN_PASSWORD")
+        or read_env().get("ADMIN_INIT_PASSWORD")
+    )
     if not password:
-        print("[seed] 需要 ADMIN_INIT_PASSWORD 环境变量或 deploy/.env", file=sys.stderr)
+        print("[seed] 需要 ADMIN_INIT_PASSWORD / ADMIN_PASSWORD 环境变量或 deploy/.env", file=sys.stderr)
         raise SystemExit(2)
 
     with api(base) as client:
@@ -474,6 +484,12 @@ def main() -> int:
     parser.add_argument("--via-sql", action="store_true", help="不登录后台、直接写库（忘记管理员密码时用）")
     parser.add_argument("--skip-attachment", action="store_true", help="跳过附件上传")
     args = parser.parse_args()
+
+    # 双栈守卫：必须在任何 psql / API 调用之前，防止 --reset 清空错误的库
+    global COMPOSE_PROJECT, COMPOSE_ENV_FILE
+    COMPOSE_PROJECT, COMPOSE_ENV_FILE = guard_target_stack(
+        args.base_url, SEED_ENV_FILE, COMPOSE_PROJECT, COMPOSE_ENV_FILE, label="seed"
+    )
 
     assignments: list[tuple[str, str, str]] = []
     if args.reset:

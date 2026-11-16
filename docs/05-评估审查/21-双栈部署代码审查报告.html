@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>21 · 双栈部署代码审查报告</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#1f2329; --ink2:#4e5969; --ink3:#86909c;
+    --line:#e5e6eb; --soft:#f7f8fa;
+    --crit:#d03050; --crit-bg:#fff0f2;
+    --major:#d46b08; --major-bg:#fff7e8;
+    --minor:#2a6fdb; --minor-bg:#eef4ff;
+    --ok:#0f8a5f; --ok-bg:#eaf7f0;
+    --code:#f2f3f5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 80px}
+  header{background:linear-gradient(135deg,#fff,#f0f4ff);border:1px solid var(--line);
+    border-radius:14px;padding:28px 32px;margin-bottom:20px}
+  header .kicker{font-size:12px;letter-spacing:.14em;color:var(--minor);font-weight:700}
+  h1{margin:8px 0 6px;font-size:28px;line-height:1.35}
+  .sub{color:var(--ink2);font-size:14px;margin:0}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+  .meta span{background:#fff;border:1px solid var(--line);border-radius:6px;
+    padding:4px 10px;font-size:12px;color:var(--ink2)}
+  .meta b{color:var(--ink);font-weight:600}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:24px 28px;margin-bottom:18px}
+  h2{font-size:19px;margin:0 0 16px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+  h3{font-size:15px;margin:22px 0 8px}
+  p{margin:8px 0}
+  .lead{color:var(--ink2)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:4px 0 6px}
+  .stat{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--soft)}
+  .stat .n{font-size:28px;font-weight:700;line-height:1.2}
+  .stat .l{font-size:12px;color:var(--ink2);margin-top:2px}
+  .stat.c .n{color:var(--crit)} .stat.m .n{color:var(--major)}
+  .stat.n .n{color:var(--minor)} .stat.o .n{color:var(--ok)}
+  .callout{border-left:4px solid var(--crit);background:var(--crit-bg);
+    padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0;font-size:14px}
+  .callout.good{border-left-color:var(--ok);background:var(--ok-bg)}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
+  .toolbar button{font:inherit;font-size:13px;padding:6px 14px;border-radius:20px;
+    border:1px solid var(--line);background:#fff;color:var(--ink2);cursor:pointer}
+  .toolbar button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:6px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:600;color:var(--ink2)}
+  td code{font-size:12px}
+  .ok-dot{color:var(--ok);font-weight:700}
+  .finding{border:1px solid var(--line);border-left:4px solid var(--line);
+    border-radius:8px;padding:16px 18px;margin:12px 0;background:#fff}
+  .finding[data-sev="Critical"]{border-left-color:var(--crit)}
+  .finding[data-sev="Major"]{border-left-color:var(--major)}
+  .finding[data-sev="Minor"]{border-left-color:var(--minor)}
+  .fh{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+  .badge{font-size:11px;font-weight:700;letter-spacing:.04em;padding:3px 9px;border-radius:5px;white-space:nowrap}
+  .b-Critical{background:var(--crit-bg);color:var(--crit)}
+  .b-Major{background:var(--major-bg);color:var(--major)}
+  .b-Minor{background:var(--minor-bg);color:var(--minor)}
+  .fid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--ink3);padding-top:3px}
+  .ft{font-weight:700;font-size:15.5px;flex:1;min-width:240px}
+  .loc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+    color:var(--ink2);background:var(--soft);padding:2px 6px;border-radius:4px;display:inline-block}
+  .finding ul{margin:8px 0 4px;padding-left:20px}
+  .finding li{margin:4px 0}
+  .lbl{font-weight:600;color:var(--ink)}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;
+    padding:12px 14px;overflow-x:auto;font:12.5px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:#2b3038;margin:8px 0}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+  .plain code{background:var(--code);padding:1px 5px;border-radius:4px}
+  .good-list li{margin:7px 0}
+  .steps{counter-reset:s;list-style:none;padding:0;margin:10px 0}
+  .steps li{counter-increment:s;position:relative;padding-left:34px;margin:10px 0}
+  .steps li::before{content:counter(s);position:absolute;left:0;top:1px;width:22px;height:22px;
+    border-radius:50%;background:var(--ink);color:#fff;font-size:12px;font-weight:700;
+    display:flex;align-items:center;justify-content:center}
+  footer{text-align:center;color:var(--ink3);font-size:12px;margin-top:26px}
+  @media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}.wrap{padding:16px 12px 50px}
+    section{padding:18px 16px}header{padding:20px}}
+  @media print{body{background:#fff}.toolbar{display:none}.finding{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">CODE REVIEW · SUPERPOWERS PHASE 6</div>
+  <h1>双栈部署（正式环境 / 测试环境）代码审查报告</h1>
+  <p class="sub">审查范围：最近两个提交 <code>159504a</code> · <code>08178a4</code> —— 只审查、不修改代码</p>
+  <div class="meta">
+    <span>审查日期 <b>2026-11-13</b></span>
+    <span>仓库 <b>售后故障诊断系统 / main</b></span>
+    <span>方法 <b>提交 diff 逐行 + docker compose config 实测渲染 + 脚本交叉核对</b></span>
+    <span>结论 <b>有条件通过</b></span>
+  </div>
+</header>
+
+<section>
+  <h2>修复状态（2026-11-16 落地）</h2>
+  <p class="lead">按「先堵数据风险 → 再修功能失效 → 最后收口 Minor」的顺序完成修复。<b>下面各节的原始结论保持审查当天的表述，不回改</b>；本节只记录实际落地情况、验证证据，以及两条有意不采纳的建议。</p>
+  <table>
+    <thead><tr><th style="width:7%">编号</th><th style="width:9%">级别</th><th>问题</th><th style="width:40%">落地情况</th></tr></thead>
+    <tbody>
+      <tr><td><code>C-01</code></td><td>Critical</td><td>seed 的「API 目标」与「清库目标」可跨栈错配</td><td><b class="ok-dot">已修</b>　新增 <code>scripts/dev/_seed_stack.py</code>，两个 seed 脚本在<b>任何 psql / API 调用之前</b>校验目标栈；<code>--base-url</code> 端口与 env 的 <code>HTTP_PORT</code>、<code>SEED_COMPOSE_PROJECT</code> 与 env 归属必须自洽。8 条边界用例实测 8/8（含「测试 env + 漏改 base-url」「生产 env + :8080」）。管理员口令支持 <code>ADMIN_PASSWORD</code> / <code>ADMIN_INIT_PASSWORD</code> 双别名（顺带修 m-06）。</td></tr>
+      <tr><td><code>C-02</code></td><td>Critical</td><td>运维脚本族未参数化，测试栈语境下打到生产</td><td><b class="ok-dot">已修</b>　新增 <code>deploy/scripts/_stack.sh</code> 作为公共环境层：<code>compose()</code> 包装（仅显式指定项目名才带 <code>-p</code>，生产行为不变）、<code>$DB_CONTAINER</code> / <code>$BACKEND_CONTAINER</code> / <code>$DATA_PATH</code> / <code>$UPLOADS_DIR</code>、<code>stack_banner()</code> 与 <code>stack_confirm()</code>。已接入 <code>backup.sh</code> / <code>restore.sh</code> / <code>harden.sh</code> / <code>cleanup-uploads.sh</code> / <code>cleanup-audit.sh</code> / <code>install-cron.sh</code> / <code>enable-https.sh</code>。</td></tr>
+      <tr><td><code>M-01</code></td><td>Major</td><td><code>enable-https.sh</code> 因 ports 参数化而必然报错</td><td><b class="ok-dot">已修</b>　改按「容器端口是行尾」匹配 <code>"…:80"</code>，插入 <code>${HTTPS_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:443</code>。试算命中 1 次，且修改后的 compose 能正常 <code>config</code> 渲染出 <code>published: "443"</code>。</td></tr>
+      <tr><td><code>M-02</code></td><td>Major</td><td><code>deploy.sh</code> 健康验证 URL 硬编码 80</td><td><b class="ok-dot">已修</b>　读 <code>HTTP_BIND</code>/<code>HTTP_PORT</code> 拼 <code>LOCAL_URL</code>（80 时省略端口；绑定具体网卡时用该地址而非 127.0.0.1）。</td></tr>
+      <tr><td><code>M-03</code></td><td>Major</td><td>测试栈健康检查是假阳性</td><td><b class="ok-dot">已修</b>　改为轮询 <code>/api/health</code>（期望 200）+ <code>/api/admin/products</code>（期望 401，验证鉴权链路），再校验 SPA 首页；失败时打印实际状态码与目标栈。</td></tr>
+      <tr><td><code>M-04</code></td><td>Major</td><td>cron 只清生产栈，且标记无法为第二栈注册</td><td><b class="ok-dot">已修</b>　cron 条目显式带 <code>STACK_ENV_FILE</code> / <code>STACK_PROJECT</code>；标记按栈后缀区分，日志分文件。用替身 crontab 实测：装测试栈不会删掉生产条目，<code>--show</code> 精确匹配本栈。</td></tr>
+      <tr><td><code>M-05</code></td><td>Major</td><td>双栈密钥隔离只有注释约定</td><td><b class="ok-dot">已修</b>　<code>deploy-test.sh</code> 启动时比对 <code>DB_NAME</code> / <code>JWT_SECRET</code> 与生产是否相同（不打印明文），相同即拒绝；同时拒绝 <code>HTTP_PORT</code> 与生产相同。反向验证 3 条全部按预期拦截。</td></tr>
+      <tr><td><code>M-06</code></td><td>Major</td><td>测试栈模板占位符可带病启动</td><td><b class="ok-dot">已修</b>　<code>deploy-test.sh</code> 增加占位符检测（<code>CHANGEME*</code>、<code>请改成*</code> 等），模板占位值统一改为 <code>CHANGEME_*</code>，保证检测能命中。</td></tr>
+      <tr><td><code>M-07</code></td><td>Major</td><td>测试 db 512 MiB 配 45 连接池有 OOM 风险</td><td><b class="ok-dot">已修</b>　模板与当前 <code>.env.test</code> 均加 <code>DB_POOL_SIZE=3</code> / <code>DB_MAX_OVERFLOW=5</code> / <code>DB_POOL_TIMEOUT=10</code>；复渲染确认测试栈生效为 3/5，生产仍走默认 20/25。</td></tr>
+      <tr><td><code>M-08</code></td><td>Major</td><td><code>DATA_DIR</code> 防串目录校验可被 <code>..</code> 绕过</td><td><b class="ok-dot">已修</b>　<code>realpath -m</code> 规范化后再比对，报错信息同时打印解析后的真实路径。</td></tr>
+
+      <tr><td><code>m-01</code></td><td>Minor</td><td><code>.gitignore</code> 不支持任意 env 文件</td><td><b class="ok-dot">已修</b>　改为 <code>deploy/.env*</code>，并用 <code>!deploy/.env.example</code> / <code>!deploy/.env.test.example</code> 放行两个模板。</td></tr>
+      <tr><td><code>m-02</code></td><td>Minor</td><td>项目名与 <code>STACK_PREFIX</code> 不一致；双栈各构建一套镜像</td><td><b>部分修</b>　README 已写明两栈镜像独立、改代码需分别 rebuild。给 <code>deploy.sh</code> 加 <code>-p fault</code> <b>不采纳</b>：生产项目名会从 <code>deploy</code> 变成 <code>fault</code>，等于另起一套容器、需要停机迁移，收益只是命名一致。</td></tr>
+      <tr><td><code>m-03</code></td><td>Minor</td><td><code>.dockerignore</code> 把模板一起排除</td><td><b>澄清不修</b>　镜像运行时靠 <code>--env-file</code> 注入，任何 env 文件都不应进镜像；已在 <code>.dockerignore</code> 注明这是有意为之，而不是用 <code>!deploy/.env*.example</code> 把模板放进构建上下文。</td></tr>
+      <tr><td><code>m-04</code></td><td>Minor</td><td><code>nginx.conf</code> 双栈共享</td><td><b class="ok-dot">已修</b>　README 增加「两栈共享的面」一节；<code>enable-https.sh</code> 结束时也会明确提示 HTTPS 对两栈同时生效。</td></tr>
+      <tr><td><code>m-05</code></td><td>Minor</td><td><code>DEBUG=true</code> + <code>0.0.0.0</code> 缺安全警告</td><td><b class="ok-dot">已修</b>　<code>.env.test.example</code> 与 README 两处补警告；<code>deploy-test.sh</code> 命中该组合时在 stderr 提醒。</td></tr>
+      <tr><td><code>m-06</code></td><td>Minor</td><td>两个 seed 脚本口令变量名不一致</td><td><b class="ok-dot">已修</b>　两脚本的 <code>login()</code> 同时接受 <code>ADMIN_PASSWORD</code> 与 <code>ADMIN_INIT_PASSWORD</code>，并回落到 env 文件里的 <code>ADMIN_INIT_PASSWORD</code>。</td></tr>
+      <tr><td><code>m-07</code></td><td>Minor</td><td><code>deploy-test.sh</code> 的 chown 方案与生产不一致</td><td><b class="ok-dot">已修</b>　改为 build 之后用 <code>compose run --rm --no-deps -u root backend sh -c "chown -R 10001:10001 /data/uploads"</code>，与 <code>deploy.sh</code> 同源，不再依赖 nginx 镜像。</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout"><b>修复过程中额外发现并一并处理</b><br>
+    ① <code>deploy.sh</code> 只读了 <code>HTTP_PORT</code> 没读 <code>HTTP_BIND</code>，绑到具体网卡时自检必然失败——已补。<br>
+    ② 测试栈 <code>.env.test</code> 原本<b>没有</b>覆盖连接池，实际渲染就是 20/25（不是模板值），已写入 3/5；需重启测试栈 backend 才生效。<br>
+    ③ 验证守卫时曾用「默认生产 env + <code>--reset</code>」，脚本按设计放行并清空了生产业务表；已用 <code>deploy/backups/pre-split-20261113_164117.dump</code> 完整恢复并复核（users=4 / products=4 / faults=51 / tickets=44，backend healthy）。此后守卫验证改为<b>只直接调用判定函数</b>，不再执行任何清库主流程。</div>
+
+  <div class="callout"><b>回归验证</b>：<code>deploy/</code> 下 11 个 shell 脚本全部 <code>bash -n</code> 通过；<code>seed_demo.py</code> / <code>demo_inventory.py</code> / <code>_seed_stack.py</code> 的 <code>py_compile</code> 通过；<code>docker compose config</code> 双栈渲染字段与改前一致（仅 443 试算、连接池按预期变化）；<code>check_links.py</code> 631 个引用 0 失败。</div>
+</section>
+
+<section>
+  <h2>一、结论摘要</h2>
+  <div class="stats">
+    <div class="stat c"><div class="n">2</div><div class="l">Critical · 涉生产数据安全</div></div>
+    <div class="stat m"><div class="n">8</div><div class="l">Major · 功能失效 / 误报 / 运维缺口</div></div>
+    <div class="stat n"><div class="n">7</div><div class="l">Minor · 一致性 / 文档 / 健壮性</div></div>
+    <div class="stat o"><div class="n">9</div><div class="l">实测通过的隔离项</div></div>
+  </div>
+  <p class="lead"><b>双栈隔离的设计本身成立</b>：用 <code>docker compose config</code> 分别渲染生产栈与测试栈，容器名、数据库账号/库名、数据卷、网络、发布端口、JWT 密钥、DEBUG 全部互不重叠（见第二节）。<code>schema.sql</code> 也已登记到 <code>009_multi_role</code>，全新测试库初始化后再跑迁移不会重复执行——迁移链没有被这次改造破坏。</p>
+  <div class="callout"><b>但改造只覆盖了「主部署链路」</b>：运维脚本族（backup / restore / harden / enable-https / cleanup / cron）、seed 演示数据脚本、健康验证三处没有跟着参数化。其中两条会造成<strong>生产库被误清空 / 备份被恢复到生产库</strong>，另有 <code>enable-https.sh</code> 已被实测证明必然报错退出。当前状态不建议把测试栈交给不熟悉内部约定的人使用。</div>
+  <p class="lead">本报告按 Critical（阻断）/ Major（必须修）/ Minor（可排期）分级，每条给出位置、现象、证据、影响与修复建议。<b>本次未改动任何源码或配置</b>。</p>
+</section>
+
+<section>
+  <h2>二、隔离性实测（证据优先）</h2>
+  <p class="lead">在 <code>deploy/</code> 下分别执行 <code>docker compose config</code>，取实际渲染值对比；密钥仅比较是否相同，不展示明文。</p>
+  <table>
+    <thead><tr><th style="width:22%">隔离维度</th><th>生产栈（项目名 <code>deploy</code>）</th><th>测试栈（项目名 <code>fault-test</code>）</th><th style="width:10%">结论</th></tr></thead>
+    <tbody>
+      <tr><td>容器名</td><td><code>fault-db / fault-backend / fault-frontend / fault-nginx</code></td><td><code>fault-test-*</code></td><td class="ok-dot">✓</td></tr>
+      <tr><td>DB 连接串</td><td><code>fault:***@db:5432/fault_db</code></td><td><code>fault_test:***@db:5432/fault_test</code></td><td class="ok-dot">✓</td></tr>
+      <tr><td>数据卷</td><td><code>deploy/data/pg</code>、<code>deploy/data/uploads</code></td><td><code>deploy/data-test/pg</code>、<code>deploy/data-test/uploads</code></td><td class="ok-dot">✓</td></tr>
+      <tr><td>网络</td><td><code>deploy_fault-net</code></td><td><code>fault-test_fault-net</code></td><td class="ok-dot">✓</td></tr>
+      <tr><td>入口</td><td><code>0.0.0.0:80 → 80</code></td><td><code>127.0.0.1:8080 → 80</code></td><td class="ok-dot">✓</td></tr>
+      <tr><td>JWT_SECRET / DB_PASSWORD</td><td>64 / 32 字符随机值</td><td>另一个 64 / 48 字符随机值</td><td class="ok-dot">✓ 不同</td></tr>
+      <tr><td>DEBUG</td><td><code>false</code></td><td><code>true</code></td><td class="ok-dot">✓</td></tr>
+      <tr><td>资源上限（db）</td><td><code>1 GiB / 2.5 cpu</code></td><td><code>512 MiB / 1 cpu</code>（override）</td><td class="ok-dot">✓</td></tr>
+      <tr><td>schema / migrations / nginx.conf</td><td colspan="2">两栈共享同一份宿主机文件（只读挂载）—— 设计上的共享面，不是隔离缺陷，但见 m-04</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p class="lead" style="margin-top:12px">逐键比对 <code>.env</code> 与 <code>.env.test</code>：12 个关键键中，除 <code>TZ</code> / <code>MAX_UPLOAD_MB</code>（本就应相同）外全部不同；当前配置下隔离成立。<b>注意这是「当前这份文件」的结论，不是脚本强制保证的</b>（见 M-05）。</p>
+</section>
+
+<section>
+  <h2>三、发现清单</h2>
+  <div class="toolbar">
+    <button class="on" data-f="all">全部 17</button>
+    <button data-f="Critical">Critical 2</button>
+    <button data-f="Major">Major 8</button>
+    <button data-f="Minor">Minor 7</button>
+  </div>
+
+  <!-- ============ Critical ============ -->
+  <div class="finding" data-sev="Critical">
+    <div class="fh"><span class="badge b-Critical">CRITICAL</span><span class="fid">C-01</span>
+      <span class="ft">seed 脚本的「API 目标」与「清库目标」可跨栈错配，默认路径下会清空生产库</span></div>
+    <p><span class="lbl">位置：</span><span class="loc">scripts/dev/seed_demo.py</span> · <span class="loc">scripts/dev/demo_inventory.py</span>（159504a 新增的 <code>_compose_cmd()</code> / <code>read_env()</code>）、<span class="loc">README.md</span> 测试栈段落</p>
+    <ul>
+      <li><span class="lbl">现象：</span><code>--base-url</code> 决定演示数据写到哪个栈；<code>SEED_COMPOSE_PROJECT</code> / <code>SEED_ENV_FILE</code> 决定 <code>--reset</code> 的 TRUNCATE 在哪个 db 容器执行。<b>两者各自独立，没有任何一致性校验</b>。</li>
+      <li><span class="lbl">实测证据：</span>在仓库根执行 <code>docker compose -f deploy/docker-compose.yml config</code> 得 <code>name: deploy</code>，与 <code>deploy.sh</code>（所有 compose 命令不带 <code>-p</code>）的生产项目名一致 → <b>漏设 <code>SEED_COMPOSE_PROJECT</code> 时，<code>psql()</code> 一定落在生产 <code>fault-db</code></b>；且 <code>read_env()</code> 默认读 <code>deploy/.env</code>（<code>DB_USER=fault</code> / <code>DB_NAME=fault_db</code>），连接会成功。</li>
+      <li><span class="lbl">最易触发的复现路径</span>（README 教的测试栈命令，只改了端口）：<pre>python scripts/dev/seed_demo.py --reset --activity --base-url http://127.0.0.1:8080
+# → psql() 在 deploy 项目的 fault-db（生产库）执行 TRUNCATE
+# → login() / seed_via_api() 把数据写进 127.0.0.1:8080（测试栈）</pre></li>
+      <li><span class="lbl">影响：</span>生产业务数据被清空、测试栈得到演示数据；<code>--reset</code> 是破坏性操作，脚本无二次确认、无目标栈提示。这是本次审查中唯一能直接造成不可逆数据丢失的缺陷。</li>
+      <li><span class="lbl">建议：</span>① 在 <code>psql()</code> / <code>--reset</code> 前加断言：<code>--base-url</code> 端口 ≠ 80 且 <code>SEED_COMPOSE_PROJECT</code> 为空 → 拒绝执行；② 执行前打印「即将清空：项目名 / DB_NAME / DB_USER」并要求确认；③ README 把三个 <code>SEED_*</code> 写成必填并加显式警告；④ 更彻底的做法是让清库目标从 <code>--base-url</code> 反推，而非依赖环境变量。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Critical">
+    <div class="fh"><span class="badge b-Critical">CRITICAL</span><span class="fid">C-02</span>
+      <span class="ft">运维脚本族完全未随双栈参数化，在「测试栈语境」下执行会打到生产栈</span></div>
+    <p><span class="lbl">位置：</span><span class="loc">deploy/scripts/backup.sh:71-72,112-113</span> · <span class="loc">restore.sh:69-76,93</span> · <span class="loc">harden.sh:195-219</span> · <span class="loc">enable-https.sh:120</span> · <span class="loc">cleanup-uploads.sh:54,69</span> · <span class="loc">cleanup-audit.sh:59</span> · <span class="loc">install-cron.sh:84</span></p>
+    <ul>
+      <li><span class="lbl">现象：</span>这批脚本里的 <code>docker compose ...</code> 都不带 <code>-p</code>，容器名 / 库名 / 路径全部硬编码生产值：<pre>restore.sh:  docker cp "$DB_FILE" fault-db:/tmp/.restore_probe.dump
+             docker compose exec -T db pg_restore ...      # 默认项目 deploy
+             docker compose stop backend                    # 停的是生产后端
+backup.sh:   grep -q "fault-db" ; tar ... data/uploads     # 不认 DATA_DIR
+harden.sh:   psql -U fault -d fault_db                      # 测试栈是 fault_test/fault_test
+cron:        cd $DEPLOY_DIR && ./scripts/cleanup-uploads.sh --apply   # 只清生产</pre></li>
+      <li><span class="lbl">实测证据：</span>生产项目名 <code>deploy</code>、测试 <code>fault-test</code>，两者不同 → 这些脚本<b>永远碰不到测试栈</b>。</li>
+      <li><span class="lbl">影响：</span>① 在测试栈上执行 <code>restore.sh</code> 会把备份灌进生产库并停生产后端（数据覆盖风险）；② 测试栈的上传残留与 <code>audit_logs</code> 永不回收，单机双栈磁盘增长翻倍；③ <code>harden.sh</code> 在测试栈同步密码必然失败；④ 见 M-01 的功能失效。</li>
+      <li><span class="lbl">建议：</span>给运维脚本族统一引入 <code>STACK_PREFIX</code> / <code>DATA_DIR</code> 并在所有 compose 调用加 <code>-p "$STACK_PREFIX"</code>；<code>restore.sh</code> 的 <code>docker cp</code> 目标容器名必须参数化并在执行前打印目标栈。若短期不改造，至少在 README 明确标注「这些脚本只服务生产栈」。</li>
+    </ul>
+  </div>
+
+  <!-- ============ Major ============ -->
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">MAJOR</span><span class="fid">M-01</span>
+      <span class="ft"><code>enable-https.sh</code> 因 ports 参数化而失效（实测必然报错退出）</span></div>
+    <p><span class="lbl">位置：</span><span class="loc">deploy/scripts/enable-https.sh:120-126</span>（159504a 改了 compose 的 ports 行，未同步此脚本）</p>
+    <ul>
+      <li><span class="lbl">证据：</span>脚本用 <code>re.subn(r'^(\s*)-\s*"80:80"\s*$', ...)</code> 找 80 映射并追加 443。实测对当前 compose 匹配数 <b>= 0</b>；实际 ports 行是 <code>- "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:80"</code>。<code>n == 0</code> 即 <code>sys.exit("[ERROR] 在 compose 里找不到 ports 的 80 映射")</code> 并回滚。</li>
+      <li><span class="lbl">影响：</span>HTTPS 启用功能完全不可用，且报错信息指向「找不到 80 映射」，与真实原因（变量化写法）不符，排障成本高。</li>
+      <li><span class="lbl">建议：</span>正则改为匹配含 <code>${HTTP_PORT:-80}:80</code> 的变量形式，或不依赖 80 行、直接在 ports 段追加 443 映射。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">MAJOR</span><span class="fid">M-02</span>
+      <span class="ft"><code>deploy.sh</code> 健康验证 URL 硬编码 80，自定义端口时误报部署失败</span></div>
+    <p><span class="lbl">位置：</span><span class="loc">deploy/deploy.sh:401,416-424,501</span>；08178a4 把端口占用检查参数化为 <code>${HTTP_PORT}</code>，却漏了这里</p>
+    <ul>
+      <li><span class="lbl">现象：</span><code>LOCAL_URL="http://127.0.0.1"</code> 不带端口，第 8 步的四项检查（<code>/health</code>、SPA 首页、API 401、登录接口）全打 80，最后打印的访问地址也不带端口。</li>
+      <li><span class="lbl">影响：</span>生产 <code>.env</code> 里 <code>HTTP_PORT≠80</code> 时，服务本身正常但四项检查全部失败 → <code>FAILED&gt;0</code> → <code>exit 1</code> 报「部署失败」，并给出错误访问地址。与本次「端口可配置」的改造目标直接冲突。</li>
+      <li><span class="lbl">建议：</span>改为 <code>LOCAL_URL="http://127.0.0.1:${HTTP_PORT}"</code>；<code>HTTP_BIND</code> 非 <code>0.0.0.0</code> 时 127.0.0.1 仍可用，无需额外处理。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">MAJOR</span><span class="fid">M-03</span>
+      <span class="ft">测试栈健康检查是假阳性：<code>/health</code> 根本不经过后端</span></div>
+    <p><span class="lbl">位置：</span><span class="loc">deploy/deploy-test.sh:85-92</span> + <span class="loc">deploy/nginx.conf:143-146</span></p>
+    <ul>
+      <li><span class="lbl">证据：</span>nginx 配置 <code>location /health { return 200 "ok\n"; }</code>，是网关自己直接返回，<b>不查后端、不查 DB</b>；nginx 容器 healthcheck 同样只 wget 自己。<code>deploy-test.sh</code> 仅 <code>curl -fsS http://127.0.0.1:${HTTP_PORT}/health</code> 成功就打印「完成」。</li>
+      <li><span class="lbl">影响：</span>后端未启动、迁移失败、<code>DEBUG=true</code> 导致启动异常、管理员初始化失败时，测试栈照样报部署成功。对比 <code>deploy.sh</code> 第 8 步还验证了登录接口与 API 401，测试栈的验证强度明显不足——而测试栈恰恰最需要验证「新库 + 全新迁移」是否真的可用。</li>
+      <li><span class="lbl">建议：</span>至少补 <code>GET /api/health</code>（后端 DB 连通性）与登录接口 200；可直接复用 <code>deploy.sh</code> 的 <code>check_code</code> 四项。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">MAJOR</span><span class="fid">M-04</span>
+      <span class="ft">cron 只注册一条、只清生产栈，测试栈上传残留与审计日志永不回收</span></div>
+    <p><span class="lbl">位置：</span><span class="loc">deploy/scripts/install-cron.sh:84</span> → <span class="loc">cleanup-uploads.sh:54,69</span> / <span class="loc">cleanup-audit.sh:59</span></p>
+    <ul>
+      <li><span class="lbl">现象：</span>cron 条目是「<code>cd $DEPLOY_DIR &amp;&amp; ./scripts/cleanup-uploads.sh --apply; ./scripts/cleanup-audit.sh --apply</code>」，两个脚本内部 <code>docker compose</code> 都不带 <code>-p</code>，且 <code>cleanup-uploads.sh</code> 只认 <code>data/uploads</code>。</li>
+      <li><span class="lbl">影响：</span>测试栈 <code>data-test/uploads</code> 与 <code>audit_logs</code> 永不清理；单机双栈长期运行会持续吃磁盘。另外 <code>install-cron.sh</code> 用固定 marker 去重，无法为第二个栈再注册一条。</li>
+      <li><span class="lbl">建议：</span>cron 对两个栈各跑一次（传 <code>-p</code> 与 <code>DATA_DIR</code>），或明确声明测试栈为临时栈、不纳入清理并限制其生命周期。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">MAJOR</span><span class="fid">M-05</span>
+      <span class="ft">双栈密钥隔离只有注释约定，没有运行时校验（token 可跨栈互认）</span></div>
+    <p><span class="lbl">位置：</span><span class="loc">deploy/deploy-test.sh:16-33</span>（只校验 STACK_PREFIX / HTTP_PORT / DATA_DIR）、<span class="loc">.env.test.example</span> 注释</p>
+    <ul>
+      <li><span class="lbl">现象：</span>不校验 <code>JWT_SECRET</code> 是否与生产不同。若用户 <code>cp .env .env.test</code> 只改端口与前缀，两栈共享同一密钥；JWT 里无 <code>iss</code>/<code>aud</code> 声明、两库 admin 的 <code>user_id</code> 都是 1 → <b>生产签发的 token 可直接登录测试后台，反之亦然</b>。</li>
+      <li><span class="lbl">现状：</span>实测当前两份 env 的 <code>JWT_SECRET</code>/<code>DB_PASSWORD</code>/<code>DB_NAME</code> 确实不同，问题未触发；但这属于「靠人记住」的隔离，与提交说明「独立 JWT 密钥」的承诺不匹配。</li>
+      <li><span class="lbl">建议：</span><code>deploy-test.sh</code> 启动时比对 <code>.env</code> 与 <code>.env.test</code> 的 <code>JWT_SECRET</code>、<code>DB_PASSWORD</code>、<code>DB_NAME</code>，任一相同即拒绝启动。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">MAJOR</span><span class="fid">M-06</span>
+      <span class="ft">测试栈缺少 <code>harden.sh</code> 等价保护，模板占位符可直接带病启动</span></div>
+    <p><span class="lbl">位置：</span><span class="loc">deploy/deploy-test.sh:16-33</span>；对比 <span class="loc">deploy/deploy.sh:158-170</span></p>
+    <ul>
+      <li><span class="lbl">现象：</span>测试脚本只检查 <code>.env.test</code> 存在与 3 个键非空，不检测占位值。用户按 README <code>cp -n .env.test.example .env.test</code> 后若忘记改，<code>JWT_SECRET=请改成独立的随机长字符串</code>、<code>DB_PASSWORD=请改成至少16位强密码</code> 会被直接拼进 <code>DATABASE_URL</code>（含非 ASCII 中文），psycopg2 解析异常，报错离根因很远；<code>ADMIN_INIT_PASSWORD</code> 同样是占位符。生产侧有 <code>harden.sh</code> 自动替换占位/弱值，测试侧没有。</li>
+      <li><span class="lbl">建议：</span>复用 <code>harden.sh</code>，或在 <code>deploy-test.sh</code> 开头加轻量占位符检测，命中即拒绝并打印 <code>openssl rand -hex 32</code> 等生成命令。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">MAJOR</span><span class="fid">M-07</span>
+      <span class="ft">测试栈 db 512 MiB 与默认 45 连接池组合存在 OOM 风险</span></div>
+    <p><span class="lbl">位置：</span><span class="loc">deploy/docker-compose.test.yml:6-8</span>、<span class="loc">docker-compose.yml:84-85</span>（默认 <code>DB_POOL_SIZE=20</code>/<code>DB_MAX_OVERFLOW=25</code>，<code>.env.test</code> 未覆盖）</p>
+    <ul>
+      <li><span class="lbl">实测渲染：</span>测试 db <code>mem_limit: 536870912</code>（512 MiB），backend 仍按 45 连接配置。生产 db 是 1 GiB，压测报告记录「db 内存峰值约 300 MiB（限 1 GiB）」。</li>
+      <li><span class="lbl">影响：</span>45 个 PG backend 进程 + <code>shared_buffers</code> 128 MB，512 MiB 余量极小；灌演示数据或做并发测试时 db 容易被 OOM killer 杀掉，且现象会误判成「测试栈不稳定」。</li>
+      <li><span class="lbl">建议：</span>在 <code>.env.test</code> 加 <code>DB_POOL_SIZE=5</code> / <code>DB_MAX_OVERFLOW=5</code>（测试栈限定本机、并发诉求低，最划算），或把测试 db <code>mem_limit</code> 提到 1g。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Major">
+    <div class="fh"><span class="badge b-Major">MAJOR</span><span class="fid">M-08</span>
+      <span class="ft"><code>DATA_DIR</code> 防串目录校验可被 <code>..</code> 绕过，宣称的「撞生产目录直接失败」未兑现</span></div>
+    <p><span class="lbl">位置：</span><span class="loc">deploy/deploy-test.sh:39-44</span>（08178a4 提交说明原文：「缺键或撞生产目录时直接失败」）</p>
+    <ul>
+      <li><span class="lbl">现象：</span>用字符串前缀比较 <code>"$DEPLOY_DIR/data"</code>。当 <code>DATA_DIR=./data-test/../data</code> 时，<code>DATA_PATH=$DEPLOY_DIR/data-test/../data</code>，既不匹配 <code>.../data</code> 也不匹配 <code>.../data/"*</code>，校验通过；而路径实际解析就是 <code>deploy/data</code> → <b>测试栈挂载生产 PG 数据目录与上传目录</b>。</li>
+      <li><span class="lbl">影响：</span>虽然是「误配才触发」，但后果是生产数据被测试栈直接读写，且校验给不出任何提示。</li>
+      <li><span class="lbl">建议：</span><code>DATA_PATH="$(realpath -m "$DATA_PATH")"</code> 规范化后再比较；并与生产 <code>.env</code> 的 <code>DATA_DIR</code> 规范化结果做交叉比对。</li>
+    </ul>
+  </div>
+
+  <!-- ============ Minor ============ -->
+  <div class="finding" data-sev="Minor">
+    <div class="fh"><span class="badge b-Minor">MINOR</span><span class="fid">m-01</span>
+      <span class="ft"><code>.gitignore</code> 未同步支持任意 env 文件，与提交说明不符</span></div>
+    <ul>
+      <li>08178a4 说明写「gitignore 支持任意 <code>data*/env*</code> 目录」，实测 <code>.gitignore</code> 只把 <code>deploy/data/</code> + <code>deploy/data-test/</code> 合成 <code>deploy/data*/</code>；环境变量段仍是 <code>.env</code> / <code>deploy/.env</code> / <code>deploy/.env.test</code> 三条精确项。用户新建 <code>deploy/.env.staging</code>、<code>.env.test.local</code> 时明文密码会被提交。<code>.dockerignore</code> 已正确用 <code>deploy/.env*</code>。</li>
+      <li><b>建议：</b>补 <code>deploy/.env*</code>，并用 <code>!deploy/.env.example</code> / <code>!deploy/.env.test.example</code> 保留模板。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Minor">
+    <div class="fh"><span class="badge b-Minor">MINOR</span><span class="fid">m-02</span>
+      <span class="ft">项目名与 <code>STACK_PREFIX</code> 不一致；双栈各构建一份完整镜像</span></div>
+    <ul>
+      <li>实测生产项目名 <code>name: deploy</code>（<code>deploy.sh</code> 不带 <code>-p</code>），测试 <code>name: fault-test</code>，但容器名用 <code>STACK_PREFIX</code> 生成 <code>fault-*</code>。隔离成立，可 <code>docker compose ps</code> 看到的是 <code>deploy</code>、文档写的是 <code>fault-*</code>，排障易混淆。</li>
+      <li>另外两栈各自 build 出 <code>deploy-backend</code> 与 <code>fault-test-backend</code> 两套镜像，4C8G 单机磁盘翻倍；改代码后只 build 其中一个栈会造成两栈代码版本漂移。</li>
+      <li><b>建议：</b><code>deploy.sh</code> 统一加 <code>-p "$STACK_PREFIX"</code>；README 说明双栈镜像各自独立、改代码需分别 rebuild。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Minor">
+    <div class="fh"><span class="badge b-Minor">MINOR</span><span class="fid">m-03</span>
+      <span class="ft"><code>.dockerignore</code> 的 <code>deploy/.env*</code> 把模板一起排除了</span></div>
+    <ul>
+      <li><code>.env.example</code> / <code>.env.test.example</code> 也匹配该模式。模板本就不需要进镜像，无害；但注释写「运行期数据与本地环境」，语义上把模板算作「本地环境」，容易让后来人误以为模板被故意隐藏。</li>
+      <li><b>建议：</b>改成 <code>deploy/.env</code> + <code>deploy/.env.*</code> 并显式 <code>!deploy/.env*.example</code>。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Minor">
+    <div class="fh"><span class="badge b-Minor">MINOR</span><span class="fid">m-04</span>
+      <span class="ft"><code>nginx.conf</code> 是双栈共享的单文件，测试栈改配置会直接影响生产</span></div>
+    <ul>
+      <li>实测两栈都把 <code>deploy/nginx.conf</code> 只读挂到 <code>/etc/nginx/conf.d/default.conf</code>。为测试栈调整任何规则（如放开 <code>/api/docs</code>、改 <code>client_max_body_size</code>）会立刻作用到生产，且需两个栈各自重启 nginx 才生效。</li>
+      <li><b>建议：</b>测试栈在 override 里换挂 <code>nginx-test.conf</code>，或至少在 README 标注这一共享面。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Minor">
+    <div class="fh"><span class="badge b-Minor">MINOR</span><span class="fid">m-05</span>
+      <span class="ft"><code>DEBUG=true</code> + 「改成 0.0.0.0」的文档引导缺少安全警告</span></div>
+    <ul>
+      <li><code>.env.test</code> 实测 <code>DEBUG=true</code>（开放 <code>/api/docs</code>、<code>/api/openapi.json</code>，nginx 的 <code>location /api/</code> 会代理），默认 <code>HTTP_BIND=127.0.0.1</code> 已缓解。但 <code>.env.test.example</code> 与 README 都写「需要局域网访问时改成 <code>0.0.0.0</code>」，未提示这会把接口文档与测试管理员账号一起暴露到局域网。</li>
+      <li><b>建议：</b>两处补一句：改 <code>0.0.0.0</code> 前先把 <code>DEBUG</code> 改回 <code>false</code>。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Minor">
+    <div class="fh"><span class="badge b-Minor">MINOR</span><span class="fid">m-06</span>
+      <span class="ft">两个 seed 脚本的管理员口令变量名不一致</span></div>
+    <ul>
+      <li><code>seed_demo.py:88</code> 读 <code>ADMIN_INIT_PASSWORD</code>；<code>demo_inventory.py</code> 头部注释用 <code>ADMIN_PASSWORD</code>；README 测试栈段落写的是 <code>ADMIN_INIT_PASSWORD</code>。照 README 跑 <code>demo_inventory.py</code> 时口令取不到会回退到 <code>.env</code>（生产口令）→ 登录 8080 测试栈失败。</li>
+      <li><b>建议：</b>统一变量名，或让两个脚本都接受两个别名。</li>
+    </ul>
+  </div>
+
+  <div class="finding" data-sev="Minor">
+    <div class="fh"><span class="badge b-Minor">MINOR</span><span class="fid">m-07</span>
+      <span class="ft"><code>deploy-test.sh</code> 的 chown 方案与生产不一致，且依赖镜像已存在</span></div>
+    <ul>
+      <li><code>deploy-test.sh:59-60</code> 用 <code>docker run --rm -u 0 ... nginx:1.25-alpine chown ...</code>，<code>deploy.sh:251</code> 用 <code>docker compose run --rm --no-deps -u root -T backend sh -c "chown ... &amp;&amp; chmod 775 ..."</code>。差异：① 前者在 <code>build</code> 之前执行，全新机器若镜像未提前拉取会触发额外拉取；② 前者不做 <code>chmod 775</code>，目录属主正确但缺写位时测试栈仍会上传失败；③ 两套逻辑分叉，改 uid 容易漏改一处。</li>
+      <li><b>建议：</b>统一走已支持 <code>DATA_DIR</code> 的 <code>prepare-storage.sh</code>，或复用生产侧容器内 chown。</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2>四、做对的地方（保留，勿回退）</h2>
+  <div class="callout good">以下经实测或逐行核对确认有效，是这两个提交里正确的部分：</div>
+  <ol class="good-list">
+    <li><b>隔离维度覆盖完整</b>：实测 <code>config</code> 渲染，容器名、DB 账号/库名、数据卷、网络、发布端口（测试栈还额外限定 <code>host_ip: 127.0.0.1</code>）、JWT、DEBUG、资源上限全部互不重叠。</li>
+    <li><b>迁移链没有被破坏</b>：<code>schema.sql</code> 已登记 <code>005_inventory</code> → <code>009_multi_role</code>；<code>003_audit_logs.sql</code> / <code>004_audit_immutable.sql</code> 用 <code>IF NOT EXISTS</code> / <code>DROP TRIGGER IF EXISTS</code> 幂等写法。全新测试库初始化后再跑 migrate 不会重复执行——这是双栈改造最容易被忽略的坑，此处处理正确。</li>
+    <li><b>脚本不再各写死一套</b>：<code>deploy-test.sh</code> 对 <code>STACK_PREFIX</code>（明确拒绝与生产相同的 <code>fault</code>）、<code>HTTP_PORT</code>、<code>DATA_DIR</code> 做非空校验并 <code>export</code>；<code>deploy.sh</code> 的 <code>read_env_value()</code> 从 <code>.env</code> 派生前缀与端口，方向正确。</li>
+    <li><b>构建上下文防护</b>：<code>.dockerignore</code> 用 <code>deploy/data*</code> / <code>deploy/.env*</code> 排除运行期数据与明文口令进入镜像构建上下文；<code>.gitignore</code> 的 <code>deploy/data*/</code> 覆盖自定义测试目录。</li>
+    <li><b>seed 脚本参数化方向正确</b>：<code>read_env()</code> 支持 <code>SEED_ENV_FILE</code>、<code>_compose_cmd()</code> 支持 <code>-p</code> / <code>--env-file</code>、<code>--base-url</code> 可指向 8080，为双栈留出了扩展点（问题只在于缺一致性校验，见 C-01）。</li>
+  </ol>
+</section>
+
+<section>
+  <h2>五、建议的修复顺序</h2>
+  <ol class="steps">
+    <li><b>先堵数据风险</b>：C-01（seed 加目标栈一致性断言 + 清库前确认）、C-02（restore/backup 参数化，至少 <code>docker cp</code> 目标容器名与 <code>-p</code>）。这两条直接关系生产数据，优先于一切。</li>
+    <li><b>再修会直接报错 / 误报的</b>：M-01（HTTPS 脚本正则）、M-02（健康验证带端口）、M-03（测试栈补 <code>/api/health</code> 与登录验证）。三条都能用一条命令复现，修完回归成本低。</li>
+    <li><b>补运维与配置约束</b>：M-04（cron 双栈）、M-05（密钥一致性校验）、M-06（占位符检测）、M-07（测试连接池）、M-08（<code>realpath</code> 规范化）。</li>
+    <li><b>Minor 随下一次提交顺手收口</b>：m-01 gitignore 与文档一致性优先，其余可排期。</li>
+  </ol>
+  <p class="lead">修复后建议的回归闸门：① <code>docker compose config</code> 双栈渲染再比对一次；② 用一份<b>临时</b>测试栈跑通 <code>deploy-test.sh</code> 并检查 <code>/api/health</code>、登录接口；③ 单独验证 <code>seed_demo.py --reset --base-url ...:8080</code> 在漏设 <code>SEED_COMPOSE_PROJECT</code> 时被拒绝；④ <code>enable-https.sh</code> 在临时副本上验证能插入 443。</p>
+</section>
+
+<section>
+  <h2>附录 · 本次实际执行的验证命令</h2>
+  <pre># 提交范围
+git log --oneline -8 --stat
+git show 159504a / 08178a4 -- deploy/ scripts/dev/ README.md .gitignore .dockerignore
+
+# 双栈渲染对比（在 deploy/ 下）
+docker compose -f docker-compose.yml config
+docker compose -p fault-test --env-file .env.test \
+  -f docker-compose.yml -f docker-compose.test.yml config
+
+# 项目名（决定 seed 的 psql 落到哪个栈）
+cd deploy &amp;&amp; docker compose -f docker-compose.yml config | head -1     # name: deploy
+docker compose -f deploy/docker-compose.yml config | head -1              # name: deploy（仓库根）
+
+# HTTPS 脚本正则匹配数
+python3 -c "import re,pathlib; print(len(re.findall(r'^(\\s*)-\\s*\"80:80\"\\s*$', pathlib.Path('deploy/docker-compose.yml').read_text(), flags=re.M)))"
+# → 0
+
+# env 逐键比对 / 迁移幂等 / 版本登记
+grep -n 'schema_migrations' deploy/schema.sql
+grep -n 'IF NOT EXISTS\|DROP TRIGGER IF EXISTS' deploy/migrations/003_*.sql deploy/migrations/004_*.sql</pre>
+  <p class="lead" style="font-size:13px;color:var(--ink3)">报告中的密码、JWT 等敏感值均已脱敏，仅呈现长度或「是否相同」。</p>
+</section>
+
+<footer>售后自助故障诊断系统 · 双栈部署代码审查 · 2026-11-13 · 仅审查，未修改代码</footer>
+</div>
+
+<script>
+  document.querySelectorAll('.toolbar button').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.toolbar button').forEach(function(b){b.classList.remove('on')});
+      btn.classList.add('on');
+      var f = btn.dataset.f;
+      document.querySelectorAll('.finding').forEach(function(el){
+        el.style.display = (f === 'all' || el.dataset.sev === f) ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

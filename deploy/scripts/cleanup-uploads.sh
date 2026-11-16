@@ -29,7 +29,15 @@
 # ============================================================
 set -euo pipefail
 
-DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# 双栈环境层（审查 C-02）：默认打生产栈；清理测试栈显式指定
+#   STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test ./scripts/cleanup-uploads.sh
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_stack.sh"
+stack_require_env
+stack_banner "上传文件清理"
 
 APPLY=0
 MIN_AGE=60
@@ -51,8 +59,8 @@ done
 cd "$DEPLOY_DIR"
 
 # 容器必须已经在跑——清理逻辑读的是库里的引用关系
-if ! docker compose ps --status running --services 2>/dev/null | grep -qx backend; then
-  echo "backend 容器未运行。先执行：docker compose up -d" >&2
+if ! compose ps --status running --services 2>/dev/null | grep -qx backend; then
+  echo "backend 容器（$BACKEND_CONTAINER）未运行。目标栈 env=$STACK_ENV_FILE，请先启动该栈。" >&2
   exit 1
 fi
 
@@ -66,7 +74,7 @@ echo
 # 逻辑都在 app/services/upload_cleanup.py 里，这里只负责调用与退出码。
 # 参数用 -c 的内联脚本读取：heredoc 会占用 stdin，argv 拿不到值。
 # 内联脚本尽量短，避免多层引号嵌套被 shell 吃掉字符。
-docker compose exec -T \
+compose exec -T \
   -e CLEANUP_APPLY="$APPLY" \
   -e CLEANUP_MIN_AGE="$MIN_AGE" \
   -e CLEANUP_MAX_RATIO="$MAX_RATIO" \

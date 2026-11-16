@@ -20,10 +20,32 @@
 # ============================================================
 set -euo pipefail
 
-DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$DEPLOY_DIR"
 
-MARKER="# fault-system:cleanup-uploads"
+# 双栈环境层（审查 M-04）：cron 条目必须绑定目标栈，否则只会清生产栈。
+#   STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test ./scripts/install-cron.sh
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_stack.sh"
+stack_require_env
+stack_banner "定时清理注册"
+
+# 标记按栈区分：生产沿用旧标记（历史条目仍能被识别替换），
+# 测试栈用独立标记，两栈的 cron 条目互不覆盖。
+MARKER_BASE="# fault-system:cleanup-uploads"
+IS_PROD=1
+if [[ "$STACK_PREFIX" != "fault" || "$STACK_ENV_FILE" == *test* ]]; then
+  IS_PROD=0
+fi
+if [[ "$IS_PROD" == "1" ]]; then
+  MARKER="$MARKER_BASE"
+  LOG_FILE="$DEPLOY_DIR/logs/cleanup.log"
+else
+  MARKER="${MARKER_BASE}:${STACK_PREFIX}"
+  LOG_FILE="$DEPLOY_DIR/logs/cleanup-${STACK_PREFIX}.log"
+fi
+
 LOG_DIR="$DEPLOY_DIR/logs"
 RUN_TIME="30 3"
 MODE="install"
@@ -57,16 +79,28 @@ if ! command -v crontab >/dev/null 2>&1; then
 fi
 
 CURRENT=$(crontab -l 2>/dev/null || true)
-# 过滤掉本项目的旧条目（标记行 + 紧随其后的那条命令）
-WITHOUT=$(printf '%s\n' "$CURRENT" | grep -vF "$MARKER" | grep -vF "cleanup-uploads.sh" || true)
+# 只删除「当前栈」的旧条目。原先的 grep -vF "cleanup-uploads.sh" 会把另一栈
+# 的条目一起删掉（装测试栈 cron 就顺手抹掉生产 cron），改为按标记精确匹配。
+# 生产栈额外清掉旧格式（没有 :fault 后缀）的历史条目。
+WITHOUT=$(printf '%s\n' "$CURRENT" | awk -v m="$MARKER" -v base="$MARKER_BASE" -v prod="$IS_PROD" '
+  function endsWith(s, t) {
+    return length(s) >= length(t) && substr(s, length(s) - length(t) + 1) == t
+  }
+  { line = $0; sub(/[[:space:]]+$/, "", line) }
+  line == "" { next }
+  endsWith(line, m) { next }
+  (prod == "1" && endsWith(line, base)) { next }
+  { print }
+')
 
 case "$MODE" in
   show)
-    if printf '%s\n' "$CURRENT" | grep -qF "$MARKER"; then
-      echo "已注册："
-      printf '%s\n' "$CURRENT" | grep -E "$MARKER|cleanup-uploads.sh"
+    # 行尾锚定，避免生产标记（无后缀）把测试栈条目也匹配上
+    if printf '%s\n' "$CURRENT" | grep -qE "${MARKER}[[:space:]]*$"; then
+      echo "已注册（目标栈 env=$STACK_ENV_FILE 项目=${STACK_PROJECT:-deploy(默认)}）："
+      printf '%s\n' "$CURRENT" | grep -E "${MARKER}[[:space:]]*$"
     else
-      echo "未注册定时清理。执行 ./scripts/install-cron.sh 注册。"
+      echo "未注册定时清理（目标栈 env=$STACK_ENV_FILE）。执行 ./scripts/install-cron.sh 注册。"
     fi
     exit 0
     ;;
@@ -79,20 +113,26 @@ case "$MODE" in
 
   install)
     mkdir -p "$LOG_DIR"
+    # 把目标栈显式钉进 cron 条目：cron 没有交互 shell 的环境变量，
+    # 漏了这一截，测试栈的 cron 会静默回落到生产栈（审查 M-04）。
+    STACK_ENV="STACK_ENV_FILE=$STACK_ENV_FILE"
+    if [[ -n "$STACK_PROJECT" ]]; then
+      STACK_ENV="$STACK_ENV STACK_PROJECT=$STACK_PROJECT"
+    fi
     # 日志轮转：单文件超过 5MB 就清空。cron 任务里不方便再调 logrotate，
     # 用 shell 判断足够——清理日志本身价值有限，不需要长期留存
-    ENTRY="$RUN_TIME * * * cd $DEPLOY_DIR && ( [ -f $LOG_DIR/cleanup.log ] && [ \$(stat -c%s $LOG_DIR/cleanup.log) -gt 5242880 ] && : > $LOG_DIR/cleanup.log; ./scripts/cleanup-uploads.sh --apply >> $LOG_DIR/cleanup.log 2>&1; ./scripts/cleanup-audit.sh --apply >> $LOG_DIR/cleanup.log 2>&1 ) $MARKER"
+    ENTRY="$RUN_TIME * * * cd $DEPLOY_DIR && ( [ -f $LOG_FILE ] && [ \$(stat -c%s $LOG_FILE) -gt 5242880 ] && : > $LOG_FILE; $STACK_ENV ./scripts/cleanup-uploads.sh --apply >> $LOG_FILE 2>&1; $STACK_ENV ./scripts/cleanup-audit.sh --apply >> $LOG_FILE 2>&1 ) $MARKER"
 
     {
       printf '%s\n' "$WITHOUT"
       printf '%s\n' "$ENTRY"
     } | crontab -
 
-    echo "已注册每日清理任务："
+    echo "已注册每日清理任务（目标栈 env=$STACK_ENV_FILE 项目=${STACK_PROJECT:-deploy(默认)}）："
     echo "  时间：$(echo "$RUN_TIME" | awk '{printf "%02d:%02d", $2, $1}')（每天）"
-    echo "  日志：$LOG_DIR/cleanup.log"
+    echo "  日志：$LOG_FILE"
     echo
     echo "首次运行前建议先手动预演一次，确认待删清单无误："
-    echo "  ./scripts/cleanup-uploads.sh"
+    echo "  $STACK_ENV ./scripts/cleanup-uploads.sh"
     ;;
 esac

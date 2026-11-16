@@ -13,7 +13,9 @@ node_modules
 .coverage
 htmlcov
 
-# 运行期数据与本地环境，绝不进镜像
+# 运行期数据与本地环境，绝不进镜像。
+# 注意 deploy/.env* 连模板一起排除是有意的：镜像运行时靠 --env-file 注入，
+# 不需要也不应该把任何 env 文件烤进去（审查 m-03）。
 deploy/data*
 deploy/.env*
 deploy/backups

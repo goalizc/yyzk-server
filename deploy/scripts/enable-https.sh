@@ -42,6 +42,14 @@ warn() { echo "[https] [警告] $*" >&2; }
 die()  { echo "[https] [ERROR] $*" >&2; exit 1; }
 
 cd "$DEPLOY_DIR"
+
+# 双栈环境层：注意 docker-compose.yml / nginx.conf 是两栈**共享**的，
+# 本脚本改完后生产与测试栈都会走 HTTPS（审查 m-04）。
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_stack.sh"
+stack_require_env
+stack_banner "HTTPS 启用"
+
 [[ -f nginx-https.conf.example ]] || die "找不到 nginx-https.conf.example"
 [[ -f docker-compose.yml ]] || die "找不到 docker-compose.yml"
 
@@ -59,7 +67,9 @@ if [[ "$MODE" == "check" ]]; then
   fi
   # 注意排除注释行：compose 里本来就有 `# - "443:443"` 的说明性注释，
   # 直接 grep 会把注释当成已启用，给出"已开放 443"的假结论。
-  if grep -qE '^\s*-\s*"443:443"' docker-compose.yml; then
+  # 端口映射已参数化，443 可能写成 ${HTTPS_BIND:-...}:${HTTPS_PORT:-443}:443，
+  # 所以不能只匹配字面量 "443:443"（审查 M-01）。
+  if grep -qE '^\s*-\s*"[^"]*:443"' docker-compose.yml; then
     log "compose：已开放 443"
   else
     warn "compose：未开放 443"
@@ -113,12 +123,13 @@ cert_dir = sys.argv[1]
 p = pathlib.Path('docker-compose.yml')
 s = p.read_text(encoding='utf-8')
 
-# 开放 443。用正则匹配 ports 里的 80 映射行（行内可能有尾随空格），
-# 单纯字符串 replace 在存在注释/缩进差异时会静默失配。
-if not re.search(r'^\s*-\s*"443:443"', s, flags=re.M):
+# 开放 443。端口映射已参数化（可能是 "80:80"，也可能是
+# "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:80"），映射行结尾统一是
+# `:80"`（容器端口），所以按行尾匹配而不是要求 `:80:80`（审查 M-01）。
+if not re.search(r'^\s*-\s*"[^"]*:443"\s*$', s, flags=re.M):
     s, n = re.subn(
-        r'^(\s*)-\s*"80:80"\s*$',
-        r'\1- "80:80"\n\1- "443:443"',
+        r'^(\s*)-\s*"[^"]*:80"\s*$',
+        r'\1- "${HTTPS_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:443"',
         s,
         count=1,
         flags=re.M,
@@ -159,21 +170,21 @@ fi
 
 # ---------- 4. 生效 ----------
 log "重建 nginx 容器使配置生效..."
-docker compose up -d --force-recreate nginx >/dev/null 2>&1 || { restore; die "nginx 重建失败，已回滚"; }
+compose up -d --force-recreate nginx >/dev/null 2>&1 || { restore; die "nginx 重建失败，已回滚"; }
 
 sleep 5
 
 # 自检在容器内部做：宿主机可能有 HTTPS_PROXY 等变量，curl 会走代理而不是直连，
 # 从而得出"HTTPS 不可用"的错误结论（本机实测踩过）。
 log "自检 HTTPS（容器内）..."
-if docker compose exec -T nginx wget -qO- --no-check-certificate https://127.0.0.1/health 2>/dev/null | grep -q ok; then
+if compose exec -T nginx wget -qO- --no-check-certificate https://127.0.0.1/health 2>/dev/null | grep -q ok; then
   log "HTTPS 访问正常（/health 返回 ok）"
 else
-  warn "HTTPS 自检未通过。排查：docker compose logs nginx --tail 30"
+  warn "HTTPS 自检未通过。排查：docker compose ${STACK_PROJECT:+-p $STACK_PROJECT }--env-file $STACK_ENV_FILE logs nginx --tail 30"
 fi
 
 # 顺带确认 80 端口仍然给 healthcheck 返回 200（不能被 301 掉）
-if docker compose exec -T nginx wget -qO- http://127.0.0.1/health 2>/dev/null | grep -q ok; then
+if compose exec -T nginx wget -qO- http://127.0.0.1/health 2>/dev/null | grep -q ok; then
   log "HTTP /health 正常（容器 healthcheck 不会卡住）"
 else
   warn "HTTP /health 被跳转了，容器会一直 unhealthy！"
@@ -182,3 +193,4 @@ fi
 
 rm -f "nginx.conf$BACKUP_TAG" "docker-compose.yml$BACKUP_TAG"
 log "完成。原配置备份已清理；如需回滚请用 git checkout -- deploy/nginx.conf"
+warn "注意：docker-compose.yml 与 nginx.conf 为两栈共享，HTTPS 对生产与测试栈同时生效。"

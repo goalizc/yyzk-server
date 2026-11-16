@@ -22,8 +22,16 @@
 # ============================================================
 set -euo pipefail
 
-DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$DEPLOY_DIR"
+
+# 双栈环境层（审查 C-02）：默认生产 .env；清测试栈审计日志需显式指定
+#   STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test ./scripts/cleanup-audit.sh
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_stack.sh"
+stack_require_env
+stack_banner "审计日志清理"
 
 APPLY=0
 DAYS="${AUDIT_RETENTION_DAYS:-190}"
@@ -53,10 +61,13 @@ if (( DAYS < 30 )); then
   exit 2
 fi
 
-# shellcheck disable=SC1091
-source <(grep -E '^(DB_USER|DB_NAME)=' .env)
+# 库名/用户名按目标栈的 env 文件取，不再写死 .env
+DB_USER="${DB_USER:-$(stack_env_value DB_USER)}"
+DB_NAME="${DB_NAME:-$(stack_env_value DB_NAME)}"
+DB_USER="${DB_USER:-fault}"
+DB_NAME="${DB_NAME:-fault_db}"
 
-PSQL=(docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -At -v ON_ERROR_STOP=1)
+PSQL=(compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -At -v ON_ERROR_STOP=1)
 
 echo "[audit-cleanup] 保留期：$DAYS 天（早于该时间的记录将被删除）"
 

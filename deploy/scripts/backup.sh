@@ -49,8 +49,13 @@ die() { echo "[$(date '+%F %T')] [ERROR] $*" >&2; exit 1; }
 
 cd "$DEPLOY_DIR"
 
+# 双栈环境层：默认仍是生产栈；测试栈用
+#   STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test ./scripts/backup.sh --dry-run
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_stack.sh"
+stack_require_env
+
 # ---------- 环境检查 ----------
-[[ -f .env ]] || die "找不到 $DEPLOY_DIR/.env"
 
 # 调用方显式传入的变量优先于 .env（否则无法用 DB_NAME=xxx 覆盖来排查问题）。
 # 先把已有的记下来，source 完再盖回去。
@@ -58,7 +63,7 @@ _OVERRIDE_DB_USER="${DB_USER:-}"
 _OVERRIDE_DB_NAME="${DB_NAME:-}"
 
 # shellcheck disable=SC1091
-set -a; source .env; set +a
+set -a; source "$STACK_ENV_PATH"; set +a
 
 [[ -n "$_OVERRIDE_DB_USER" ]] && DB_USER="$_OVERRIDE_DB_USER"
 [[ -n "$_OVERRIDE_DB_NAME" ]] && DB_NAME="$_OVERRIDE_DB_NAME"
@@ -67,15 +72,17 @@ DB_USER="${DB_USER:-fault}"
 DB_NAME="${DB_NAME:-fault_db}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 
+stack_banner "备份"
+
 # 容器必须在跑，否则 pg_dump 无从执行
-docker compose ps --status running --format '{{.Name}}' 2>/dev/null | grep -q "fault-db" \
-  || die "容器 fault-db 未运行，先执行 docker compose up -d"
+compose ps --status running --format '{{.Name}}' 2>/dev/null | grep -qx "$DB_CONTAINER" \
+  || die "容器 $DB_CONTAINER 未运行，先执行该栈的 docker compose up -d"
 
 log "开始备份（目标目录 $BACKUP_DIR，保留 $RETENTION_DAYS 天）"
 
 if [[ $DRY_RUN -eq 1 ]]; then
-  log "[dry-run] 将执行: pg_dump -U $DB_USER $DB_NAME → $BACKUP_DIR/db_$STAMP.dump"
-  log "[dry-run] 将执行: tar czf → $BACKUP_DIR/uploads_$STAMP.tar.gz"
+  log "[dry-run] 将执行: pg_dump -U $DB_USER $DB_NAME → $BACKUP_DIR/db_${STACK_PREFIX}_$STAMP.dump"
+  log "[dry-run] 将执行: tar czf → $BACKUP_DIR/uploads_${STACK_PREFIX}_$STAMP.tar.gz（源 $UPLOADS_DIR）"
   log "[dry-run] 将清理 $RETENTION_DAYS 天前的备份"
   exit 0
 fi
@@ -84,11 +91,12 @@ mkdir -p "$BACKUP_DIR"
 
 # ---------- 1. 数据库 ----------
 # 用 -Fc（自定义格式）而不是纯 SQL：体积更小、支持 pg_restore 并行与选择性恢复
-DB_TMP="$BACKUP_DIR/.db_$STAMP.dump.tmp"
-DB_OUT="$BACKUP_DIR/db_$STAMP.dump"
+# 文件名带栈前缀：生产 fault_* / 测试 fault-test_*，避免两套备份互相覆盖
+DB_TMP="$BACKUP_DIR/.db_${STACK_PREFIX}_$STAMP.dump.tmp"
+DB_OUT="$BACKUP_DIR/db_${STACK_PREFIX}_$STAMP.dump"
 
 log "1/3 备份数据库..."
-if ! docker compose exec -T db pg_dump -U "$DB_USER" -Fc "$DB_NAME" > "$DB_TMP" 2>"$BACKUP_DIR/.db_err"; then
+if ! compose exec -T db pg_dump -U "$DB_USER" -Fc "$DB_NAME" > "$DB_TMP" 2>"$BACKUP_DIR/.db_err"; then
   cat "$BACKUP_DIR/.db_err" >&2
   rm -f "$DB_TMP" "$BACKUP_DIR/.db_err"
   die "pg_dump 失败"
@@ -105,12 +113,14 @@ mv "$DB_TMP" "$DB_OUT"
 log "    完成: $(basename "$DB_OUT") ($(numfmt --to=iec "$SIZE" 2>/dev/null || echo "$SIZE B"))"
 
 # ---------- 2. 附件 ----------
-UP_TMP="$BACKUP_DIR/.uploads_$STAMP.tar.gz.tmp"
-UP_OUT="$BACKUP_DIR/uploads_$STAMP.tar.gz"
+UP_TMP="$BACKUP_DIR/.uploads_${STACK_PREFIX}_$STAMP.tar.gz.tmp"
+UP_OUT="$BACKUP_DIR/uploads_${STACK_PREFIX}_$STAMP.tar.gz"
 
 log "2/3 备份附件..."
-if [[ -d data/uploads ]]; then
-  if ! tar czf "$UP_TMP" -C . data/uploads 2>/dev/null; then
+if [[ -d "$UPLOADS_DIR" ]]; then
+  # -C 数据目录、归档 uploads 目录名：restore.sh 也用 -C "$DATA_PATH" 解包，
+  # 两侧一致，且绝对路径/相对路径的 DATA_DIR 都能正确处理。
+  if ! tar czf "$UP_TMP" -C "$DATA_PATH" uploads 2>/dev/null; then
     rm -f "$UP_TMP"; die "附件打包失败"
   fi
   # 校验可读性：tar tzf 会真的解压索引，能发现截断的包
@@ -118,7 +128,7 @@ if [[ -d data/uploads ]]; then
   mv "$UP_TMP" "$UP_OUT"
   log "    完成: $(basename "$UP_OUT")"
 else
-  log "    跳过：data/uploads 目录不存在"
+  log "    跳过：$UPLOADS_DIR 目录不存在"
 fi
 
 # ---------- 3. 清理过期 ----------

@@ -40,6 +40,26 @@ FAILED=0
 
 cd "$DEPLOY_DIR"
 
+# 双栈环境层：默认生产 .env；测试栈应指向 .env.test。
+# 注意测试栈刻意 DEBUG=true（.env.test.example 里就这么配），
+# 所以 DEBUG 强制关闭一项只对生产栈生效，别把测试栈改坏。
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_stack.sh"
+ENV_FILE="$STACK_ENV_PATH"
+case "$STACK_ENV_FILE" in
+  /*) EXAMPLE_FILE="${STACK_ENV_PATH}.example" ;;
+  *)  EXAMPLE_FILE="$DEPLOY_DIR/${STACK_ENV_FILE}.example" ;;
+esac
+stack_banner "配置加固"
+
+# 下面所有「手工执行」提示里的命令都必须带上目标栈，否则测试栈用户
+# 复制粘贴会打到生产栈（审查 C-02 的同类问题）。
+COMPOSE_HINT="docker compose"
+if [[ -n "$STACK_PROJECT" ]]; then
+  COMPOSE_HINT="docker compose -p $STACK_PROJECT"
+fi
+COMPOSE_HINT="$COMPOSE_HINT --env-file $STACK_ENV_PATH -f $COMPOSE_FILE"
+
 if [[ ! -f "$ENV_FILE" ]]; then
   if [[ -f "$EXAMPLE_FILE" ]]; then
     log ".env 不存在，从 .env.example 复制一份"
@@ -130,9 +150,18 @@ if [[ "$MODE" == "force" ]] || is_weak "$ADMIN_VAL" 12; then
   fi
 fi
 
-# ---------- 4. DEBUG 必须关闭 ----------
+# ---------- 4. DEBUG 必须关闭（仅生产栈） ----------
+# 测试栈刻意 DEBUG=true（.env.test.example 就是这么配的）：方便看 /api/docs
+# 与完整报错。这条体检只对生产栈生效，否则会把测试栈改坏。
+IS_TEST_STACK=0
+if [[ "$STACK_ENV_FILE" == *test* || -n "$STACK_PROJECT" ]]; then
+  IS_TEST_STACK=1
+fi
+
 DEBUG_VAL="$(get_env DEBUG)"
-if [[ "$DEBUG_VAL" == "true" ]]; then
+if [[ "$IS_TEST_STACK" == "1" ]]; then
+  log "测试栈（env=$STACK_ENV_FILE）：跳过 DEBUG 强制关闭，当前 DEBUG=${DEBUG_VAL:-未设置}"
+elif [[ "$DEBUG_VAL" == "true" ]]; then
   if [[ "$MODE" == "check" ]]; then
     fail "DEBUG=true：生产环境会暴露 /api/docs 与 OpenAPI"
   else
@@ -153,11 +182,12 @@ for f in "$DEPLOY_DIR/docker-compose.yml" "$DEPLOY_DIR/nginx.conf"; do
     LEAK=1
   fi
 done
-# .env 应被 gitignore
-if git -C "$DEPLOY_DIR/.." check-ignore -q "deploy/.env" 2>/dev/null; then
-  log ".env 已被 gitignore 忽略"
+# env 文件应被 gitignore（按目标栈判定，测试栈查 .env.test 而不是 .env）
+ENV_REL="$(basename "$STACK_ENV_FILE")"
+if git -C "$DEPLOY_DIR/.." check-ignore -q "deploy/$ENV_REL" 2>/dev/null; then
+  log "deploy/$ENV_REL 已被 gitignore 忽略"
 elif [[ -d "$DEPLOY_DIR/../.git" ]]; then
-  fail "deploy/.env 未被 gitignore 忽略，密码有被提交的风险"
+  fail "deploy/$ENV_REL 未被 gitignore 忽略，密码有被提交的风险"
 fi
 
 # ---------- 汇总 ----------
@@ -173,7 +203,7 @@ fi
 
 echo "[harden] 配置已加固。下一步："
 echo "  1. 查看 .env 中的 ADMIN_INIT_PASSWORD 并记录"
-echo "  2. docker compose up -d && docker compose run --rm init"
+echo "  2. $COMPOSE_HINT up -d && $COMPOSE_HINT run --rm init"
 echo "  3. 首次登录后立即在后台修改密码"
 echo ""
 
@@ -185,39 +215,43 @@ echo ""
 #     - backend 用新密码连库 → password authentication failed → 一直 unhealthy
 #   所以改密码必须同时改数据库里的实际密码。这里直接问一次要不要代劳。
 # ------------------------------------------------------------
+DB_USER_VAL="$(get_env DB_USER)"
+DB_USER_VAL="${DB_USER_VAL:-fault}"
+DB_NAME_VAL="$(get_env DB_NAME)"
+DB_NAME_VAL="${DB_NAME_VAL:-fault_db}"
 NEW_DB="$(get_env DB_PASSWORD)"
 if [[ "$NEW_DB" != "$ORIG_DB" && -n "$ORIG_DB" ]]; then
-  if [[ -d data/pg && -n "$(ls -A data/pg 2>/dev/null)" ]]; then
+  if [[ -d "$DATA_PATH/pg" && -n "$(ls -A "$DATA_PATH/pg" 2>/dev/null)" ]]; then
     echo "[harden] ⚠ DB_PASSWORD 已变更，但已有数据目录，库里的密码还是旧的。"
     if [[ -t 0 ]]; then
       read -r -p "[harden] 现在同步到数据库并重建 backend？(y/N) " ans
       if [[ "$ans" =~ ^[Yy]$ ]]; then
-        if docker compose ps --status running --format '{{.Name}}' 2>/dev/null | grep -q fault-db; then
+        if compose ps --status running --format '{{.Name}}' 2>/dev/null | grep -q "$DB_CONTAINER"; then
           # 用旧密码连进去改（此时若能 exec 成功说明会话信任本机，无需密码）
-          docker compose exec -T db psql -U fault -d fault_db -q \
-            -c "ALTER USER fault WITH PASSWORD '$NEW_DB';" \
+          compose exec -T db psql -U "$DB_USER_VAL" -d "$DB_NAME_VAL" -q \
+            -c "ALTER USER $DB_USER_VAL WITH PASSWORD '$NEW_DB';" \
             && log "数据库密码已同步" || warn "同步失败，请手工执行 ALTER USER"
 
-          if docker compose ps --status running --format '{{.Name}}' 2>/dev/null | grep -q fault-backend; then
+          if compose ps --status running --format '{{.Name}}' 2>/dev/null | grep -q "$BACKEND_CONTAINER"; then
             log "重建 backend 使新密码生效..."
-            docker compose up -d --force-recreate backend >/dev/null 2>&1 || true
-            log "backend 已重建，请用 docker compose ps 确认 healthy"
+            compose up -d --force-recreate backend >/dev/null 2>&1 || true
+            log "backend 已重建，请用 $COMPOSE_HINT ps 确认 healthy"
           fi
         else
-          warn "fault-db 未运行，无法同步。启动后手工执行："
-          echo "      docker compose exec -T db psql -U fault -d fault_db -c \"ALTER USER fault WITH PASSWORD '$NEW_DB';\""
+          warn "$DB_CONTAINER 未运行，无法同步。启动后手工执行："
+          echo "      $COMPOSE_HINT exec -T db psql -U $DB_USER_VAL -d $DB_NAME_VAL -c \"ALTER USER $DB_USER_VAL WITH PASSWORD '$NEW_DB';\""
         fi
       else
         echo ""
         echo "[harden] 已跳过。等服务起不来时手工执行这两条："
-        echo "      docker compose exec -T db psql -U fault -d fault_db \\"
-        echo "        -c \"ALTER USER fault WITH PASSWORD '$NEW_DB';\""
-        echo "      docker compose up -d --force-recreate backend"
+        echo "      $COMPOSE_HINT exec -T db psql -U $DB_USER_VAL -d $DB_NAME_VAL \\"
+        echo "        -c \"ALTER USER $DB_USER_VAL WITH PASSWORD '$NEW_DB';\""
+        echo "      $COMPOSE_HINT up -d --force-recreate backend"
       fi
     else
       echo "[harden]   非交互执行，请手工补一条："
-      echo "      docker compose exec -T db psql -U fault -d fault_db -c \"ALTER USER fault WITH PASSWORD '$NEW_DB';\""
-      echo "      docker compose up -d --force-recreate backend"
+      echo "      $COMPOSE_HINT exec -T db psql -U $DB_USER_VAL -d $DB_NAME_VAL -c \"ALTER USER $DB_USER_VAL WITH PASSWORD '$NEW_DB';\""
+      echo "      $COMPOSE_HINT up -d --force-recreate backend"
     fi
     echo ""
   fi

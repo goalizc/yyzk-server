@@ -122,13 +122,39 @@ cd deploy && cp -n .env.test.example .env.test
 cd deploy && ./deploy-test.sh
 ```
 
-- 访问：`http://127.0.0.1:8080/`（默认只监听本机；需要局域网访问时把 `.env.test` 的 `HTTP_BIND` 改成 `0.0.0.0`）
+- 访问：`http://127.0.0.1:8080/`（默认只监听本机；需要局域网访问时把 `.env.test` 的 `HTTP_BIND` 改成 `0.0.0.0`——但 `DEBUG=true` 会把 `/api/docs` 一并暴露，务必加防火墙或带鉴权的反代）
 - 数据目录：`deploy/data-test/`
-- 环境变量：`deploy/.env.test`（已 gitignore，模板见 `deploy/.env.test.example`）
-- 容器：`fault-test-db/backend/frontend/nginx`
+- 环境变量：`deploy/.env.test`（已 gitignore，模板见 `deploy/.env.test.example`）。模板里的 `CHANGEME_*` 必须全部改掉，否则 `deploy-test.sh` 会拒绝启动
+- 容器：`fault-test-db/backend/frontend/nginx`，镜像也是独立的 `fault-test-*`（不会覆盖生产镜像，但会多占一份磁盘）
 - 停止：`cd deploy && docker compose -p fault-test --env-file .env.test -f docker-compose.yml -f docker-compose.test.yml down`（数据保留）
 
-测试栈首次启动会建空库并初始化管理员；演示数据按需重建，命令与生产相同，只需把 `--base-url` 指向 `http://127.0.0.1:8080`，并按 `scripts/dev/seed_demo.py`、`scripts/dev/demo_inventory.py` 头部注释设置 `SEED_*` 环境变量。
+测试栈首次启动会建空库并初始化管理员：`deploy-test.sh` 会自动执行 migrate + init。
+
+**两栈共享的面**：`docker-compose.yml`、`nginx.conf` 和前后端代码。改这三处后两栈都要重建才生效；`deploy/scripts/enable-https.sh` 改的正是共享的 compose/nginx，因此对两栈同时生效。
+
+**运维脚本默认只打生产栈**，操作测试栈必须显式指定目标：
+
+```bash
+cd deploy
+STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test ./scripts/backup.sh --dry-run
+STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test ./scripts/restore.sh --db backups/db_fault-test_xxx.dump
+STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test ./scripts/harden.sh --check
+STACK_ENV_FILE=.env.test STACK_PROJECT=fault-test ./scripts/install-cron.sh
+```
+
+每个脚本开头都会打印目标栈（env / compose 项目 / 容器前缀 / 数据目录），`restore.sh` 这类破坏性操作还会要求二次确认。两栈的 cron 条目各有独立标记，互不覆盖。
+
+**演示数据必须同时指定三处目标**，只改 `--base-url` 会被守卫拦下——那正是「清库清在测试栈、数据写进生产」的错配路径：
+
+```bash
+SEED_ENV_FILE=deploy/.env.test SEED_COMPOSE_PROJECT=fault-test \
+  .venv/bin/python scripts/dev/seed_demo.py --reset --activity \
+  --base-url http://127.0.0.1:8080
+
+SEED_ENV_FILE=deploy/.env.test SEED_COMPOSE_PROJECT=fault-test \
+  .venv/bin/python scripts/dev/demo_inventory.py --reset \
+  --base-url http://127.0.0.1:8080
+```
 
 ### 本地开发
 

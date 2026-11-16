@@ -45,6 +45,8 @@ STACK_PREFIX="$(read_env_value STACK_PREFIX)"
 STACK_PREFIX="${STACK_PREFIX:-fault}"
 HTTP_PORT="$(read_env_value HTTP_PORT)"
 HTTP_PORT="${HTTP_PORT:-80}"
+HTTP_BIND="$(read_env_value HTTP_BIND)"
+HTTP_BIND="${HTTP_BIND:-0.0.0.0}"
 DATA_DIR="$(read_env_value DATA_DIR)"
 DATA_DIR="${DATA_DIR:-./data}"
 case "$DATA_DIR" in
@@ -398,7 +400,17 @@ fi
 
 step "健康验证"
 
-LOCAL_URL="http://127.0.0.1"
+# 端口与监听地址都从 .env 读：HTTP_PORT 改成 8080 后仍要能自检，
+# HTTP_BIND 绑到具体网卡时 127.0.0.1 也不通（审查 M-02）。
+CHECK_HOST="127.0.0.1"
+if [[ "$HTTP_BIND" != "0.0.0.0" && -n "$HTTP_BIND" ]]; then
+  CHECK_HOST="$HTTP_BIND"
+fi
+if [[ "$HTTP_PORT" == "80" ]]; then
+  LOCAL_URL="http://${CHECK_HOST}"
+else
+  LOCAL_URL="http://${CHECK_HOST}:${HTTP_PORT}"
+fi
 FAILED=0
 
 check_code() {
